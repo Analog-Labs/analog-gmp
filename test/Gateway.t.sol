@@ -53,7 +53,6 @@ contract GatewayBase is Test {
     uint256 private constant SUBMIT_GAS_COST = 5551;
     uint16 private constant SRC_NETWORK_ID = 0;
     uint16 internal constant DEST_NETWORK_ID = 69;
-    // uint256 private immutable GAS_LIMIT = (block.gaslimit / 5) * 4; // 80% of the block gas limit
     uint8 private constant GMP_STATUS_SUCCESS = 1;
 
     constructor() {
