@@ -5,7 +5,7 @@ pragma solidity ^0.8.20;
 
 import {Gateway, GatewayEIP712} from "src/Gateway.sol";
 import {IGateway} from "src/interfaces/IGateway.sol";
-import {IGmpReceiver} from "src/interfaces/IGmpReceiver.sol";
+import {IGmpRecipient} from "src/interfaces/IGmpRecipient.sol";
 import {IExecutor} from "src/interfaces/IExecutor.sol";
 import {GmpMessage, UpdateKeysMessage, Signature, TssKey, PrimitivesEip712} from "src/Primitives.sol";
 import {Signer} from "frost-evm/sol/Signer.sol";
@@ -48,7 +48,7 @@ contract GatewayBase is Test {
     Signer internal signer;
 
     // Receiver Contract, the will waste the exact amount of gas you sent to it in the data field
-    IGmpReceiver internal receiver;
+    IGmpRecipient internal receiver;
 
     uint256 private constant EXECUTE_CALL_COST = 47_236;
     uint256 private constant SUBMIT_GAS_COST = 5551;
@@ -73,7 +73,7 @@ contract GatewayBase is Test {
         {
             bytes memory bytecode =
                 hex"6031600d60003960316000f3fe60a4355a0360080180603b015b805a11600c57505a03604103565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b00";
-            receiver = IGmpReceiver(TestUtils.deployContract(bytecode));
+            receiver = IGmpRecipient(TestUtils.deployContract(bytecode));
         }
     }
 
@@ -215,7 +215,7 @@ contract GatewayBase is Test {
 
     function testReceiver() public {
         bytes memory testEncodedCall = abi.encodeCall(
-            IGmpReceiver.onGmpReceived,
+            IGmpRecipient.onGmpReceived,
             (
                 0x0000000000000000000000000000000000000000000000000000000000000000,
                 1,

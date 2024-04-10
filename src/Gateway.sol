@@ -6,7 +6,7 @@ pragma solidity ^0.8.20;
 import {Schnorr} from "frost-evm/sol/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {IGateway} from "./interfaces/IGateway.sol";
-import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
+import {IGmpRecipient} from "./interfaces/IGmpRecipient.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
 import {TssKey, GmpMessage, UpdateKeysMessage, Signature, PrimitivesEip712} from "./Primitives.sol";
 
@@ -258,7 +258,7 @@ contract Gateway is IGateway, IExecutor, GatewayEIP712 {
 
         // The encoded onGmpReceived call
         bytes memory data =
-            abi.encodeCall(IGmpReceiver.onGmpReceived, (payloadHash, message.srcNetwork, message.source, message.data));
+            abi.encodeCall(IGmpRecipient.onGmpReceived, (payloadHash, message.srcNetwork, message.source, message.data));
 
         // Execute GMP call
         bytes32[1] memory output = [bytes32(0)];
@@ -314,11 +314,15 @@ contract Gateway is IGateway, IExecutor, GatewayEIP712 {
         emit GmpExecuted(payloadHash, message.source, message.dest, status, result);
     }
 
-    // Send GMP message using sudo account
-    function execute(
-        Signature memory signature, // coordinate x, nonce, e, s
-        GmpMessage memory message
-    ) public returns (uint8 status, bytes32 result) {
+    /**
+     * Execute GMP message
+     * @param signature Schnorr signature
+     * @param message GMP message
+     */
+    function execute(Signature memory signature, GmpMessage memory message)
+        public
+        returns (uint8 status, bytes32 result)
+    {
         uint256 initialGas = gasleft();
 
         // Theoretically we could remove the destination network field

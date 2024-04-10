@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Analog's Contracts (last updated v0.1.0) (src/interfaces/IGmpSender.sol)
+// Analog's Contracts (last updated v0.1.0) (src/interfaces/IGateway.sol)
 
 pragma solidity ^0.8.20;
 
@@ -27,9 +27,21 @@ interface IGateway {
         bytes data
     );
 
-    function deposit(bytes32 source, uint16 network) external payable;
+    /**
+     * @notice Pay for gas of contract execution on destination chain.
+     * @dev This function is called on the destination chain before calling the gateway to execute a source contract.
+     * @param sender The address making the payment
+     * @param sourceNetwork The target chain where the contract call will be made
+     */
+    function deposit(bytes32 sender, uint16 sourceNetwork) external payable;
 
-    function depositOf(bytes32 source, uint16 network) external view returns (uint256);
+    /**
+     * @notice Pay for gas of contract execution on destination chain.
+     * @dev This function is called on the destination chain before calling the gateway to execute a source contract.
+     * @param sender The address making the payment
+     * @param sourceNetwork The target chain where the contract call will be made
+     */
+    function depositOf(bytes32 sender, uint16 sourceNetwork) external view returns (uint256);
 
     /**
      * @dev Send message from chain A to chain B

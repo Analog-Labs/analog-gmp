@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Analog's Contracts (last updated v0.1.0) (src/interfaces/Primitives.sol)
+// Analog's Contracts (last updated v0.1.0) (src/Primitives.sol)
 
 pragma solidity ^0.8.20;
 
@@ -58,7 +58,7 @@ struct UpdateKeysMessage {
 }
 
 /**
- * @dev Required interface of an Gateway compliant contract
+ * @dev EIP-712 utility functions for primitives
  */
 library PrimitivesEip712 {
     // computes the hash of an array of tss keys

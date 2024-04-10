@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Analog's Contracts (last updated v0.1.0) (src/interfaces/IGmpReceiver.sol)
+// Analog's Contracts (last updated v0.1.0) (src/interfaces/IGmpRecipient.sol)
 
 pragma solidity ^0.8.20;
 
 /**
  * @dev Required interface of an GMP compliant contract
  */
-interface IGmpReceiver {
+interface IGmpRecipient {
     /**
      * @dev Handles the receipt of a single GMP message.
      * The contract must verify the msg.sender, it must be the Gateway Contract address.
