@@ -5,9 +5,10 @@ pragma solidity ^0.8.20;
 
 import {Schnorr} from "frost-evm/sol/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
-import {IGateway, IGatewayEIP712} from "./interfaces/IGateway.sol";
+import {IGateway} from "./interfaces/IGateway.sol";
 import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
-import {IGmpSender} from "./interfaces/IGmpSender.sol";
+import {IExecutor} from "./interfaces/IExecutor.sol";
+import {TssKey, GmpMessage, UpdateKeysMessage, Signature, PrimitivesEip712} from "./Primitives.sol";
 
 abstract contract GatewayEIP712 {
     // EIP-712: Typed structured data hashing and signing
@@ -34,9 +35,9 @@ abstract contract GatewayEIP712 {
     }
 }
 
-contract Gateway is IGateway, IGmpSender, GatewayEIP712 {
-    using IGatewayEIP712 for IGateway.UpdateKeysMessage;
-    using IGatewayEIP712 for IGateway.GmpMessage;
+contract Gateway is IGateway, IExecutor, GatewayEIP712 {
+    using PrimitivesEip712 for UpdateKeysMessage;
+    using PrimitivesEip712 for GmpMessage;
 
     uint8 internal constant GMP_STATUS_NOT_FOUND = 0; // GMP message not processed
     uint8 internal constant GMP_STATUS_SUCCESS = 1; // GMP message executed successfully

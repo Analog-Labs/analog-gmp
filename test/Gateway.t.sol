@@ -4,24 +4,25 @@
 pragma solidity ^0.8.20;
 
 import {Gateway, GatewayEIP712} from "src/Gateway.sol";
-import {IGateway, IGatewayEIP712} from "src/interfaces/IGateway.sol";
+import {IGateway} from "src/interfaces/IGateway.sol";
 import {IGmpReceiver} from "src/interfaces/IGmpReceiver.sol";
-import {IGmpSender} from "src/interfaces/IGmpSender.sol";
+import {IExecutor} from "src/interfaces/IExecutor.sol";
+import {GmpMessage, UpdateKeysMessage, Signature, TssKey, PrimitivesEip712} from "src/Primitives.sol";
 import {Signer} from "frost-evm/sol/Signer.sol";
-import "forge-std/Test.sol";
-import "forge-std/Vm.sol";
-import "./TestUtils.sol";
+import {Test} from "forge-std/Test.sol";
+import {VmSafe} from "forge-std/Vm.sol";
+import {TestUtils} from "./TestUtils.sol";
 
 uint256 constant secret = 0x42;
 uint256 constant nonce = 0x69;
 
 contract SigUtilsTest is GatewayEIP712, Test {
-    using IGatewayEIP712 for IGateway.GmpMessage;
+    using PrimitivesEip712 for GmpMessage;
 
     constructor() GatewayEIP712(69, address(0)) {}
 
     function testPayload() public view {
-        IGateway.GmpMessage memory gmp = IGateway.GmpMessage({
+        GmpMessage memory gmp = GmpMessage({
             source: 0x0,
             srcNetwork: 42,
             dest: address(0x0),
@@ -40,8 +41,8 @@ contract SigUtilsTest is GatewayEIP712, Test {
 
 contract GatewayBase is Test {
     using TestUtils for address;
-    using IGatewayEIP712 for IGateway.UpdateKeysMessage;
-    using IGatewayEIP712 for IGateway.GmpMessage;
+    using PrimitivesEip712 for UpdateKeysMessage;
+    using PrimitivesEip712 for GmpMessage;
 
     Gateway internal gateway;
     Signer internal signer;
@@ -57,8 +58,8 @@ contract GatewayBase is Test {
 
     constructor() {
         signer = new Signer(secret);
-        IGateway.TssKey[] memory keys = new IGateway.TssKey[](1);
-        keys[0] = IGateway.TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()});
+        TssKey[] memory keys = new TssKey[](1);
+        keys[0] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()});
         gateway = new Gateway(DEST_NETWORK_ID, keys);
     }
 
@@ -76,10 +77,10 @@ contract GatewayBase is Test {
         }
     }
 
-    function sign(IGateway.GmpMessage memory gmp) internal view returns (IGateway.Signature memory) {
+    function sign(GmpMessage memory gmp) internal view returns (Signature memory) {
         uint256 hash = uint256(gmp.eip712TypedHash(gateway.DOMAIN_SEPARATOR()));
         (uint256 e, uint256 s) = signer.signPrehashed(hash, nonce);
-        return IGateway.Signature({xCoord: signer.xCoord(), e: e, s: s});
+        return Signature({xCoord: signer.xCoord(), e: e, s: s});
     }
 
     // Count the number of occurrences of a byte in a bytes array
@@ -162,8 +163,8 @@ contract GatewayBase is Test {
     // Allows you to define the gas limit for the GMP call, also retrieve a more accurate gas usage
     // by executing the GMP message.
     function executeGmp(
-        IGateway.Signature memory signature, // coordinate x, nonce, e, s
-        IGateway.GmpMessage memory message,
+        Signature memory signature, // coordinate x, nonce, e, s
+        GmpMessage memory message,
         uint256 gasLimit,
         address sender
     ) internal returns (uint8 status, bytes32 result, uint256 executionCost, uint256 baseCost) {
@@ -245,7 +246,7 @@ contract GatewayBase is Test {
         assertEq(gateway.depositOf(sender.source(), SRC_NETWORK_ID), expectGasUsed);
 
         // Build and sign GMP message
-        IGateway.GmpMessage memory gmp = IGateway.GmpMessage({
+        GmpMessage memory gmp = GmpMessage({
             source: sender.source(),
             srcNetwork: SRC_NETWORK_ID,
             dest: address(receiver),
@@ -254,7 +255,7 @@ contract GatewayBase is Test {
             salt: 1,
             data: abi.encode(gmpGasUsed)
         });
-        IGateway.Signature memory sig = sign(gmp);
+        Signature memory sig = sign(gmp);
 
         // Execute GMP message
         bytes32 expectResult = bytes32(0);
@@ -282,7 +283,7 @@ contract GatewayBase is Test {
         address sender = TestUtils.createTestAccount(amount * 2);
 
         gateway.deposit{value: amount}(sender.source(), 1234);
-        IGateway.GmpMessage memory wrongNetwork = IGateway.GmpMessage({
+        GmpMessage memory wrongNetwork = GmpMessage({
             source: sender.source(),
             srcNetwork: 1,
             dest: address(0x0),
@@ -291,7 +292,7 @@ contract GatewayBase is Test {
             salt: 1,
             data: ""
         });
-        IGateway.Signature memory wrongNetworkSig = sign(wrongNetwork);
+        Signature memory wrongNetworkSig = sign(wrongNetwork);
         vm.expectRevert("invalid gmp network");
         executeGmp(wrongNetworkSig, wrongNetwork, 10_000, sender);
     }
@@ -302,7 +303,7 @@ contract GatewayBase is Test {
         address mockSender = address(0x0);
         vm.deal(mockSender, amount * 2);
         gateway.deposit{value: amount}(0x0, 0);
-        IGateway.GmpMessage memory wrongSource = IGateway.GmpMessage({
+        GmpMessage memory wrongSource = GmpMessage({
             source: bytes32(uint256(0x1)),
             srcNetwork: 0,
             dest: address(0x0),
@@ -311,14 +312,14 @@ contract GatewayBase is Test {
             salt: 1,
             data: ""
         });
-        IGateway.Signature memory wrongSourceSig = sign(wrongSource);
+        Signature memory wrongSourceSig = sign(wrongSource);
         vm.expectRevert(bytes("deposit below max refund"));
         executeGmp(wrongSourceSig, wrongSource, 100_000, mockSender);
     }
 
     function testExecuteRevertsWithoutDeposit() public {
         vm.txGasPrice(1);
-        IGateway.GmpMessage memory gmp = IGateway.GmpMessage({
+        GmpMessage memory gmp = GmpMessage({
             source: bytes32(0),
             srcNetwork: 0,
             dest: address(receiver),
@@ -327,7 +328,7 @@ contract GatewayBase is Test {
             salt: 1,
             data: abi.encode(uint256(1_000_000))
         });
-        IGateway.Signature memory sig = sign(gmp);
+        Signature memory sig = sign(gmp);
         assertEq(gateway.depositOf(bytes32(0), 0), 0);
         vm.expectRevert("deposit below max refund");
         executeGmp(sig, gmp, 1_500_000, address(0));
@@ -339,7 +340,7 @@ contract GatewayBase is Test {
         address mockSender = address(0x0);
         vm.deal(mockSender, insufficientDeposit);
         gateway.deposit{value: insufficientDeposit}(0x0, 0);
-        IGateway.GmpMessage memory gmp = IGateway.GmpMessage({
+        GmpMessage memory gmp = GmpMessage({
             source: 0x0,
             srcNetwork: 0,
             dest: address(receiver),
@@ -348,7 +349,7 @@ contract GatewayBase is Test {
             salt: 1,
             data: abi.encode(uint256(10_000))
         });
-        IGateway.Signature memory sig = sign(gmp);
+        Signature memory sig = sign(gmp);
         vm.expectRevert("deposit below max refund");
         executeGmp(sig, gmp, 100_000, mockSender);
     }
@@ -360,7 +361,7 @@ contract GatewayBase is Test {
         address mockSender = address(0x0);
         vm.deal(mockSender, insufficientDeposit);
         gateway.deposit{value: insufficientDeposit}(0x0, 0);
-        IGateway.GmpMessage memory gmp = IGateway.GmpMessage({
+        GmpMessage memory gmp = GmpMessage({
             source: 0x0,
             srcNetwork: 0,
             dest: address(receiver),
@@ -369,7 +370,7 @@ contract GatewayBase is Test {
             salt: 1,
             data: abi.encode(uint256(100_000))
         });
-        IGateway.Signature memory sig = sign(gmp);
+        Signature memory sig = sign(gmp);
         vm.expectRevert(bytes("gas left below message.gasLimit"));
         executeGmp(sig, gmp, 100_000, mockSender);
     }
@@ -380,7 +381,7 @@ contract GatewayBase is Test {
         address mockSender = address(0x0);
         vm.deal(mockSender, amount * 2);
         gateway.deposit{value: amount}(0x0, 0);
-        IGateway.GmpMessage memory gmp = IGateway.GmpMessage({
+        GmpMessage memory gmp = GmpMessage({
             source: 0x0,
             srcNetwork: 0,
             dest: address(receiver),
@@ -389,7 +390,7 @@ contract GatewayBase is Test {
             salt: 1,
             data: abi.encode(uint256(1000))
         });
-        IGateway.Signature memory sig = sign(gmp);
+        Signature memory sig = sign(gmp);
         (uint8 status,,,) = executeGmp(sig, gmp, 100_000, mockSender);
         assertEq(status, GMP_STATUS_SUCCESS);
         vm.expectRevert(bytes("message already executed"));
@@ -400,7 +401,7 @@ contract GatewayBase is Test {
         vm.txGasPrice(1);
         address gmpSender = address(0x86E4Dc95c7FBdBf52e33D563BbDB00823894C287);
         vm.deal(gmpSender, 1_000_000_000_000_000_000);
-        IGateway.GmpMessage memory gmp = IGateway.GmpMessage({
+        GmpMessage memory gmp = GmpMessage({
             source: bytes32(uint256(uint160(gmpSender))),
             srcNetwork: DEST_NETWORK_ID,
             dest: address(receiver),
@@ -417,7 +418,7 @@ contract GatewayBase is Test {
 
         // Expect event
         vm.expectEmit(true, true, true, true);
-        emit IGmpSender.GmpCreated(id, gmp.source, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data);
+        emit IGateway.GmpCreated(id, gmp.source, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data);
 
         // Submit GMP message
         bytes memory encodedCall =
@@ -436,7 +437,7 @@ contract GatewayBase is Test {
 
         // Expect event
         vm.expectEmit(true, true, true, true);
-        emit IGmpSender.GmpCreated(id, gmp.source, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data);
+        emit IGateway.GmpCreated(id, gmp.source, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data);
 
         // Submit GMP message
         encodedCall = abi.encodeCall(Gateway.submitMessage, (gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data));
@@ -453,7 +454,7 @@ contract GatewayBase is Test {
 
         // Expect event
         vm.expectEmit(true, true, true, true);
-        emit IGmpSender.GmpCreated(id, gmp.source, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data);
+        emit IGateway.GmpCreated(id, gmp.source, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data);
 
         // Submit GMP message
         encodedCall = abi.encodeCall(Gateway.submitMessage, (gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data));
