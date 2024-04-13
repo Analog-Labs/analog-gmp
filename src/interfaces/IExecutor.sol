@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Analog's Contracts (last updated v0.1.0) (src/interfaces/IExecutor.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity >=0.8.0;
 
 import {Signature, GmpMessage, TssKey, UpdateKeysMessage} from "../Primitives.sol";
 

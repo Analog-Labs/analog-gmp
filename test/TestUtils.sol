@@ -1,9 +1,22 @@
 // SPDX-License-Identifier: MIT
 // Analog's Contracts (last updated v0.1.0) (test/TestUtils.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity >=0.8.0;
 
-import {Vm} from "forge-std/Test.sol";
+// import {Vm} from "forge-std/Test.sol";
+import {VmSafe, Vm} from "forge-std/Vm.sol";
+import {Schnorr} from "frost-evm/sol/Schnorr.sol";
+import {SECP256K1} from "frost-evm/sol/SECP256K1.sol";
+
+struct VerifyingKey {
+    uint256 px;
+    uint256 py;
+}
+
+struct SigningKey {
+    uint256 secret;
+    VerifyingKey pubkey;
+}
 
 /**
  * @dev Utilities for testing purposes
@@ -116,6 +129,10 @@ library TestUtils {
         }
     }
 
+    function randomFromSeed(uint256 seed) internal pure returns (uint256) {
+        return uint256(keccak256(abi.encodePacked("randomFromSeed", keccak256(getCalldata()), seed)));
+    }
+
     /**
      * @dev Generate a new account account from the calldata
      * This will generate a unique deterministic address for each test case
@@ -148,5 +165,163 @@ library TestUtils {
      */
     function source(address account) internal view returns (bytes32) {
         return source(account, account.code.length > 0);
+    }
+
+    /**
+     * @dev Creates a new TSS signer
+     */
+    function createSigner(uint256 secret) internal pure returns (SigningKey memory) {
+        require(secret != 0, "secret must be greater than 0");
+        require(secret < Schnorr.Q, "secret must be less than secp256k1 group order");
+        (uint256 px, uint256 py) = SECP256K1.publicKey(secret);
+        return SigningKey({secret: secret, pubkey: VerifyingKey({px: px, py: py})});
+    }
+
+    /**
+     * @dev Creates a new TSS signer
+     */
+    function createSigner(bytes32 secret) internal pure returns (SigningKey memory) {
+        return createSigner(uint256(secret));
+    }
+
+    /**
+     * @dev Creates an unique TSS signer per test case
+     */
+    function createSigner() internal pure returns (SigningKey memory) {
+        uint256 secret = uint256(keccak256(getCalldata()));
+        while (secret >= Schnorr.Q) {
+            secret = uint256(keccak256(abi.encodePacked(secret)));
+        }
+        return createSigner(secret);
+    }
+
+    // Workaround for set the tx.gasLimit, currently is not possible to define the gaslimit in foundry
+    // Reference: https://github.com/foundry-rs/foundry/issues/2224
+    function _call(address addr, uint256 gasLimit, bytes memory data)
+        private
+        returns (uint256 gasUsed, bool success, bytes memory out)
+    {
+        require(gasleft() > (gasLimit + 5000), "insufficient gas");
+        require(addr.code.length > 0, "Not a contract address");
+        uint256 gasAfter;
+        /// @solidity memory-safe-assembly
+        assembly {
+            let gasBefore := gas()
+            success :=
+                call(
+                    0x7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E, // gas limit
+                    addr, // addr
+                    gasLimit, // value
+                    add(data, 32),
+                    mload(data),
+                    0,
+                    0
+                )
+            gasAfter := gas()
+            gasAfter := sub(gasBefore, gasAfter)
+            gasUsed := mload(mload(0x40))
+
+            out := mload(0x40)
+            let size := returndatasize()
+            mstore(out, size)
+            let ptr := add(out, 32)
+            returndatacopy(ptr, 0, size)
+            mstore(0x40, add(ptr, size))
+        }
+    }
+
+    // Execute a contract call and calculate the acurrate execution gas cost
+    function executeCall(address sender, address dest, uint256 gasLimit, bytes memory data)
+        internal
+        returns (uint256 executionCost, uint256 baseCost, bytes memory out)
+    {
+        // Compute the base tx cost (21k + 4 * zeros + 16 * nonZeros)
+        {
+            uint256 zeros = countNonZeros(data);
+            uint256 nonZeros = data.length - zeros;
+            uint256 inputCost = (nonZeros * 16) + (zeros * 4);
+            baseCost = inputCost + 21_000;
+        }
+
+        // Execute
+        (VmSafe.CallerMode callerMode,,) = vm.readCallers();
+        if (callerMode == VmSafe.CallerMode.None) {
+            vm.prank(sender, sender);
+        }
+        bool success;
+        (executionCost, success, out) = _call(dest, gasLimit, data);
+        assembly {
+            if iszero(success) { revert(add(out, 32), mload(out)) }
+        }
+    }
+}
+
+library SigningUtils {
+    function yParity(VerifyingKey memory pubkey) internal pure returns (uint8) {
+        return uint8(pubkey.py % 2) + 27;
+    }
+
+    function yParity(SigningKey memory signer) internal pure returns (uint8) {
+        return yParity(signer.pubkey);
+    }
+
+    function challenge(VerifyingKey memory pubkey, bytes32 hash, address r) internal pure returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(r, yParity(pubkey), pubkey.px, uint256(hash))));
+    }
+
+    function challenge(SigningKey memory signer, bytes32 hash, address r) internal pure returns (uint256) {
+        return challenge(signer.pubkey, hash, r);
+    }
+
+    function signPrehashed(SigningKey memory signer, bytes32 hash, uint256 nonce)
+        internal
+        pure
+        returns (uint256, uint256)
+    {
+        (uint256 rx, uint256 ry) = SECP256K1.publicKey(nonce);
+        address r = SECP256K1.point_hash(rx, ry);
+        uint256 c = challenge(signer, hash, r);
+        uint256 z = addmod(nonce, mulmod(c, signer.secret, Schnorr.Q), Schnorr.Q);
+        return (c, z);
+    }
+
+    function sign(SigningKey memory signer, bytes memory message, uint256 nonce)
+        internal
+        pure
+        returns (uint256, uint256)
+    {
+        return signPrehashed(signer, keccak256(message), nonce);
+    }
+
+    function verifyPrehash(VerifyingKey memory pubkey, bytes32 prehash, uint256 c, uint256 z)
+        internal
+        pure
+        returns (bool)
+    {
+        return Schnorr.verify(yParity(pubkey), pubkey.px, uint256(prehash), c, z);
+    }
+
+    function verify(VerifyingKey memory pubkey, bytes memory message, uint256 c, uint256 z)
+        internal
+        pure
+        returns (bool)
+    {
+        return verifyPrehash(pubkey, keccak256(message), c, z);
+    }
+
+    function verifyPrehash(SigningKey memory signer, bytes32 prehash, uint256 c, uint256 z)
+        internal
+        pure
+        returns (bool)
+    {
+        return verifyPrehash(signer.pubkey, prehash, c, z);
+    }
+
+    function verify(SigningKey memory signer, bytes memory message, uint256 c, uint256 z)
+        internal
+        pure
+        returns (bool)
+    {
+        return verifyPrehash(signer.pubkey, keccak256(message), c, z);
     }
 }

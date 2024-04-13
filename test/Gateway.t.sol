@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Analog's Contracts (last updated v0.1.0) (test/TestUtils.sol)
+// Analog's Contracts (last updated v0.1.0) (test/Gateway.t.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity >=0.8.0;
 
 import {Gateway, GatewayEIP712} from "src/Gateway.sol";
 import {IGateway} from "src/interfaces/IGateway.sol";
@@ -39,10 +39,55 @@ contract SigUtilsTest is GatewayEIP712, Test {
     }
 }
 
+struct CallOptions {
+    address from;
+    address to;
+    uint256 value;
+    uint256 gasLimit;
+    uint256 executionCost;
+    uint256 baseCost;
+}
+
+library GatewayUtils {
+    function execute(CallOptions memory ctx, Signature memory signature, GmpMessage memory message)
+        internal
+        returns (uint8 status, bytes32 result)
+    {
+        bytes memory encodedCall = abi.encodeCall(IExecutor.execute, (signature, message));
+        (uint256 executionCost, uint256 baseCost, bytes memory output) =
+            TestUtils.executeCall(ctx.from, ctx.to, ctx.gasLimit, encodedCall);
+
+        ctx.executionCost = executionCost;
+        ctx.baseCost = baseCost;
+        if (output.length == 64) {
+            assembly {
+                let ptr := add(output, 32)
+                status := mload(ptr)
+                result := mload(add(ptr, 32))
+            }
+        }
+    }
+
+    function submitMessage(CallOptions memory ctx, GmpMessage memory gmp) internal returns (bytes32 result) {
+        bytes memory encodedCall =
+            abi.encodeCall(IGateway.submitMessage, (gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data));
+        (uint256 executionCost, uint256 baseCost, bytes memory output) =
+            TestUtils.executeCall(ctx.from, ctx.to, ctx.gasLimit, encodedCall);
+        ctx.executionCost = executionCost;
+        ctx.baseCost = baseCost;
+        if (output.length == 32) {
+            assembly {
+                result := mload(add(output, 32))
+            }
+        }
+    }
+}
+
 contract GatewayBase is Test {
     using TestUtils for address;
     using PrimitivesEip712 for UpdateKeysMessage;
     using PrimitivesEip712 for GmpMessage;
+    using GatewayUtils for CallOptions;
 
     Gateway internal gateway;
     Signer internal signer;
@@ -51,7 +96,7 @@ contract GatewayBase is Test {
     IGmpRecipient internal receiver;
 
     uint256 private constant EXECUTE_CALL_COST = 47_236;
-    uint256 private constant SUBMIT_GAS_COST = 5551;
+    uint256 private constant SUBMIT_GAS_COST = 5613;
     uint16 private constant SRC_NETWORK_ID = 0;
     uint16 internal constant DEST_NETWORK_ID = 69;
     uint8 private constant GMP_STATUS_SUCCESS = 1;
@@ -83,83 +128,6 @@ contract GatewayBase is Test {
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
     }
 
-    // Count the number of occurrences of a byte in a bytes array
-    function countBytes(bytes memory input, uint8 haystack) internal pure returns (uint256 zeros) {
-        /// @solidity memory-safe-assembly
-        assembly {
-            zeros := 0
-            let ptr := add(input, 32)
-            let size := mload(input)
-
-            let val
-            for { let i := 0 } gt(size, i) { i := add(i, 1) } {
-                let pos := mod(i, 32)
-                if iszero(pos) { val := mload(add(ptr, i)) }
-                zeros := add(zeros, eq(byte(pos, val), haystack))
-            }
-        }
-    }
-
-    // Workaround for set the tx.gasLimit, currently is not possible to define the gaslimit in foundry
-    // Reference: https://github.com/foundry-rs/foundry/issues/2224
-    function _call(address addr, uint256 gasLimit, bytes memory data)
-        private
-        returns (uint256 gasUsed, bool success, bytes memory out)
-    {
-        assertTrue(gasleft() > (gasLimit + 5000), "insufficient gas");
-        assertTrue(addr.code.length > 0, "Not a contract address");
-        uint256 gasAfter;
-        /// @solidity memory-safe-assembly
-        assembly {
-            let gasBefore := gas()
-            success :=
-                call(
-                    0x7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E, // gas limit
-                    addr, // addr
-                    gasLimit, // value
-                    add(data, 32),
-                    mload(data),
-                    0,
-                    0
-                )
-            gasAfter := gas()
-            gasAfter := sub(gasBefore, gasAfter)
-            gasUsed := mload(mload(0x40))
-
-            out := mload(0x40)
-            let size := returndatasize()
-            mstore(out, size)
-            let ptr := add(out, 32)
-            returndatacopy(ptr, 0, size)
-            mstore(0x40, add(ptr, size))
-        }
-    }
-
-    // Execute a contract call and calculate the acurrate execution gas cost
-    function executeCall(address sender, address dest, uint256 gasLimit, bytes memory data)
-        internal
-        returns (uint256 executionCost, uint256 baseCost, bytes memory out)
-    {
-        // Compute the base tx cost (21k + 4 * zeros + 16 * nonZeros)
-        {
-            uint256 zeros = countBytes(data, 0);
-            uint256 nonZeros = data.length - zeros;
-            uint256 inputCost = (nonZeros * 16) + (zeros * 4);
-            baseCost = inputCost + 21_000;
-        }
-
-        // Execute
-        (VmSafe.CallerMode callerMode,,) = vm.readCallers();
-        if (callerMode == VmSafe.CallerMode.None) {
-            vm.prank(sender, sender);
-        }
-        bool success;
-        (executionCost, success, out) = _call(dest, gasLimit, data);
-        assembly {
-            if iszero(success) { revert(add(out, 32), mload(out)) }
-        }
-    }
-
     // Allows you to define the gas limit for the GMP call, also retrieve a more accurate gas usage
     // by executing the GMP message.
     function executeGmp(
@@ -170,7 +138,7 @@ contract GatewayBase is Test {
     ) internal returns (uint8 status, bytes32 result, uint256 executionCost, uint256 baseCost) {
         bytes memory encodedCall = abi.encodeCall(Gateway.execute, (signature, message));
         (uint256 execution, uint256 base, bytes memory output) =
-            executeCall(sender, address(gateway), gasLimit, encodedCall);
+            TestUtils.executeCall(sender, address(gateway), gasLimit, encodedCall);
         executionCost = execution;
         baseCost = base;
         if (output.length == 64) {
@@ -225,8 +193,8 @@ contract GatewayBase is Test {
         );
         // Calling the receiver contract directly to make the address warm
         address sender = TestUtils.createTestAccount(10 ether);
-        executeCall(sender, address(receiver), 100_000, testEncodedCall);
-        (uint256 gasUsed,, bytes memory output) = executeCall(sender, address(receiver), 100_000, testEncodedCall);
+        (uint256 gasUsed,, bytes memory output) =
+            TestUtils.executeCall(sender, address(receiver), 100_000, testEncodedCall);
         assertEq(gasUsed, 1234);
         assertEq(output.length, 0);
     }
@@ -424,8 +392,8 @@ contract GatewayBase is Test {
         bytes memory encodedCall =
             abi.encodeCall(Gateway.submitMessage, (gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data));
         (uint256 execution, uint256 base, bytes memory output) =
-            executeCall(gmpSender, address(gateway), 100_000, encodedCall);
-        assertEq(output.length, 0, "unexpected gateway.submitMessage output");
+            TestUtils.executeCall(gmpSender, address(gateway), 100_000, encodedCall);
+        assertEq(output.length, 32, "unexpected gateway.submitMessage output");
 
         // Verify the gas cost
         uint256 expectedCost = SUBMIT_GAS_COST + 2800 + 351;
@@ -441,8 +409,8 @@ contract GatewayBase is Test {
 
         // Submit GMP message
         encodedCall = abi.encodeCall(Gateway.submitMessage, (gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data));
-        (execution, base, output) = executeCall(gmpSender, address(gateway), 100_000, encodedCall);
-        assertEq(output.length, 0, "unexpected gateway.submitMessage output");
+        (execution, base, output) = TestUtils.executeCall(gmpSender, address(gateway), 100_000, encodedCall);
+        assertEq(output.length, 32, "unexpected gateway.submitMessage output");
 
         // Verify the gas cost
         expectedCost = SUBMIT_GAS_COST + 351;
@@ -458,9 +426,8 @@ contract GatewayBase is Test {
 
         // Submit GMP message
         encodedCall = abi.encodeCall(Gateway.submitMessage, (gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data));
-        (execution, base, output) = executeCall(gmpSender, address(gateway), 100_000, encodedCall);
-        assertEq(output.length, 0, "unexpected gateway.submitMessage output");
-
+        (execution, base, output) = TestUtils.executeCall(gmpSender, address(gateway), 100_000, encodedCall);
+        assertEq(output.length, 32, "unexpected gateway.submitMessage output");
         // Verify the gas cost
         expectedCost = SUBMIT_GAS_COST + 351;
         assertEq(execution, expectedCost, "unexpected execution gas cost");

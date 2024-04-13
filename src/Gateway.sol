@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Analog's Contracts (last updated v0.1.0) (src/Gateway.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity >=0.8.0;
 
 import {Schnorr} from "frost-evm/sol/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
@@ -354,7 +354,7 @@ contract Gateway is IGateway, IExecutor, GatewayEIP712 {
         uint16 destinationNetwork,
         uint256 executionGasLimit,
         bytes memory data
-    ) external payable {
+    ) external payable returns (bytes32) {
         // TODO: charge the gas cost of the Gateway execution
 
         // Check if the msg.sender is a contract or an EOA
@@ -370,13 +370,12 @@ contract Gateway is IGateway, IExecutor, GatewayEIP712 {
         uint256 salt = BranchlessMath.select(prevHash == FIRST_MESSAGE_PLACEHOLDER, 0, uint256(prevHash));
 
         // Create GMP message and update prevMessageHash
-        {
-            GmpMessage memory message =
-                GmpMessage(source, NETWORK_ID, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
-            prevHash = message.eip712TypedHash(DOMAIN_SEPARATOR);
-            prevMessageHash = prevHash;
-        }
+        GmpMessage memory message =
+            GmpMessage(source, NETWORK_ID, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
+        prevHash = message.eip712TypedHash(DOMAIN_SEPARATOR);
+        prevMessageHash = prevHash;
 
         emit GmpCreated(prevHash, source, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
+        return prevHash;
     }
 }

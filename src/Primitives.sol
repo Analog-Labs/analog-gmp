@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Analog's Contracts (last updated v0.1.0) (src/Primitives.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity >=0.8.0;
 
 /**
  * @dev Tss public key
