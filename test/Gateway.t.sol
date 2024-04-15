@@ -106,7 +106,6 @@ contract GatewayBase is Test {
         signer = new Signer(secret);
         TssKey[] memory keys = new TssKey[](1);
         keys[0] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()});
-
         address deployer = TestUtils.createTestAccount(100 ether);
         vm.startPrank(deployer, deployer);
         address proxyAddr = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
@@ -375,7 +374,6 @@ contract GatewayBase is Test {
             data: abi.encode(uint256(100_000))
         });
         Signature memory sig = sign(gmp);
-
         CallOptions memory ctx = CallOptions({
             from: sender,
             to: address(gateway),
