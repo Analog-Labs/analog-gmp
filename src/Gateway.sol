@@ -50,7 +50,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
 
-    uint256 internal constant EXECUTE_GAS_DIFF = 9039 + 2287; // Measured gas cost difference for `execute`
+    uint256 internal constant EXECUTE_GAS_DIFF = 11_325; // Measured gas cost difference for `execute`
 
     // Non-zero value used to initialize the `prevMessageHash` storage
     bytes32 internal constant FIRST_MESSAGE_PLACEHOLDER = bytes32(uint256(2 ** 256 - 1));
@@ -132,10 +132,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     function _transactionBaseGas() internal pure returns (uint256 result) {
         /// @solidity memory-safe-assembly
         assembly {
-            let ptr := 0
             let mask := 0x0101010101010101010101010101010101010101010101010101010101010101
             // 1
-            let v := calldataload(ptr)
+            let ptr := 0
+            let v := calldataload(0)
             v := or(v, shr(4, v))
             v := or(v, shr(2, v))
             v := or(v, shr(1, v))
