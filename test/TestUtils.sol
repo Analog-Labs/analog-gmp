@@ -116,6 +116,16 @@ library TestUtils {
         baseCost = 21_000 + (nonZeros * 16) + (zeros * 4);
     }
 
+    /**
+     * @dev Calculate the tx base cost.
+     * formula: 21000 + zeros * 4 + nonZeros * 16
+     * Reference: https://eips.ethereum.org/EIPS/eip-2028
+     */
+    function memExpansionCost(uint256 size) internal pure returns (uint256) {
+        uint256 words = (size + 31) / 32;
+        return ((words ** 2) / 512) + (words * 3);
+    }
+
     // Get calldata
     function getCalldata() internal pure returns (bytes memory out) {
         /// @solidity memory-safe-assembly
@@ -237,11 +247,17 @@ library TestUtils {
     {
         // Compute the base tx cost (21k + 4 * zeros + 16 * nonZeros)
         {
-            uint256 zeros = countNonZeros(data);
-            uint256 nonZeros = data.length - zeros;
+            uint256 nonZeros = countNonZeros(data);
+            uint256 zeros = data.length - nonZeros;
             uint256 inputCost = (nonZeros * 16) + (zeros * 4);
             baseCost = inputCost + 21_000;
         }
+
+        // Decrement sender base cost
+        uint256 gasRequired = baseCost + gasLimit;
+        uint256 fees = gasRequired * tx.gasprice;
+        require(sender.balance >= fees, "account has no sufficient funds");
+        vm.deal(sender, sender.balance - fees);
 
         // Execute
         (VmSafe.CallerMode callerMode,,) = vm.readCallers();
@@ -250,6 +266,13 @@ library TestUtils {
         }
         bool success;
         (executionCost, success, out) = _call(dest, gasLimit, data);
+
+        // Refund unused gas
+        uint256 refund = (gasLimit - executionCost) * tx.gasprice;
+        if (refund > 0) {
+            vm.deal(sender, sender.balance + refund);
+        }
+
         assembly {
             if iszero(success) { revert(add(out, 32), mload(out)) }
         }
