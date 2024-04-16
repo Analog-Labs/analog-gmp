@@ -9,7 +9,7 @@ import {IGateway} from "./interfaces/IGateway.sol";
 import {IUpgradable} from "./interfaces/IUpgradable.sol";
 import {IGmpRecipient} from "./interfaces/IGmpRecipient.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
-import {TssKey, GmpMessage, UpdateKeysMessage, Signature, PrimitivesEip712} from "./Primitives.sol";
+import {TssKey, GmpMessage, UpdateKeysMessage, Signature, Network, PrimitivesEip712} from "./Primitives.sol";
 
 abstract contract GatewayEIP712 {
     // EIP-712: Typed structured data hashing and signing
@@ -25,7 +25,7 @@ abstract contract GatewayEIP712 {
     }
 
     // Computes the EIP-712 domain separador
-    function computeDomainSeparator(uint256 networkId, address addr) private pure returns (bytes32) {
+    function computeDomainSeparator(uint256 networkId, address addr) internal pure returns (bytes32) {
         return keccak256(
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
@@ -64,6 +64,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Source address => Source network => Deposit Amount
     mapping(bytes32 => mapping(uint16 => uint256)) _deposits;
 
+    // Source address => Source network => Deposit Amount
+    mapping(uint16 => bytes32) _networks;
+
     // Hash of the previous GMP message submitted.
     bytes32 public prevMessageHash;
 
@@ -92,15 +95,18 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         bytes32 result; // the result of the GMP message
     }
 
-    constructor(uint16 networkId, address proxy) payable GatewayEIP712(networkId, proxy) {}
+    constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
 
-    function initialize(TssKey[] memory keys) external {
+    function initialize(TssKey[] memory keys, Network[] calldata networks) external {
         require(PROXY_ADDRESS == address(this), "only proxy can be initialize");
         require(prevMessageHash == 0, "already initialized");
 
         // Initialize the prevMessageHash with a non-zero value to avoid the first GMP to spent more gas,
         // once initialize the storage cost 21k gas, while alter it cost just 2800 gas.
         prevMessageHash = FIRST_MESSAGE_PLACEHOLDER;
+
+        // Register networks
+        _updateNetworks(networks);
 
         // Register keys
         _registerKeys(keys);
@@ -114,12 +120,16 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return _messages[id];
     }
 
-    function depositOf(bytes32 source, uint16 networkId) external view returns (uint256) {
-        return _deposits[source][networkId];
+    function depositOf(bytes32 source, uint16 network) external view returns (uint256) {
+        return _deposits[source][network];
     }
 
     function keyInfo(bytes32 id) external view returns (KeyInfo memory) {
         return _shards[id];
+    }
+
+    function networkId() external view returns (uint16) {
+        return NETWORK_ID;
     }
 
     // Best-effort attempt at estimating the base gas use of the transaction.
@@ -302,6 +312,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return bytes32(tssKey.xCoord);
     }
 
+    // Converts a `TssKey` into an `KeyInfo` unique identifier
+    function _updateNetworks(Network[] calldata networks) private {
+        for (uint256 i = 0; i < networks.length; i++) {
+            Network calldata network = networks[i];
+            _networks[network.id] = computeDomainSeparator(network.id, network.gateway);
+        }
+    }
+
     function _registerKeys(TssKey[] memory keys) private {
         // We don't perform any arithmetic operation, except iterate a loop
         unchecked {
@@ -404,6 +422,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     // Deposit balance to refund callers of execute
     function deposit(bytes32 source, uint16 network) public payable {
+        // Check if the source network is supported
+        require(_networks[network] != bytes32(0), "unsupported network");
         _deposits[source][network] += msg.value;
     }
 
@@ -489,6 +509,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
         require(message.destNetwork == NETWORK_ID, "invalid gmp network");
+        require(_networks[message.srcNetwork] != bytes32(0), "unsupported source network");
+
         bytes32 messageHash = message.eip712TypedHash(DOMAIN_SEPARATOR);
         _verifySignature(signature, messageHash);
         (status, result) = _execute(messageHash, message);
@@ -516,7 +538,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint256 executionGasLimit,
         bytes memory data
     ) external payable returns (bytes32) {
-        // TODO: charge the gas cost of the Gateway execution
+        // Check if the destination network is supported
+        bytes32 domainSeparator = _networks[destinationNetwork];
+        require(domainSeparator != bytes32(0), "unsupported network");
 
         // Check if the msg.sender is a contract or an EOA
         uint256 isContract = BranchlessMath.toUint(tx.origin != msg.sender);
@@ -533,7 +557,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Create GMP message and update prevMessageHash
         GmpMessage memory message =
             GmpMessage(source, NETWORK_ID, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
-        prevHash = message.eip712TypedHash(DOMAIN_SEPARATOR);
+        prevHash = message.eip712TypedHash(domainSeparator);
         prevMessageHash = prevHash;
 
         emit GmpCreated(prevHash, source, destinationAddress, destinationNetwork, executionGasLimit, salt, data);

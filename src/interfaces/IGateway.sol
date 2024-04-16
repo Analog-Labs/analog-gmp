@@ -27,6 +27,8 @@ interface IGateway {
         bytes data
     );
 
+    function networkId() external view returns (uint16);
+
     /**
      * @notice Pay for gas of contract execution on destination chain.
      * @dev This function is called on the destination chain before calling the gateway to execute a source contract.

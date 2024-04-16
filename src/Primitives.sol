@@ -58,6 +58,16 @@ struct UpdateKeysMessage {
 }
 
 /**
+ * @dev Message payload used to revoke or/and register new shards
+ * @param revoke Shard's keys to revoke
+ * @param register Shard's keys to register
+ */
+struct Network {
+    uint16 id;
+    address gateway;
+}
+
+/**
  * @dev EIP-712 utility functions for primitives
  */
 library PrimitivesEip712 {
