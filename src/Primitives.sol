@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Analog's Contracts (last updated v0.1.0) (src/Primitives.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity >=0.8.0;
 
 /**
  * @dev Tss public key
@@ -55,6 +55,16 @@ struct GmpMessage {
 struct UpdateKeysMessage {
     TssKey[] revoke;
     TssKey[] register;
+}
+
+/**
+ * @dev Message payload used to revoke or/and register new shards
+ * @param revoke Shard's keys to revoke
+ * @param register Shard's keys to register
+ */
+struct Network {
+    uint16 id;
+    address gateway;
 }
 
 /**

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Analog's Contracts (last updated v0.1.0) (src/interfaces/IGateway.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity >=0.8.0;
 
 /**
  * @dev Required interface of an Gateway compliant contract
@@ -26,6 +26,8 @@ interface IGateway {
         uint256 salt,
         bytes data
     );
+
+    function networkId() external view returns (uint16);
 
     /**
      * @notice Pay for gas of contract execution on destination chain.
@@ -55,5 +57,5 @@ interface IGateway {
         uint16 destinationNetwork,
         uint256 executionGasLimit,
         bytes calldata data
-    ) external payable;
+    ) external payable returns (bytes32);
 }
