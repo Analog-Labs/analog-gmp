@@ -3,16 +3,16 @@
 
 pragma solidity >=0.8.0;
 
-import {Gateway, GatewayEIP712} from "src/Gateway.sol";
-import {GatewayProxy} from "src/GatewayProxy.sol";
-import {IGateway} from "src/interfaces/IGateway.sol";
-import {IGmpRecipient} from "src/interfaces/IGmpRecipient.sol";
-import {IExecutor} from "src/interfaces/IExecutor.sol";
-import {GmpMessage, UpdateKeysMessage, Signature, TssKey, Network, PrimitivesEip712} from "src/Primitives.sol";
 import {Signer} from "frost-evm/sol/Signer.sol";
 import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils} from "./TestUtils.sol";
+import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
+import {GatewayProxy} from "../src/GatewayProxy.sol";
+import {IGateway} from "../src/interfaces/IGateway.sol";
+import {IGmpRecipient} from "../src/interfaces/IGmpRecipient.sol";
+import {IExecutor} from "../src/interfaces/IExecutor.sol";
+import {GmpMessage, UpdateKeysMessage, Signature, TssKey, Network, PrimitivesEip712} from "../src/Primitives.sol";
 
 uint256 constant secret = 0x42;
 uint256 constant nonce = 0x69;
