@@ -82,11 +82,11 @@ contract GmpTestToolsTest is Test {
         // Switch to Shibuya network and Alice account
         GmpTestTools.switchNetwork(SHIBUYA_NETWORK, ALICE);
 
-        // Teleport 100 tokens from Alice's to to Bob's account in sepolia
+        // Teleport 100 tokens from Alice to to Bob's account in sepolia
         // Obs: The `teleport` method internally calls `gateway.submitMessage(...)`
         bytes32 messageID = shibuyaErc20.teleport(BOB, 100);
 
-        // Now with the `messageID`, Alice can check if the message status in the destination gateway contract
+        // Now with the `messageID`, Alice can check the message status in the destination gateway contract
         // status 0: means the message is pending
         // status 1: means the message was executed successfully
         // status 2: means the message was executed but reverted
