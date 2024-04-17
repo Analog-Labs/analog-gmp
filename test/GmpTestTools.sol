@@ -5,11 +5,11 @@ pragma solidity >=0.8.0;
 
 import {VmSafe, Vm} from "forge-std/Vm.sol";
 import {TestUtils, SigningKey, SigningUtils} from "./TestUtils.sol";
-import {Gateway} from "src/Gateway.sol";
-import {GatewayProxy} from "src/GatewayProxy.sol";
-import {IGateway} from "src/interfaces/IGateway.sol";
-import {BranchlessMath} from "src/utils/BranchlessMath.sol";
-import {GmpMessage, TssKey, Network, Signature, PrimitivesEip712} from "src/Primitives.sol";
+import {Gateway} from "../src/Gateway.sol";
+import {GatewayProxy} from "../src/GatewayProxy.sol";
+import {IGateway} from "../src/interfaces/IGateway.sol";
+import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
+import {GmpMessage, TssKey, Network, Signature, PrimitivesEip712} from "../src/Primitives.sol";
 
 library GmpTestTools {
     /**
@@ -19,35 +19,35 @@ library GmpTestTools {
     Vm private constant vm = Vm(VM_ADDRESS);
 
     // Sepolia Properties
-    Gateway internal constant ETHEREUM_SEPOLIA = Gateway(0x40E6E96Ca269A3F81020311ff51b122Cf8B52898);
-    uint16 internal constant ETHEREUM_SEPOLIA_ID = 5;
-    bytes32 internal constant SEPOLIA_SIGNER = keccak256("analog.sepolia.signer");
+    Gateway internal constant SEPOLIA_GATEWAY = Gateway(0x40E6E96Ca269A3F81020311ff51b122Cf8B52898);
+    uint16 internal constant SEPOLIA_NETWORK_ID = 5;
+    bytes32 internal constant SEPOLIA_SHARD_SECRET = keccak256("analog.sepolia.shard.secret");
     bytes32 internal constant SEPOLIA_DOMAIN_SEPARATOR = keccak256(
         abi.encode(
             keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
             keccak256("Analog Gateway Contract"),
             keccak256("0.1.0"),
-            uint256(ETHEREUM_SEPOLIA_ID),
-            address(ETHEREUM_SEPOLIA)
+            uint256(SEPOLIA_NETWORK_ID),
+            address(SEPOLIA_GATEWAY)
         )
     );
 
     // Shibuya Properties
-    Gateway internal constant ASTAR_SHIBUYA = Gateway(0xd6081eEa537865f2109cfaC53e7A6937566F82fB);
-    uint16 internal constant ASTAR_SHIBUYA_ID = 7;
-    bytes32 internal constant SHIBUYA_SIGNER = keccak256("analog.shibuya.signer");
+    Gateway internal constant SHIBUYA_GATEWAY = Gateway(0xd6081eEa537865f2109cfaC53e7A6937566F82fB);
+    uint16 internal constant SHIBUYA_NETWORK_ID = 7;
+    bytes32 internal constant SHIBUYA_SHARD_SECRET = keccak256("analog.shibuya.shard.secret");
     bytes32 internal constant SHIBUYA_DOMAIN_SEPARATOR = keccak256(
         abi.encode(
             keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
             keccak256("Analog Gateway Contract"),
             keccak256("0.1.0"),
-            uint256(ASTAR_SHIBUYA_ID),
-            address(ASTAR_SHIBUYA)
+            uint256(SHIBUYA_NETWORK_ID),
+            address(SHIBUYA_GATEWAY)
         )
     );
 
     /**
-     * @dev Minimal EIP1667 compliant smart contract bytecode.
+     * @dev Minimal Eip1667 proxy bytecode.
      */
     bytes private constant _PROXY_BYTECODE =
         hex"365f5f375f5f365f7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc545af43d5f5f3e6036573d5ffd5b3d5ff3";
@@ -59,14 +59,15 @@ library GmpTestTools {
     bytes32 private constant _IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
 
     /**
-     * @dev Storage slot.
+     * @dev Log index storage slot.
+     * This prevents a given message from being execute more than once.
      */
-    bytes32 private constant _CONTEXT_SLOT = bytes32(uint256(keccak256("analog.gmp.GmpTestTools")) - 1);
+    bytes32 private constant _LOG_INDEX_SLOT = bytes32(uint256(keccak256("analog.GmpTestTools.logIndex")) - 1);
 
     /**
      * @dev Mapping of network ID to fork ID.
      */
-    bytes32 private constant _FORKS_SLOT = bytes32(uint256(keccak256("analog.gmp.GmpTestTools.forks")) - 1);
+    bytes32 private constant _FORKS_SLOT = bytes32(uint256(keccak256("analog.GmpTestTools.forks")) - 1);
 
     /**
      * @dev Storage slot.
@@ -78,20 +79,20 @@ library GmpTestTools {
         uint256 shibuyaForkID = vm.createFork("https://evm.shibuya.astar.network", 6102790);
 
         // Save the fork IDs
-        _storeForkID(ETHEREUM_SEPOLIA_ID, sepoliaForkID);
-        _storeForkID(ASTAR_SHIBUYA_ID, shibuyaForkID);
+        _storeForkID(SEPOLIA_NETWORK_ID, sepoliaForkID);
+        _storeForkID(SHIBUYA_NETWORK_ID, shibuyaForkID);
 
         // Deploy the gateways
         Network[] memory networks = new Network[](2);
-        networks[0] = Network({id: ETHEREUM_SEPOLIA_ID, gateway: address(ETHEREUM_SEPOLIA)});
-        networks[1] = Network({id: ASTAR_SHIBUYA_ID, gateway: address(ASTAR_SHIBUYA)});
+        networks[0] = Network({id: SEPOLIA_NETWORK_ID, gateway: address(SEPOLIA_GATEWAY)});
+        networks[1] = Network({id: SHIBUYA_NETWORK_ID, gateway: address(SHIBUYA_GATEWAY)});
 
         // Setup the networks
-        require(switchNetwork(ETHEREUM_SEPOLIA_ID) == sepoliaForkID, "unexpected sepolia fork id");
-        setupNetwork(ETHEREUM_SEPOLIA_ID, address(ETHEREUM_SEPOLIA), SEPOLIA_SIGNER, networks);
+        require(switchNetwork(SEPOLIA_NETWORK_ID) == sepoliaForkID, "unexpected sepolia fork id");
+        setupNetwork(SEPOLIA_NETWORK_ID, address(SEPOLIA_GATEWAY), SEPOLIA_SHARD_SECRET, networks);
 
-        require(switchNetwork(ASTAR_SHIBUYA_ID) == shibuyaForkID, "unexpected shibuya fork id");
-        setupNetwork(ASTAR_SHIBUYA_ID, address(ASTAR_SHIBUYA), SHIBUYA_SIGNER, networks);
+        require(switchNetwork(SHIBUYA_NETWORK_ID) == shibuyaForkID, "unexpected shibuya fork id");
+        setupNetwork(SHIBUYA_NETWORK_ID, address(SHIBUYA_GATEWAY), SHIBUYA_SHARD_SECRET, networks);
 
         // Record logs must be enabled to allow this tool to retrieve the GMP messages
         vm.recordLogs();
@@ -138,11 +139,11 @@ library GmpTestTools {
             return;
         }
         // Select sepolia and execute callback
-        switchNetwork(ETHEREUM_SEPOLIA_ID);
+        switchNetwork(SEPOLIA_NETWORK_ID);
         vm.deal(account, newBalance);
 
         // Select shibuya and execute callback
-        switchNetwork(ASTAR_SHIBUYA_ID);
+        switchNetwork(SHIBUYA_NETWORK_ID);
         vm.deal(account, newBalance);
     }
 
@@ -159,17 +160,19 @@ library GmpTestTools {
         );
     }
 
-    /// @notice Execute all pending GMP messages
-    function flushPendingMessages() internal {
+    /**
+     * @dev Execute all pending GMP messages.
+     */
+    function relayMessages() internal {
         uint256 activeFork = vm.activeFork();
         GmpMessage[] memory allMessages = messages();
-        _executeMessages(ASTAR_SHIBUYA, ASTAR_SHIBUYA_ID, SHIBUYA_SIGNER, allMessages);
-        _executeMessages(ETHEREUM_SEPOLIA, ETHEREUM_SEPOLIA_ID, SEPOLIA_SIGNER, allMessages);
+        _executeMessages(SHIBUYA_GATEWAY, SHIBUYA_NETWORK_ID, SHIBUYA_SHARD_SECRET, allMessages);
+        _executeMessages(SEPOLIA_GATEWAY, SEPOLIA_NETWORK_ID, SEPOLIA_SHARD_SECRET, allMessages);
         vm.selectFork(activeFork);
     }
 
     /**
-     * @dev Returns the `uint256` located at `slot`.
+     * @dev Switch to `network` fork id.
      */
     function switchNetwork(uint16 network) internal returns (uint256 forkId) {
         forkId = _loadForkID(network);
@@ -178,7 +181,7 @@ library GmpTestTools {
     }
 
     /**
-     * @dev Returns the `uint256` located at `slot`.
+     * @dev Switch to the `network` fork id and sets all subsequent calls' `msg.sender` to `msgSender`.
      */
     function switchNetwork(uint16 network, address msgSender) internal returns (uint256 forkId) {
         forkId = switchNetwork(network);
@@ -187,18 +190,22 @@ library GmpTestTools {
     }
 
     /**
-     * @dev Returns the `uint256` located at `slot`.
+     * @dev Stores the network fork id.
      */
     function _storeForkID(uint16 network, uint256 forkId) private {
         bytes32 slot = _deriveMapping(_FORKS_SLOT, uint256(network));
+        // Once zero is a valid fork id, we XOR before storing to prevent
+        // an invalid network from returning a valid fork id
         _sstoreUint256(slot, forkId ^ uint256(_FORKS_SLOT));
     }
 
     /**
-     * @dev Returns the network fork.
+     * @dev Load the fork id of a given `network`
      */
     function _loadForkID(uint16 network) private view returns (uint256) {
         bytes32 slot = _deriveMapping(_FORKS_SLOT, uint256(network));
+        // Once zero is a valid fork id, we XOR the returned result to prevent
+        // an invalid network from returning a valid fork id
         return _sloadUint256(slot) ^ uint256(_FORKS_SLOT);
     }
 
@@ -245,12 +252,14 @@ library GmpTestTools {
         }
     }
 
-    /// @notice Retrieve all GMP messages from the recorded logs
+    /**
+     * @dev Retrieve all pending messages from the recorded logs
+     */
     function messages() internal returns (GmpMessage[] memory gmpMessages) {
         bytes32[] memory topics = new bytes32[](1);
         topics[0] = IGateway.GmpCreated.selector;
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        uint256 logIndex = _sloadUint256(_CONTEXT_SLOT);
+        uint256 logIndex = _sloadUint256(_LOG_INDEX_SLOT);
         gmpMessages = new GmpMessage[](logs.length - logIndex);
         uint256 pos = 0;
         for (uint256 i = logIndex; i < logs.length; i++) {
@@ -258,10 +267,10 @@ library GmpTestTools {
 
             // Filter emitters
             uint16 srcNetwork;
-            if (log.emitter == address(ETHEREUM_SEPOLIA)) {
-                srcNetwork = ETHEREUM_SEPOLIA_ID;
-            } else if (log.emitter == address(ASTAR_SHIBUYA)) {
-                srcNetwork = ASTAR_SHIBUYA_ID;
+            if (log.emitter == address(SEPOLIA_GATEWAY)) {
+                srcNetwork = SEPOLIA_NETWORK_ID;
+            } else if (log.emitter == address(SHIBUYA_GATEWAY)) {
+                srcNetwork = SHIBUYA_NETWORK_ID;
             } else {
                 continue;
             }
@@ -284,7 +293,7 @@ library GmpTestTools {
                 data: data
             });
         }
-        _sstoreUint256(_CONTEXT_SLOT, logs.length);
+        _sstoreUint256(_LOG_INDEX_SLOT, logs.length);
     }
 
     function _executeMessages(Gateway gateway, uint16 network, bytes32 secret, GmpMessage[] memory gmpMessages)
@@ -300,7 +309,7 @@ library GmpTestTools {
             // Compute the message ID
             bytes32 messageID = PrimitivesEip712.eip712TypedHash(message, domainSeparator);
 
-            // Skip if the message is not intended for the destination network
+            // Skip if the message is not intended for this network
             if (message.destNetwork != network) {
                 continue;
             }

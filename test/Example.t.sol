@@ -6,16 +6,15 @@ pragma solidity >=0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {console} from "forge-std/console.sol";
-// import "forge-std/Script.sol";
-import {Gateway, GatewayEIP712} from "src/Gateway.sol";
-import {GatewayProxy} from "src/GatewayProxy.sol";
-import {IGateway} from "src/interfaces/IGateway.sol";
-import {IGmpRecipient} from "src/interfaces/IGmpRecipient.sol";
-import {IExecutor} from "src/interfaces/IExecutor.sol";
-import {GmpMessage, UpdateKeysMessage, Signature, TssKey, Network, PrimitivesEip712} from "src/Primitives.sol";
-import {MockERC20} from "src/examples/MockERC20.sol";
-import {TestUtils, SigningKey, VerifyingKey, SigningUtils} from "./TestUtils.sol";
+import {MockERC20} from "./MockERC20.sol";
 import {GmpTestTools} from "./GmpTestTools.sol";
+import {TestUtils, SigningKey, VerifyingKey, SigningUtils} from "./TestUtils.sol";
+import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
+import {GatewayProxy} from "../src/GatewayProxy.sol";
+import {IGateway} from "../src/interfaces/IGateway.sol";
+import {IGmpRecipient} from "../src/interfaces/IGmpRecipient.sol";
+import {IExecutor} from "../src/interfaces/IExecutor.sol";
+import {GmpMessage, UpdateKeysMessage, Signature, TssKey, Network, PrimitivesEip712} from "../src/Primitives.sol";
 
 contract ExampleTest is Test {
     using SigningUtils for SigningKey;
