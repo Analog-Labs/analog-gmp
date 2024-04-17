@@ -15,6 +15,7 @@ import {IExecutor} from "src/interfaces/IExecutor.sol";
 import {GmpMessage, UpdateKeysMessage, Signature, TssKey, Network, PrimitivesEip712} from "src/Primitives.sol";
 import {MockERC20} from "src/examples/MockERC20.sol";
 import {TestUtils, SigningKey, VerifyingKey, SigningUtils} from "./TestUtils.sol";
+import {GmpTestTools} from "./GmpTestTools.sol";
 
 contract ExampleTest is Test {
     using SigningUtils for SigningKey;
@@ -57,7 +58,7 @@ contract ExampleTest is Test {
         assertTrue(vk.verify("hello world!", c, z), "invalid signature");
     }
 
-    function testTssSignature() external {
+    function testTeleportAliceTokens() external {
         _sender = TestUtils.createTestAccount(100 ether);
         vm.startPrank(_sender, _sender);
 
