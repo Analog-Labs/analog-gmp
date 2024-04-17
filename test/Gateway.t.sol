@@ -96,7 +96,7 @@ contract GatewayBase is Test {
     // Receiver Contract, the will waste the exact amount of gas you sent to it in the data field
     IGmpRecipient internal receiver;
 
-    uint256 private constant EXECUTE_CALL_COST = 49_773;
+    uint256 private constant EXECUTE_CALL_COST = 49_615;
     uint256 private constant SUBMIT_GAS_COST = 5907;
     uint16 private constant SRC_NETWORK_ID = 0;
     uint16 internal constant DEST_NETWORK_ID = 69;

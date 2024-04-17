@@ -50,7 +50,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
 
-    uint256 internal constant EXECUTE_GAS_DIFF = 11_325; // Measured gas cost difference for `execute`
+    uint256 internal constant EXECUTE_GAS_DIFF = 11_182; // Measured gas cost difference for `execute`
 
     // Non-zero value used to initialize the `prevMessageHash` storage
     bytes32 internal constant FIRST_MESSAGE_PLACEHOLDER = bytes32(uint256(2 ** 256 - 1));
@@ -286,7 +286,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     /**
      * @dev  Verify if shard exists, if the TSS signature is valid then increment shard's nonce.
      */
-    function _verifySignature(Signature memory signature, bytes32 message) private view {
+    function _verifySignature(Signature calldata signature, bytes32 message) private view {
         // Load shard from storage
         KeyInfo storage signer = _shards[bytes32(signature.xCoord)];
 
@@ -412,7 +412,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     // Register/Revoke TSS keys using shard TSS signature
-    function updateKeys(Signature memory signature, UpdateKeysMessage memory message) public {
+    function updateKeys(Signature calldata signature, UpdateKeysMessage memory message) public {
         bytes32 messageHash = message.eip712TypedHash(DOMAIN_SEPARATOR);
         _verifySignature(signature, messageHash);
 
@@ -500,7 +500,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      * @param signature Schnorr signature
      * @param message GMP message
      */
-    function execute(Signature memory signature, GmpMessage memory message)
+    function execute(Signature calldata signature, GmpMessage memory message)
         public
         returns (uint8 status, bytes32 result)
     {
