@@ -44,7 +44,7 @@ contract MockERC20 is ERC20, IGmpRecipient {
     function teleport(address to, uint256 amount) external returns (bytes32) {
         _burn(msg.sender, amount);
         bytes memory message = abi.encode(CrossChainTransfer({from: msg.sender, to: to, amount: amount}));
-        return GATEWAY.submitMessage(address(DESTINATION), 1337, MSG_GAS_LIMIT, message);
+        return GATEWAY.submitMessage(address(DESTINATION), DESTINATION_NETWORK, MSG_GAS_LIMIT, message);
     }
 
     function onGmpReceived(bytes32 id, uint128 network, bytes32 sender, bytes calldata data)

@@ -67,6 +67,26 @@ struct Network {
     address gateway;
 }
 
+enum GmpStatusEnum {
+    NOT_FOUND,
+    PENDING,
+    SUCCESS,
+    REVERT
+}
+
+/**
+ * @dev GMP info stored in the Gateway Contract
+ * OBS: the order of the attributes matters! ethereum storage is 256bit aligned, try to keep
+ * the attributes 256 bit aligned, ex: nonce, block and status can be read in one storage access.
+ * reference: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html
+ */
+struct GmpStatus {
+    uint184 _gap; // gap to keep status and blocknumber 256bit aligned
+    uint8 status; // message status: NOT_FOUND | PENDING | SUCCESS | REVERT
+    uint64 blockNumber; // block in which the message was processed
+    bytes32 result; // the result of the GMP message
+}
+
 /**
  * @dev EIP-712 utility functions for primitives
  */

@@ -190,19 +190,19 @@ library TestUtils {
     /**
      * @dev Creates a new TSS signer
      */
-    function createSigner(bytes32 secret) internal pure returns (SigningKey memory) {
-        return createSigner(uint256(secret));
+    function signerFromEntropy(bytes32 entropy) internal pure returns (SigningKey memory) {
+        uint256 secret = uint256(entropy);
+        while (secret >= Schnorr.Q) {
+            secret = uint256(keccak256(abi.encodePacked(secret)));
+        }
+        return createSigner(secret);
     }
 
     /**
      * @dev Creates an unique TSS signer per test case
      */
     function createSigner() internal pure returns (SigningKey memory) {
-        uint256 secret = uint256(keccak256(getCalldata()));
-        while (secret >= Schnorr.Q) {
-            secret = uint256(keccak256(abi.encodePacked(secret)));
-        }
-        return createSigner(secret);
+        return signerFromEntropy(keccak256(getCalldata()));
     }
 
     // Workaround for set the tx.gasLimit, currently is not possible to define the gaslimit in foundry
@@ -276,6 +276,46 @@ library TestUtils {
         assembly {
             if iszero(success) { revert(add(out, 32), mload(out)) }
         }
+    }
+
+    function setCallerMode(VmSafe.CallerMode callerMode, address msgSender, address txOrigin)
+        internal
+        returns (VmSafe.CallerMode prevCallerMode, address prevMsgSender, address prevTxOrigin)
+    {
+        (prevCallerMode, prevMsgSender, prevTxOrigin) = vm.readCallers();
+
+        // Stop previous caller mode
+        if (prevCallerMode == VmSafe.CallerMode.RecurrentBroadcast) {
+            vm.stopBroadcast();
+        } else if (prevCallerMode == VmSafe.CallerMode.RecurrentPrank) {
+            vm.stopPrank();
+        }
+
+        // Set new caller mode
+        if (callerMode == VmSafe.CallerMode.Broadcast) {
+            vm.broadcast(msgSender);
+        } else if (callerMode == VmSafe.CallerMode.RecurrentBroadcast) {
+            vm.startBroadcast(msgSender);
+        } else if (callerMode == VmSafe.CallerMode.Prank) {
+            vm.prank(msgSender, txOrigin);
+        } else if (callerMode == VmSafe.CallerMode.RecurrentPrank) {
+            vm.startPrank(msgSender, txOrigin);
+        }
+    }
+
+    function prank(address msgSender, address txOrigin, function() f) internal {
+        VmSafe.CallerMode callerMode = VmSafe.CallerMode.RecurrentPrank;
+        (callerMode, msgSender, txOrigin) = setCallerMode(VmSafe.CallerMode.RecurrentPrank, msgSender, txOrigin);
+        f();
+        setCallerMode(callerMode, msgSender, txOrigin);
+    }
+
+    function prank(address msgSender, function() f) internal {
+        VmSafe.CallerMode callerMode = VmSafe.CallerMode.RecurrentPrank;
+        address txOrigin = msgSender;
+        (callerMode, msgSender, txOrigin) = setCallerMode(VmSafe.CallerMode.RecurrentPrank, msgSender, txOrigin);
+        f();
+        setCallerMode(callerMode, msgSender, txOrigin);
     }
 }
 
