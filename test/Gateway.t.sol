@@ -10,7 +10,7 @@ import {TestUtils} from "./TestUtils.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
-import {IGmpRecipient} from "../src/interfaces/IGmpRecipient.sol";
+import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
 import {
     GmpMessage,
@@ -103,7 +103,7 @@ contract GatewayBase is Test {
     Signer internal signer;
 
     // Receiver Contract, the will waste the exact amount of gas you sent to it in the data field
-    IGmpRecipient internal receiver;
+    IGmpReceiver internal receiver;
 
     uint256 private constant EXECUTE_CALL_COST = 49_662;
     uint256 private constant SUBMIT_GAS_COST = 5907;
@@ -139,7 +139,7 @@ contract GatewayBase is Test {
         {
             bytes memory bytecode =
                 hex"603b80600a5f395ff3fe60a4355a5b6000828203126004570360080180603b015b805a11601657505a03604b03565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b00";
-            receiver = IGmpRecipient(TestUtils.deployContract(bytecode));
+            receiver = IGmpReceiver(TestUtils.deployContract(bytecode));
         }
     }
 
@@ -182,7 +182,7 @@ contract GatewayBase is Test {
 
     function testReceiver() external {
         bytes memory testEncodedCall = abi.encodeCall(
-            IGmpRecipient.onGmpReceived,
+            IGmpReceiver.onGmpReceived,
             (
                 0x0000000000000000000000000000000000000000000000000000000000000000,
                 1,

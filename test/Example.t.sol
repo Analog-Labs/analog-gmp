@@ -12,7 +12,7 @@ import {TestUtils, SigningKey, VerifyingKey, SigningUtils} from "./TestUtils.sol
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
-import {IGmpRecipient} from "../src/interfaces/IGmpRecipient.sol";
+import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
 import {
     GmpMessage,

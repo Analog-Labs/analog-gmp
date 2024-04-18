@@ -4,10 +4,10 @@
 pragma solidity >=0.8.0;
 
 import {ERC20} from "@solmate/tokens/ERC20.sol";
-import {IGmpRecipient} from "../src/interfaces/IGmpRecipient.sol";
+import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 
-contract MockERC20 is ERC20, IGmpRecipient {
+contract MockERC20 is ERC20, IGmpReceiver {
     IGateway private immutable _gateway;
     MockERC20 private immutable _recipientErc20;
     uint16 private immutable _recipientNetwork;
