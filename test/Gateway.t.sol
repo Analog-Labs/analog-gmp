@@ -252,7 +252,7 @@ contract GatewayBase is Test {
             from: sender,
             to: address(gateway),
             value: 0,
-            gasLimit: expectGasUsed + 2160 + 10_000,
+            gasLimit: expectGasUsed + 2160 + 785,
             executionCost: 0,
             baseCost: 0
         });
