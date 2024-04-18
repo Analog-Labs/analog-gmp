@@ -3,7 +3,7 @@
 
 pragma solidity >=0.8.0;
 
-import {Schnorr} from "frost-evm/sol/Schnorr.sol";
+import {Schnorr} from "@frost-evm/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {IGateway} from "./interfaces/IGateway.sol";
 import {IUpgradable} from "./interfaces/IUpgradable.sol";

@@ -4,8 +4,8 @@
 pragma solidity >=0.8.0;
 
 import {VmSafe, Vm} from "forge-std/Vm.sol";
-import {Schnorr} from "frost-evm/sol/Schnorr.sol";
-import {SECP256K1} from "frost-evm/sol/SECP256K1.sol";
+import {Schnorr} from "@frost-evm/Schnorr.sol";
+import {SECP256K1} from "@frost-evm/SECP256K1.sol";
 
 struct VerifyingKey {
     uint256 px;
