@@ -1,5 +1,5 @@
 forge-std/=lib/forge-std/src/
-frost-evm/=lib/frost-evm/
+@frost-evm/=lib/frost-evm/sol/
 @solmate/=lib/solmate/src/
 ds-test/=lib/solmate/lib/ds-test/src/
 solmate/=lib/solmate/src/
