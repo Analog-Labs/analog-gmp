@@ -50,7 +50,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
 
-    uint256 internal constant EXECUTE_GAS_DIFF = 11_182; // Measured gas cost difference for `execute`
+    uint256 internal constant EXECUTE_GAS_DIFF = 11_182 - 844 + 175; // Measured gas cost difference for `execute`
 
     // Non-zero value used to initialize the `prevMessageHash` storage
     bytes32 internal constant FIRST_MESSAGE_PLACEHOLDER = bytes32(uint256(2 ** 256 - 1));
@@ -428,7 +428,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     // Execute GMP message
-    function _execute(bytes32 payloadHash, GmpMessage memory message) private returns (uint8 status, bytes32 result) {
+    function _execute(bytes32 payloadHash, GmpMessage calldata message, bytes memory data)
+        private
+        returns (uint8 status, bytes32 result)
+    {
         // Verify if this GMP message was already executed
         GmpInfo storage gmp = _messages[payloadHash];
         require(gmp.status == GMP_STATUS_NOT_FOUND, "message already executed");
@@ -438,8 +441,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         gmp.blockNumber = uint64(block.number);
 
         // The encoded onGmpReceived call
-        bytes memory data =
-            abi.encodeCall(IGmpRecipient.onGmpReceived, (payloadHash, message.srcNetwork, message.source, message.data));
+        // data =
+        //     abi.encodeCall(IGmpRecipient.onGmpReceived, (payloadHash, message.srcNetwork, message.source, message.data));
 
         // Execute GMP call
         bytes32[1] memory output = [bytes32(0)];
@@ -500,8 +503,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      * @param signature Schnorr signature
      * @param message GMP message
      */
-    function execute(Signature calldata signature, GmpMessage memory message)
-        public
+    function execute(Signature calldata signature, GmpMessage calldata message)
+        external
         returns (uint8 status, bytes32 result)
     {
         uint256 startGas = gasleft();
@@ -509,11 +512,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
         require(message.destNetwork == NETWORK_ID, "invalid gmp network");
-        require(_networks[message.srcNetwork] != bytes32(0), "unsupported source network");
+        require(_networks[message.srcNetwork] != bytes32(0), "source network no supported");
 
-        bytes32 messageHash = message.eip712TypedHash(DOMAIN_SEPARATOR);
+        (bytes32 messageHash, bytes memory data) = message.eip712TypedHash(DOMAIN_SEPARATOR);
         _verifySignature(signature, messageHash);
-        (status, result) = _execute(messageHash, message);
+        (status, result) = _execute(messageHash, message, data);
         uint256 deposited = _deposits[message.source][message.srcNetwork];
 
         // Calculate a gas refund, capped to protect against huge spikes in `tx.gasprice`
@@ -557,7 +560,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Create GMP message and update prevMessageHash
         GmpMessage memory message =
             GmpMessage(source, NETWORK_ID, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
-        prevHash = message.eip712TypedHash(domainSeparator);
+        prevHash = message.eip712TypedHashMem(domainSeparator);
         prevMessageHash = prevHash;
 
         emit GmpCreated(prevHash, source, destinationAddress, destinationNetwork, executionGasLimit, salt, data);

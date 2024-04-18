@@ -57,7 +57,7 @@ contract ExampleTest is Test {
         assertTrue(vk.verify("hello world!", c, z), "invalid signature");
     }
 
-    function testTeleportAliceTokens() external {
+    function testTeleportTokens() external {
         _sender = TestUtils.createTestAccount(100 ether);
         vm.startPrank(_sender, _sender);
 
@@ -96,7 +96,7 @@ contract ExampleTest is Test {
         });
 
         // Expect `GmpCreated` to be emitted
-        bytes32 messageID = gmp.eip712TypedHash(dstGateway.DOMAIN_SEPARATOR());
+        bytes32 messageID = gmp.eip712TypedHashMem(dstGateway.DOMAIN_SEPARATOR());
         vm.expectEmit(true, true, true, true, address(srcGateway));
         emit IGateway.GmpCreated(messageID, gmp.source, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data);
 

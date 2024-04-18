@@ -32,7 +32,7 @@ contract SigUtilsTest is GatewayEIP712, Test {
             salt: 0,
             data: ""
         });
-        bytes32 typedHash = gmp.eip712TypedHash(DOMAIN_SEPARATOR);
+        bytes32 typedHash = gmp.eip712TypedHashMem(DOMAIN_SEPARATOR);
         bytes32 expected = keccak256(
             hex"19013e3afdf794f679fcbf97eba49dbe6b67cec6c7d029f1ad9a5e1a8ffefa8db2724ed044f24764343e77b5677d43585d5d6f1b7618eeddf59280858c68350af1cd"
         );
@@ -96,7 +96,7 @@ contract GatewayBase is Test {
     // Receiver Contract, the will waste the exact amount of gas you sent to it in the data field
     IGmpRecipient internal receiver;
 
-    uint256 private constant EXECUTE_CALL_COST = 49_615;
+    uint256 private constant EXECUTE_CALL_COST = 49_423;
     uint256 private constant SUBMIT_GAS_COST = 5907;
     uint16 private constant SRC_NETWORK_ID = 0;
     uint16 internal constant DEST_NETWORK_ID = 69;
@@ -135,7 +135,7 @@ contract GatewayBase is Test {
     }
 
     function sign(GmpMessage memory gmp) internal view returns (Signature memory) {
-        uint256 hash = uint256(gmp.eip712TypedHash(gateway.DOMAIN_SEPARATOR()));
+        uint256 hash = uint256(gmp.eip712TypedHashMem(gateway.DOMAIN_SEPARATOR()));
         (uint256 e, uint256 s) = signer.signPrehashed(hash, nonce);
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
     }
@@ -242,8 +242,8 @@ contract GatewayBase is Test {
         // Deposit funds
         assertEq(gateway.depositOf(sender.source(), DEST_NETWORK_ID), 0);
         vm.prank(sender, sender);
-        gateway.deposit{value: expectGasUsed + baseCost}(sender.source(), DEST_NETWORK_ID);
-        assertEq(gateway.depositOf(sender.source(), DEST_NETWORK_ID), expectGasUsed + baseCost);
+        gateway.deposit{value: expectGasUsed + baseCost + 20_000}(sender.source(), DEST_NETWORK_ID);
+        assertEq(gateway.depositOf(sender.source(), DEST_NETWORK_ID), expectGasUsed + baseCost + 20_000);
 
         // Execute GMP message
         bytes32 expectResult = bytes32(0);
@@ -261,7 +261,7 @@ contract GatewayBase is Test {
 
             // Verify the GMP message status
             assertEq(status, GMP_STATUS_SUCCESS, "Unexpected GMP status");
-            Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.eip712TypedHash(gateway.DOMAIN_SEPARATOR()));
+            Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.eip712TypedHashMem(gateway.DOMAIN_SEPARATOR()));
             assertEq(info.status, GMP_STATUS_SUCCESS, "GMP status stored doesn't match the returned status");
             assertEq(info.result, expectResult, "GMP result stored doesn't match the returned result");
 
