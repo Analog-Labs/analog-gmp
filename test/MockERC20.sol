@@ -8,14 +8,11 @@ import {IGmpRecipient} from "../src/interfaces/IGmpRecipient.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 
 contract MockERC20 is ERC20, IGmpRecipient {
-    IGateway private immutable GATEWAY;
-    MockERC20 private immutable DESTINATION;
-    uint16 private immutable DESTINATION_NETWORK;
+    IGateway private immutable _gateway;
+    MockERC20 private immutable _recipientErc20;
+    uint16 private immutable _recipientNetwork;
 
-    error InvalidGateway();
-    error Unathorized();
-
-    // Cross-chain transfer destination
+    // Gas limit used to execute `onGmpReceived` method.
     uint256 private constant MSG_GAS_LIMIT = 100_000;
 
     struct CrossChainTransfer {
@@ -28,14 +25,14 @@ contract MockERC20 is ERC20, IGmpRecipient {
         string memory name,
         string memory symbol,
         IGateway gatewayAddress,
-        MockERC20 other,
-        uint16 otherNetwork,
+        MockERC20 recipient,
+        uint16 recipientNetwork,
         address holder,
         uint256 initialSupply
     ) ERC20(name, symbol, 10) {
-        GATEWAY = gatewayAddress;
-        DESTINATION = other;
-        DESTINATION_NETWORK = otherNetwork;
+        _gateway = gatewayAddress;
+        _recipientErc20 = recipient;
+        _recipientNetwork = recipientNetwork;
         if (initialSupply > 0) {
             _mint(holder, initialSupply);
         }
@@ -44,7 +41,7 @@ contract MockERC20 is ERC20, IGmpRecipient {
     function teleport(address to, uint256 amount) external returns (bytes32) {
         _burn(msg.sender, amount);
         bytes memory message = abi.encode(CrossChainTransfer({from: msg.sender, to: to, amount: amount}));
-        return GATEWAY.submitMessage(address(DESTINATION), DESTINATION_NETWORK, MSG_GAS_LIMIT, message);
+        return _gateway.submitMessage(address(_recipientErc20), _recipientNetwork, MSG_GAS_LIMIT, message);
     }
 
     function onGmpReceived(bytes32 id, uint128 network, bytes32 sender, bytes calldata data)
@@ -52,9 +49,9 @@ contract MockERC20 is ERC20, IGmpRecipient {
         payable
         returns (bytes32)
     {
-        require(msg.sender == address(GATEWAY), "Unauthorized: only the gateway can call this method");
-        require(network == DESTINATION_NETWORK, "Unauthorized network");
-        require(address(uint160(uint256(sender))) == address(DESTINATION), "Unauthorized sender");
+        require(msg.sender == address(_gateway), "Unauthorized: only the gateway can call this method");
+        require(network == _recipientNetwork, "Unauthorized network");
+        require(address(uint160(uint256(sender))) == address(_recipientErc20), "Unauthorized sender");
         CrossChainTransfer memory message = abi.decode(data, (CrossChainTransfer));
         _mint(message.to, message.amount);
         return id;

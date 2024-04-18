@@ -67,24 +67,14 @@ struct Network {
     address gateway;
 }
 
-enum GmpStatusEnum {
-    NOT_FOUND,
-    PENDING,
-    SUCCESS,
-    REVERT
-}
-
 /**
- * @dev GMP info stored in the Gateway Contract
- * OBS: the order of the attributes matters! ethereum storage is 256bit aligned, try to keep
- * the attributes 256 bit aligned, ex: nonce, block and status can be read in one storage access.
- * reference: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html
+ * @dev Status of a GMP message
  */
-struct GmpStatus {
-    uint184 _gap; // gap to keep status and blocknumber 256bit aligned
-    uint8 status; // message status: NOT_FOUND | PENDING | SUCCESS | REVERT
-    uint64 blockNumber; // block in which the message was processed
-    bytes32 result; // the result of the GMP message
+enum GmpStatus {
+    NOT_FOUND,
+    SUCCESS,
+    REVERT,
+    PENDING
 }
 
 /**
@@ -130,28 +120,107 @@ library PrimitivesEip712 {
         pure
         returns (bytes32)
     {
-        return keccak256(abi.encodePacked("\x19\x01", domainSeparator, eip712hash(message)));
+        return _computeTypedHash(domainSeparator, eip712hash(message));
     }
 
-    // computes the hash of an array of tss keys
-    function eip712hash(GmpMessage memory gmp) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                keccak256(
-                    "GmpMessage(bytes32 source,uint16 srcNetwork,address dest,uint16 destNetwork,uint256 gasLimit,uint256 salt,bytes data)"
-                ),
-                gmp.source,
-                gmp.srcNetwork,
-                gmp.dest,
-                gmp.destNetwork,
-                gmp.gasLimit,
-                gmp.salt,
-                keccak256(gmp.data)
-            )
-        );
+    function eip712hashMem(GmpMessage memory message) internal pure returns (bytes32 id) {
+        bytes memory data = message.data;
+        /// @solidity memory-safe-assembly
+        assembly {
+            let offset := sub(message, 32)
+            let backup := mload(offset)
+            {
+                id := keccak256(add(data, 32), mload(data))
+                mstore(offset, 0xeb1e0a6b8c4db87ab3beb15e5ae24e7c880703e1b9ee466077096eaeba83623b)
+                {
+                    let offset2 := add(offset, 0xe0)
+                    let backup2 := mload(offset2)
+                    mstore(offset2, id)
+                    id := keccak256(offset, 0x100)
+                    mstore(offset2, backup2)
+                }
+            }
+            mstore(offset, backup)
+        }
     }
 
-    function eip712TypedHash(GmpMessage memory message, bytes32 domainSeparator) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked("\x19\x01", domainSeparator, eip712hash(message)));
+    function eip712TypedHash(GmpMessage calldata message, bytes32 domainSeparator)
+        internal
+        pure
+        returns (bytes32 messageHash, bytes memory r)
+    {
+        bytes calldata data = message.data;
+        /// @solidity memory-safe-assembly
+        assembly {
+            r := mload(0x40)
+            // keccak256("GmpMessage(bytes32 source,uint16 srcNetwork,address dest,uint16 destNetwork,uint256 gasLimit,uint256 salt,bytes data)")
+            mstore(add(r, 0x0004), 0xeb1e0a6b8c4db87ab3beb15e5ae24e7c880703e1b9ee466077096eaeba83623b)
+            mstore(add(r, 0x0024), calldataload(add(message, 0x00))) // message.source
+            mstore(add(r, 0x0044), calldataload(add(message, 0x20))) // message.srcNetwork
+            mstore(add(r, 0x0064), calldataload(add(message, 0x40))) // message.dest
+            mstore(add(r, 0x0084), calldataload(add(message, 0x60))) // message.destNetwork
+            mstore(add(r, 0x00a4), calldataload(add(message, 0x80))) // message.gasLimit
+            mstore(add(r, 0x00c4), calldataload(add(message, 0xa0))) // message.salt
+
+            // Copy message.data to memory
+            let size := data.length
+            mstore(add(r, 0x0104), size) // message.data length
+            calldatacopy(add(r, 0x0124), data.offset, size) // message.data
+
+            // Computed GMP Typed Hash
+            messageHash := keccak256(add(r, 0x0124), size) // keccak(message.data)
+            mstore(add(r, 0x00e4), messageHash)
+            messageHash := keccak256(add(r, 0x04), 0x0100) // GMP eip712 hash
+            mstore(0, 0x1901)
+            mstore(0x20, domainSeparator)
+            mstore(0x40, messageHash) // this will be restored at the end of this function
+            messageHash := keccak256(0x1e, 0x42) // GMP Typed Hash
+
+            // onGmpReceived
+            size := and(add(size, 31), 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0)
+            size := add(size, 0xa4)
+            mstore(add(r, 0x0064), 0x01900937) // selector
+            mstore(add(r, 0x0060), size) // length
+            mstore(add(r, 0x0084), messageHash) // GMP Typed Hash
+            mstore(add(r, 0x00a4), calldataload(add(message, 0x20))) // msg.network
+            mstore(add(r, 0x00c4), calldataload(add(message, 0x00))) // msg.source
+            mstore(add(r, 0x00e4), 0x80) // msg.data offset
+
+            size := and(add(size, 31), 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0)
+            size := add(size, 0x60)
+            mstore(0x40, add(add(r, size), 0x40))
+            r := add(r, 0x60)
+        }
+    }
+
+    function eip712TypedHashMem(GmpMessage memory message, bytes32 domainSeparator)
+        internal
+        pure
+        returns (bytes32 messageHash)
+    {
+        messageHash = eip712hashMem(message);
+        messageHash = _computeTypedHash(domainSeparator, messageHash);
+    }
+
+    function _computeTypedHash(bytes32 domainSeparator, bytes32 messageHash) private pure returns (bytes32 r) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            let b2 := mload(0x40)
+            {
+                let b1 := mload(0x20)
+                {
+                    let b0 := mload(0x00)
+                    {
+                        mstore(0, 0x1901)
+                        mstore(0x20, domainSeparator)
+                        mstore(0x40, messageHash)
+                        r := keccak256(0x1e, 0x42)
+                    }
+                    mstore(0x00, b0)
+                }
+                mstore(0x20, b1)
+            }
+            mstore(0x40, b2)
+        }
     }
 }

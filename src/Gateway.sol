@@ -9,7 +9,9 @@ import {IGateway} from "./interfaces/IGateway.sol";
 import {IUpgradable} from "./interfaces/IUpgradable.sol";
 import {IGmpRecipient} from "./interfaces/IGmpRecipient.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
-import {TssKey, GmpMessage, UpdateKeysMessage, Signature, Network, PrimitivesEip712} from "./Primitives.sol";
+import {
+    TssKey, GmpMessage, UpdateKeysMessage, Signature, Network, GmpStatus, PrimitivesEip712
+} from "./Primitives.sol";
 
 abstract contract GatewayEIP712 {
     // EIP-712: Typed structured data hashing and signing
@@ -42,15 +44,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     using PrimitivesEip712 for UpdateKeysMessage;
     using PrimitivesEip712 for GmpMessage;
 
-    uint8 internal constant GMP_STATUS_NOT_FOUND = 0; // GMP message not processed
-    uint8 internal constant GMP_STATUS_SUCCESS = 1; // GMP message executed successfully
-    uint8 internal constant GMP_STATUS_REVERTED = 2; // GMP message executed, but reverted
-    uint8 internal constant GMP_STATUS_PENDING = 128; // GMP message is pending (used in case of reetrancy)
-
     uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
 
-    uint256 internal constant EXECUTE_GAS_DIFF = 11_325; // Measured gas cost difference for `execute`
+    // Measured gas cost difference for `execute` method
+    uint256 internal constant EXECUTE_GAS_DIFF = 10_584;
 
     // Non-zero value used to initialize the `prevMessageHash` storage
     bytes32 internal constant FIRST_MESSAGE_PLACEHOLDER = bytes32(uint256(2 ** 256 - 1));
@@ -90,7 +88,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     struct GmpInfo {
         uint184 _gap; // gap to keep status and blocknumber 256bit aligned
-        uint8 status; // message status: NOT_FOUND | PENDING | SUCCESS | REVERT
+        GmpStatus status;
         uint64 blockNumber; // block in which the message was processed
         bytes32 result; // the result of the GMP message
     }
@@ -273,20 +271,16 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             v := and(v, 0xffff)
             v := add(and(v, 0xff), shr(8, v))
 
-            // mstore(0, nonZeros)
             result := add(21000, add(mul(sub(calldatasize(), v), 4), mul(v, 16)))
             let words := shr(5, add(calldatasize(), 31))
             result := add(result, add(shr(9, mul(words, words)), mul(words, 3)))
-            // mstore(0, add(21000, add(mul(sub(calldatasize(), v), 4), mul(v, 16))))
-            // return(0, 32)
         }
-        // return 21_000 + (msg.data.length * 16);
     }
 
     /**
      * @dev  Verify if shard exists, if the TSS signature is valid then increment shard's nonce.
      */
-    function _verifySignature(Signature memory signature, bytes32 message) private view {
+    function _verifySignature(Signature calldata signature, bytes32 message) private view {
         // Load shard from storage
         KeyInfo storage signer = _shards[bytes32(signature.xCoord)];
 
@@ -412,7 +406,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     // Register/Revoke TSS keys using shard TSS signature
-    function updateKeys(Signature memory signature, UpdateKeysMessage memory message) public {
+    function updateKeys(Signature calldata signature, UpdateKeysMessage memory message) public {
         bytes32 messageHash = message.eip712TypedHash(DOMAIN_SEPARATOR);
         _verifySignature(signature, messageHash);
 
@@ -428,18 +422,17 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     // Execute GMP message
-    function _execute(bytes32 payloadHash, GmpMessage memory message) private returns (uint8 status, bytes32 result) {
+    function _execute(bytes32 payloadHash, GmpMessage calldata message, bytes memory data)
+        private
+        returns (GmpStatus status, bytes32 result)
+    {
         // Verify if this GMP message was already executed
         GmpInfo storage gmp = _messages[payloadHash];
-        require(gmp.status == GMP_STATUS_NOT_FOUND, "message already executed");
+        require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
 
         // Update status to `pending` to prevent reentrancy attacks.
-        gmp.status = GMP_STATUS_PENDING;
+        gmp.status = GmpStatus.PENDING;
         gmp.blockNumber = uint64(block.number);
-
-        // The encoded onGmpReceived call
-        bytes memory data =
-            abi.encodeCall(IGmpRecipient.onGmpReceived, (payloadHash, message.srcNetwork, message.source, message.data));
 
         // Execute GMP call
         bytes32[1] memory output = [bytes32(0)];
@@ -485,7 +478,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         result = output[0];
 
         // Update GMP status
-        status = uint8(BranchlessMath.select(success, GMP_STATUS_SUCCESS, GMP_STATUS_REVERTED));
+        status = GmpStatus(BranchlessMath.select(success, uint256(GmpStatus.SUCCESS), uint256(GmpStatus.REVERT)));
 
         // Persist result and status on storage
         gmp.result = result;
@@ -500,20 +493,20 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      * @param signature Schnorr signature
      * @param message GMP message
      */
-    function execute(Signature memory signature, GmpMessage memory message)
-        public
-        returns (uint8 status, bytes32 result)
+    function execute(Signature calldata signature, GmpMessage calldata message)
+        external
+        returns (GmpStatus status, bytes32 result)
     {
         uint256 startGas = gasleft();
 
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
         require(message.destNetwork == NETWORK_ID, "invalid gmp network");
-        require(_networks[message.srcNetwork] != bytes32(0), "unsupported source network");
+        require(_networks[message.srcNetwork] != bytes32(0), "source network no supported");
 
-        bytes32 messageHash = message.eip712TypedHash(DOMAIN_SEPARATOR);
+        (bytes32 messageHash, bytes memory data) = message.eip712TypedHash(DOMAIN_SEPARATOR);
         _verifySignature(signature, messageHash);
-        (status, result) = _execute(messageHash, message);
+        (status, result) = _execute(messageHash, message, data);
         uint256 deposited = _deposits[message.source][message.srcNetwork];
 
         // Calculate a gas refund, capped to protect against huge spikes in `tx.gasprice`
@@ -557,7 +550,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Create GMP message and update prevMessageHash
         GmpMessage memory message =
             GmpMessage(source, NETWORK_ID, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
-        prevHash = message.eip712TypedHash(domainSeparator);
+        prevHash = message.eip712TypedHashMem(domainSeparator);
         prevMessageHash = prevHash;
 
         emit GmpCreated(prevHash, source, destinationAddress, destinationNetwork, executionGasLimit, salt, data);

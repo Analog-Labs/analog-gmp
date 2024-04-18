@@ -212,10 +212,8 @@ library TestUtils {
     {
         require(gasleft() > (gasLimit + 5000), "insufficient gas");
         require(addr.code.length > 0, "Not a contract address");
-        uint256 gasAfter;
         /// @solidity memory-safe-assembly
         assembly {
-            let gasBefore := gas()
             success :=
                 call(
                     0x7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E, // gas limit
@@ -226,9 +224,7 @@ library TestUtils {
                     0,
                     0
                 )
-            gasAfter := gas()
-            gasAfter := sub(gasBefore, gasAfter)
-            gasUsed := mload(mload(0x40))
+            gasUsed := mload(0)
 
             out := mload(0x40)
             let size := returndatasize()
@@ -253,18 +249,19 @@ library TestUtils {
         }
 
         // Decrement sender base cost
-        uint256 gasRequired = baseCost + gasLimit;
-        uint256 fees = gasRequired * tx.gasprice;
-        require(sender.balance >= fees, "account has no sufficient funds");
-        vm.deal(sender, sender.balance - fees);
+        {
+            uint256 gasRequired = baseCost + gasLimit;
+            uint256 fees = gasRequired * tx.gasprice;
+            require(sender.balance >= fees, "account has no sufficient funds");
+            vm.deal(sender, sender.balance - fees);
+        }
 
         // Execute
-        (VmSafe.CallerMode callerMode,,) = vm.readCallers();
-        if (callerMode == VmSafe.CallerMode.None) {
-            vm.prank(sender, sender);
-        }
+        (VmSafe.CallerMode callerMode, address msgSender, address txOrigin) =
+            setCallerMode(VmSafe.CallerMode.RecurrentPrank, sender, sender);
         bool success;
         (executionCost, success, out) = _call(dest, gasLimit, data);
+        setCallerMode(callerMode, msgSender, txOrigin);
 
         // Refund unused gas
         uint256 refund = (gasLimit - executionCost) * tx.gasprice;

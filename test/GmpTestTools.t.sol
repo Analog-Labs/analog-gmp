@@ -11,7 +11,7 @@ import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
-import {GmpMessage, PrimitivesEip712} from "../src/Primitives.sol";
+import {GmpMessage, GmpStatus, PrimitivesEip712} from "../src/Primitives.sol";
 
 contract GmpTestToolsTest is Test {
     using PrimitivesEip712 for GmpMessage;
@@ -26,7 +26,7 @@ contract GmpTestToolsTest is Test {
     Gateway private constant SHIBUYA_GATEWAY = Gateway(GmpTestTools.SHIBUYA_GATEWAY);
     uint16 private constant SHIBUYA_NETWORK = GmpTestTools.SHIBUYA_NETWORK_ID;
 
-    /// @dev Test the teleport of tokens from Alice's account in Sepolia to Alice's account in Shibuya
+    /// @dev Test the teleport of tokens from Alice's account in Shibuya to Bob's account in Sepolia
     function testTeleportAliceTokens() external {
         ////////////////////////////////////
         // Step 1: Setup test environment //
@@ -91,7 +91,10 @@ contract GmpTestToolsTest is Test {
         // status 1: means the message was executed successfully
         // status 2: means the message was executed but reverted
         GmpTestTools.switchNetwork(SEPOLIA_NETWORK, ALICE);
-        assertTrue(SEPOLIA_GATEWAY.gmpInfo(messageID).status == 0, "unexpected message status, expect 'pending'");
+        assertTrue(
+            SEPOLIA_GATEWAY.gmpInfo(messageID).status == GmpStatus.NOT_FOUND,
+            "unexpected message status, expect 'pending'"
+        );
 
         ///////////////////////////////////////////////////
         // Step 5: Wait Chronicles Relay the GMP message //
@@ -104,8 +107,8 @@ contract GmpTestToolsTest is Test {
         // here we can simulate this behavior by calling `GmpTestTools.relayMessages()`, this will relay all pending messages.
         GmpTestTools.relayMessages();
 
-        // Success! The GMP message has been executed!!!
-        assertTrue(SEPOLIA_GATEWAY.gmpInfo(messageID).status == 1, "failed to execute GMP");
+        // Success! The GMP message was executed!!!
+        assertTrue(SEPOLIA_GATEWAY.gmpInfo(messageID).status == GmpStatus.SUCCESS, "failed to execute GMP");
 
         // Check ALICE and BOB balance in shibuya
         GmpTestTools.switchNetwork(SHIBUYA_NETWORK);
