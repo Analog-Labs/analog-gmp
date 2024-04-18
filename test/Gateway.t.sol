@@ -12,7 +12,15 @@ import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IGmpRecipient} from "../src/interfaces/IGmpRecipient.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
-import {GmpMessage, UpdateKeysMessage, Signature, TssKey, Network, PrimitivesEip712} from "../src/Primitives.sol";
+import {
+    GmpMessage,
+    UpdateKeysMessage,
+    Signature,
+    TssKey,
+    Network,
+    GmpStatus,
+    PrimitivesEip712
+} from "../src/Primitives.sol";
 
 uint256 constant secret = 0x42;
 uint256 constant nonce = 0x69;
@@ -52,7 +60,7 @@ struct CallOptions {
 library GatewayUtils {
     function execute(CallOptions memory ctx, Signature memory signature, GmpMessage memory message)
         internal
-        returns (uint8 status, bytes32 result)
+        returns (GmpStatus status, bytes32 result)
     {
         require(ctx.gasLimit >= message.gasLimit, "GatewayUtils: gas left below message.gasLimit");
         bytes memory encodedCall = abi.encodeCall(IExecutor.execute, (signature, message));
@@ -97,7 +105,7 @@ contract GatewayBase is Test {
     // Receiver Contract, the will waste the exact amount of gas you sent to it in the data field
     IGmpRecipient internal receiver;
 
-    uint256 private constant EXECUTE_CALL_COST = 49_423;
+    uint256 private constant EXECUTE_CALL_COST = 49_662;
     uint256 private constant SUBMIT_GAS_COST = 5907;
     uint16 private constant SRC_NETWORK_ID = 0;
     uint16 internal constant DEST_NETWORK_ID = 69;
@@ -236,12 +244,12 @@ contract GatewayBase is Test {
             baseCost: 0
         });
         {
-            (uint8 status, bytes32 returned) = ctx.execute(sig, gmp);
+            (GmpStatus status, bytes32 returned) = ctx.execute(sig, gmp);
 
             // Verify the GMP message status
-            assertEq(status, GMP_STATUS_SUCCESS, "Unexpected GMP status");
+            assertTrue(status == GmpStatus.SUCCESS, "Unexpected GMP status");
             Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.eip712TypedHashMem(gateway.DOMAIN_SEPARATOR()));
-            assertEq(info.status, GMP_STATUS_SUCCESS, "GMP status stored doesn't match the returned status");
+            assertTrue(info.status == GmpStatus.SUCCESS, "GMP status stored doesn't match the returned status");
             assertEq(info.result, expectResult, "GMP result stored doesn't match the returned result");
 
             // Verify the gas cost
@@ -301,12 +309,12 @@ contract GatewayBase is Test {
             baseCost: 0
         });
         {
-            (uint8 status, bytes32 returned) = ctx.execute(sig, gmp);
+            (GmpStatus status, bytes32 returned) = ctx.execute(sig, gmp);
 
             // Verify the GMP message status
-            assertEq(status, GMP_STATUS_SUCCESS, "Unexpected GMP status");
+            assertTrue(status == GmpStatus.SUCCESS, "Unexpected GMP status");
             Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.eip712TypedHashMem(gateway.DOMAIN_SEPARATOR()));
-            assertEq(info.status, GMP_STATUS_SUCCESS, "GMP status stored doesn't match the returned status");
+            assertTrue(info.status == GmpStatus.SUCCESS, "GMP status stored doesn't match the returned status");
             assertEq(info.result, expectResult, "GMP result stored doesn't match the returned result");
 
             // Verify the gas cost
@@ -477,8 +485,8 @@ contract GatewayBase is Test {
             executionCost: 0,
             baseCost: 0
         });
-        (uint8 status,) = ctx.execute(sig, gmp);
-        assertEq(status, GMP_STATUS_SUCCESS);
+        (GmpStatus status,) = ctx.execute(sig, gmp);
+        assertTrue(status == GmpStatus.SUCCESS, "unexpected GMP status");
         vm.expectRevert("message already executed");
         ctx.execute(sig, gmp);
     }

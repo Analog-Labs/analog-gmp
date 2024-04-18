@@ -14,7 +14,15 @@ import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IGmpRecipient} from "../src/interfaces/IGmpRecipient.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
-import {GmpMessage, UpdateKeysMessage, Signature, TssKey, Network, PrimitivesEip712} from "../src/Primitives.sol";
+import {
+    GmpMessage,
+    UpdateKeysMessage,
+    Signature,
+    TssKey,
+    Network,
+    GmpStatus,
+    PrimitivesEip712
+} from "../src/Primitives.sol";
 
 contract ExampleTest is Test {
     using SigningUtils for SigningKey;
@@ -108,15 +116,15 @@ contract ExampleTest is Test {
         vm.startPrank(_sender, _sender);
         (uint256 c, uint256 z) = signer.signPrehashed(messageID, TestUtils.randomFromSeed(1));
         Signature memory sig = Signature({xCoord: signer.pubkey.px, e: c, s: z});
-        assertTrue(dstGateway.gmpInfo(messageID).status == 0, "GMP message already executed");
+        assertTrue(dstGateway.gmpInfo(messageID).status == GmpStatus.NOT_FOUND, "GMP message already executed");
 
         // Expect `GmpExecuted` to be emitted
         vm.expectEmit(true, true, true, true, address(dstGateway));
-        emit IExecutor.GmpExecuted(messageID, gmp.source, gmp.dest, 1, messageID);
+        emit IExecutor.GmpExecuted(messageID, gmp.source, gmp.dest, GmpStatus.SUCCESS, messageID);
 
         // Execute the GMP message
         dstGateway.execute(sig, gmp);
-        assertTrue(dstGateway.gmpInfo(messageID).status == 1, "failed to execute GMP message");
+        assertTrue(dstGateway.gmpInfo(messageID).status == GmpStatus.SUCCESS, "failed to execute GMP message");
 
         // Check balance
         assertEq(srcToken.balanceOf(ALICE), 900, "sender balance mismatch");

@@ -9,7 +9,9 @@ import {IGateway} from "./interfaces/IGateway.sol";
 import {IUpgradable} from "./interfaces/IUpgradable.sol";
 import {IGmpRecipient} from "./interfaces/IGmpRecipient.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
-import {TssKey, GmpMessage, UpdateKeysMessage, Signature, Network, PrimitivesEip712} from "./Primitives.sol";
+import {
+    TssKey, GmpMessage, UpdateKeysMessage, Signature, Network, GmpStatus, PrimitivesEip712
+} from "./Primitives.sol";
 
 abstract contract GatewayEIP712 {
     // EIP-712: Typed structured data hashing and signing
@@ -42,15 +44,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     using PrimitivesEip712 for UpdateKeysMessage;
     using PrimitivesEip712 for GmpMessage;
 
-    uint8 internal constant GMP_STATUS_NOT_FOUND = 0; // GMP message not processed
-    uint8 internal constant GMP_STATUS_SUCCESS = 1; // GMP message executed successfully
-    uint8 internal constant GMP_STATUS_REVERTED = 2; // GMP message executed, but reverted
-    uint8 internal constant GMP_STATUS_PENDING = 128; // GMP message is pending (used in case of reetrancy)
-
     uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
 
-    uint256 internal constant EXECUTE_GAS_DIFF = 10_513; // Measured gas cost difference for `execute`
+    // Measured gas cost difference for `execute` method
+    uint256 internal constant EXECUTE_GAS_DIFF = 10_584;
 
     // Non-zero value used to initialize the `prevMessageHash` storage
     bytes32 internal constant FIRST_MESSAGE_PLACEHOLDER = bytes32(uint256(2 ** 256 - 1));
@@ -90,7 +88,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     struct GmpInfo {
         uint184 _gap; // gap to keep status and blocknumber 256bit aligned
-        uint8 status; // message status: NOT_FOUND | PENDING | SUCCESS | REVERT
+        GmpStatus status;
         uint64 blockNumber; // block in which the message was processed
         bytes32 result; // the result of the GMP message
     }
@@ -426,14 +424,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Execute GMP message
     function _execute(bytes32 payloadHash, GmpMessage calldata message, bytes memory data)
         private
-        returns (uint8 status, bytes32 result)
+        returns (GmpStatus status, bytes32 result)
     {
         // Verify if this GMP message was already executed
         GmpInfo storage gmp = _messages[payloadHash];
-        require(gmp.status == GMP_STATUS_NOT_FOUND, "message already executed");
+        require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
 
         // Update status to `pending` to prevent reentrancy attacks.
-        gmp.status = GMP_STATUS_PENDING;
+        gmp.status = GmpStatus.PENDING;
         gmp.blockNumber = uint64(block.number);
 
         // Execute GMP call
@@ -480,7 +478,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         result = output[0];
 
         // Update GMP status
-        status = uint8(BranchlessMath.select(success, GMP_STATUS_SUCCESS, GMP_STATUS_REVERTED));
+        status = GmpStatus(BranchlessMath.select(success, uint256(GmpStatus.SUCCESS), uint256(GmpStatus.REVERT)));
 
         // Persist result and status on storage
         gmp.result = result;
@@ -497,7 +495,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     function execute(Signature calldata signature, GmpMessage calldata message)
         external
-        returns (uint8 status, bytes32 result)
+        returns (GmpStatus status, bytes32 result)
     {
         uint256 startGas = gasleft();
 
