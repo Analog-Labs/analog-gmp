@@ -242,8 +242,8 @@ contract GatewayBase is Test {
         // Deposit funds
         assertEq(gateway.depositOf(sender.source(), DEST_NETWORK_ID), 0);
         vm.prank(sender, sender);
-        gateway.deposit{value: expectGasUsed + baseCost + 20_000}(sender.source(), DEST_NETWORK_ID);
-        assertEq(gateway.depositOf(sender.source(), DEST_NETWORK_ID), expectGasUsed + baseCost + 20_000);
+        gateway.deposit{value: expectGasUsed + baseCost}(sender.source(), DEST_NETWORK_ID);
+        assertEq(gateway.depositOf(sender.source(), DEST_NETWORK_ID), expectGasUsed + baseCost);
 
         // Execute GMP message
         bytes32 expectResult = bytes32(0);
@@ -273,7 +273,7 @@ contract GatewayBase is Test {
         // Verify the gas refund
         uint256 afterBalance = sender.balance;
         assertEq(beforeBalance, afterBalance, "wrong refund amount");
-        assertEq(gateway.depositOf(sender.source(), SRC_NETWORK_ID), 0, "discount wrong amount from deposit");
+        assertEq(gateway.depositOf(sender.source(), DEST_NETWORK_ID), 0, "discount wrong amount from deposit");
     }
 
     function testExecuteRevertsWrongNetwork() external {
