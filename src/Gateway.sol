@@ -436,10 +436,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         gmp.status = GMP_STATUS_PENDING;
         gmp.blockNumber = uint64(block.number);
 
-        // The encoded onGmpReceived call
-        // data =
-        //     abi.encodeCall(IGmpRecipient.onGmpReceived, (payloadHash, message.srcNetwork, message.source, message.data));
-
         // Execute GMP call
         bytes32[1] memory output = [bytes32(0)];
         bool success;
