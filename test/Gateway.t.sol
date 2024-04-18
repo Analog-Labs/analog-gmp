@@ -642,7 +642,6 @@ contract GatewayTest is GatewayBase {
             }
 
             // Replace the runtime code with the injected bytecode
-            // mstore(add(i, 1), 0x52)
             mstore(add(i, 1), 0x5B)
             mstore(i, INLINE_BYTECODE)
 
