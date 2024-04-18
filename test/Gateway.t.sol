@@ -130,7 +130,7 @@ contract GatewayBase is Test {
         // See the file `HelperContract.opcode` for more details.
         {
             bytes memory bytecode =
-                hex"6031600d60003960316000f3fe60a4355a0360080180603b015b805a11600c57505a03604103565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b00";
+                hex"603b80600a5f395ff3fe60a4355a5b6000828203126004570360080180603b015b805a11601657505a03604b03565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b00";
             receiver = IGmpRecipient(TestUtils.deployContract(bytecode));
         }
     }
@@ -466,14 +466,14 @@ contract GatewayBase is Test {
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 1000,
             salt: 1,
-            data: abi.encode(uint256(1000))
+            data: abi.encode(uint256(992))
         });
         Signature memory sig = sign(gmp);
         CallOptions memory ctx = CallOptions({
             from: sender,
             to: address(gateway),
             value: 0,
-            gasLimit: 100_000,
+            gasLimit: 1_000_000,
             executionCost: 0,
             baseCost: 0
         });

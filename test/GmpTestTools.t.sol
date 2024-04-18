@@ -26,7 +26,7 @@ contract GmpTestToolsTest is Test {
     Gateway private constant SHIBUYA_GATEWAY = Gateway(GmpTestTools.SHIBUYA_GATEWAY);
     uint16 private constant SHIBUYA_NETWORK = GmpTestTools.SHIBUYA_NETWORK_ID;
 
-    /// @dev Test the teleport of tokens from Alice's account in Sepolia to Alice's account in Shibuya
+    /// @dev Test the teleport of tokens from Alice's account in Shibuya to Bob's account in Sepolia
     function testTeleportAliceTokens() external {
         ////////////////////////////////////
         // Step 1: Setup test environment //
