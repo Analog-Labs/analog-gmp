@@ -273,14 +273,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             v := and(v, 0xffff)
             v := add(and(v, 0xff), shr(8, v))
 
-            // mstore(0, nonZeros)
             result := add(21000, add(mul(sub(calldatasize(), v), 4), mul(v, 16)))
             let words := shr(5, add(calldatasize(), 31))
             result := add(result, add(shr(9, mul(words, words)), mul(words, 3)))
-            // mstore(0, add(21000, add(mul(sub(calldatasize(), v), 4), mul(v, 16))))
-            // return(0, 32)
         }
-        // return 21_000 + (msg.data.length * 16);
     }
 
     /**
