@@ -7,7 +7,7 @@ import {Schnorr} from "frost-evm/sol/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {IGateway} from "./interfaces/IGateway.sol";
 import {IUpgradable} from "./interfaces/IUpgradable.sol";
-import {IGmpRecipient} from "./interfaces/IGmpRecipient.sol";
+import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
 import {
     TssKey, GmpMessage, UpdateKeysMessage, Signature, Network, GmpStatus, PrimitivesEip712
