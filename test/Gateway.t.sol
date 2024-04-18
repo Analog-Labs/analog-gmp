@@ -585,8 +585,6 @@ contract GatewayTest is GatewayBase {
      * uncertainty in the gas measurements. `Yul` have the same issue once we don't control the EVM stack.
      * This code workaround this by doing the gas measurement right before and after execute the CALL opcode.
      */
-    // bytes32 private constant INLINE_BYTECODE = 0x6a0000000000000000000000919594939291905a96f15a606901909103604051;
-    // bytes32 private constant INLINE_BYTECODE = 0x6a0000000000000000000000919594939291905a96f15a606901909103600052;
     bytes32 private constant INLINE_BYTECODE = 0x670000000000000000813f50919594939291905a96f15a606901909103600052;
 
     constructor() payable {
