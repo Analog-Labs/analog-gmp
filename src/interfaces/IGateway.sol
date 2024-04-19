@@ -3,6 +3,8 @@
 
 pragma solidity >=0.8.0;
 
+import {GmpSender} from "../Primitives.sol";
+
 /**
  * @dev Required interface of an Gateway compliant contract
  */
@@ -35,7 +37,7 @@ interface IGateway {
      * @param sender The address making the payment
      * @param sourceNetwork The target chain where the contract call will be made
      */
-    function deposit(bytes32 sender, uint16 sourceNetwork) external payable;
+    function deposit(GmpSender sender, uint16 sourceNetwork) external payable;
 
     /**
      * @notice Pay for gas of contract execution on destination chain.
@@ -43,7 +45,7 @@ interface IGateway {
      * @param sender The address making the payment
      * @param sourceNetwork The target chain where the contract call will be made
      */
-    function depositOf(bytes32 sender, uint16 sourceNetwork) external view returns (uint256);
+    function depositOf(GmpSender sender, uint16 sourceNetwork) external view returns (uint256);
 
     /**
      * @dev Send message from chain A to chain B

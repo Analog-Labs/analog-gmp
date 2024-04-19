@@ -22,14 +22,15 @@ import {
     TssKey,
     Network,
     GmpStatus,
-    PrimitivesEip712
+    GmpSender,
+    PrimitiveUtils
 } from "../src/Primitives.sol";
 
 contract ExampleTest is Test {
     using SigningUtils for SigningKey;
     using SigningUtils for VerifyingKey;
-    using PrimitivesEip712 for GmpMessage;
-    using TestUtils for address;
+    using PrimitiveUtils for GmpMessage;
+    using PrimitiveUtils for address;
 
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 private constant DEST_NETWORK_ID = 1337;
@@ -90,7 +91,7 @@ contract ExampleTest is Test {
         srcToken = new MockERC20("Source Token", "A", srcGateway, dstToken, dstGateway.networkId(), ALICE, 1000);
 
         // Step 3: Deposit tokens on destination Gateway Contract
-        bytes32 source = TestUtils.source(address(srcToken), true);
+        GmpSender source = address(srcToken).toSender(true);
         dstGateway.deposit{value: 10_000_000}(source, SRC_NETWORK_ID);
 
         // Step 4: Send GMP message
@@ -107,7 +108,9 @@ contract ExampleTest is Test {
         // Expect `GmpCreated` to be emitted
         bytes32 messageID = gmp.eip712TypedHashMem(dstGateway.DOMAIN_SEPARATOR());
         vm.expectEmit(true, true, true, true, address(srcGateway));
-        emit IGateway.GmpCreated(messageID, gmp.source, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data);
+        emit IGateway.GmpCreated(
+            messageID, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
+        );
 
         // Submit the GMP message from `sender` contract
         vm.stopPrank();

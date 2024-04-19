@@ -3,6 +3,13 @@
 
 pragma solidity >=0.8.0;
 
+import {BranchlessMath} from "src/utils/BranchlessMath.sol";
+
+/**
+ * @dev GmpSender is the sender of a GMP message
+ */
+type GmpSender is bytes32;
+
 /**
  * @dev Tss public key
  * @param yParity public key y-coord parity, the contract converts it to 27/28
@@ -38,7 +45,7 @@ struct Signature {
  * @param data message data with no specified format
  */
 struct GmpMessage {
-    bytes32 source;
+    GmpSender source;
     uint16 srcNetwork;
     address dest;
     uint16 destNetwork;
@@ -80,7 +87,16 @@ enum GmpStatus {
 /**
  * @dev EIP-712 utility functions for primitives
  */
-library PrimitivesEip712 {
+library PrimitiveUtils {
+    function toAddress(GmpSender sender) internal pure returns (address) {
+        return address(uint160(uint256(GmpSender.unwrap(sender))));
+    }
+
+    function toSender(address addr, bool isContract) internal pure returns (GmpSender) {
+        uint256 sender = BranchlessMath.toUint(isContract) << 160 | uint256(uint160(addr));
+        return GmpSender.wrap(bytes32(sender));
+    }
+
     // computes the hash of an array of tss keys
     function eip712hash(TssKey memory tssKey) internal pure returns (bytes32) {
         return keccak256(abi.encode(keccak256("TssKey(uint8 yParity,uint256 xCoord)"), tssKey.yParity, tssKey.xCoord));
@@ -144,7 +160,7 @@ library PrimitivesEip712 {
         }
     }
 
-    function eip712TypedHash(GmpMessage calldata message, bytes32 domainSeparator)
+    function encodeCallback(GmpMessage calldata message, bytes32 domainSeparator)
         internal
         pure
         returns (bytes32 messageHash, bytes memory r)

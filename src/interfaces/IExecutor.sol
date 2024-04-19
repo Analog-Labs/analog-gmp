@@ -3,7 +3,7 @@
 
 pragma solidity >=0.8.0;
 
-import {Signature, GmpMessage, TssKey, GmpStatus, GmpStatus, UpdateKeysMessage} from "../Primitives.sol";
+import {Signature, GmpMessage, TssKey, GmpStatus, GmpStatus, UpdateKeysMessage, GmpSender} from "../Primitives.sol";
 
 /**
  * @dev Required interface of an Gateway compliant contract
@@ -18,7 +18,7 @@ interface IExecutor {
      * @param result GMP result
      */
     event GmpExecuted(
-        bytes32 indexed id, bytes32 indexed source, address indexed dest, GmpStatus status, bytes32 result
+        bytes32 indexed id, GmpSender indexed source, address indexed dest, GmpStatus status, bytes32 result
     );
 
     /**
