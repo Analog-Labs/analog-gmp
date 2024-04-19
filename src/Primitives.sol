@@ -3,7 +3,7 @@
 
 pragma solidity >=0.8.0;
 
-import {BranchlessMath} from "src/utils/BranchlessMath.sol";
+import {BranchlessMath} from "./utils/BranchlessMath.sol";
 
 /**
  * @dev GmpSender is the sender of a GMP message
