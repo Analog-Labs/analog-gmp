@@ -5,11 +5,12 @@ pragma solidity >=0.8.0;
 
 import {VmSafe, Vm} from "forge-std/Vm.sol";
 import {TestUtils, SigningKey, SigningUtils} from "./TestUtils.sol";
+import {Random} from "./Random.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
-import {GmpMessage, TssKey, Network, Signature, PrimitivesEip712} from "../src/Primitives.sol";
+import {GmpMessage, TssKey, Network, Signature, GmpSender, PrimitiveUtils} from "../src/Primitives.sol";
 
 library GmpTestTools {
     /**
@@ -284,7 +285,7 @@ library GmpTestTools {
             (uint16 destNetwork, uint256 gasLimit, uint256 salt, bytes memory data) =
                 abi.decode(log.data, (uint16, uint256, uint256, bytes));
             gmpMessages[pos++] = GmpMessage({
-                source: log.topics[2],
+                source: GmpSender.wrap(log.topics[2]),
                 srcNetwork: srcNetwork,
                 dest: address(uint160(uint256(log.topics[3]))),
                 destNetwork: destNetwork,
@@ -307,7 +308,7 @@ library GmpTestTools {
             GmpMessage memory message = gmpMessages[i];
 
             // Compute the message ID
-            bytes32 messageID = PrimitivesEip712.eip712TypedHashMem(message, domainSeparator);
+            bytes32 messageID = PrimitiveUtils.eip712TypedHash(message, domainSeparator);
 
             // Skip if the message is not intended for this network
             if (message.destNetwork != network) {
@@ -315,7 +316,7 @@ library GmpTestTools {
             }
 
             // Sign the message
-            (uint256 c, uint256 z) = SigningUtils.signPrehashed(signer, messageID, TestUtils.randomFromSeed(i));
+            (uint256 c, uint256 z) = SigningUtils.signPrehashed(signer, messageID, Random.nextUint());
             Signature memory signature = Signature({xCoord: signer.pubkey.px, e: c, s: z});
 
             // Execute the message

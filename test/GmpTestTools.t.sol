@@ -11,11 +11,12 @@ import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
-import {GmpMessage, GmpStatus, PrimitivesEip712} from "../src/Primitives.sol";
+import {GmpMessage, GmpStatus, GmpSender, PrimitiveUtils} from "../src/Primitives.sol";
 
 contract GmpTestToolsTest is Test {
-    using PrimitivesEip712 for GmpMessage;
-    using TestUtils for address;
+    using PrimitiveUtils for GmpMessage;
+    using PrimitiveUtils for GmpSender;
+    using PrimitiveUtils for address;
 
     address private constant ALICE = address(bytes20(keccak256("Alice")));
     address private constant BOB = address(bytes20(keccak256("Bob")));
@@ -71,9 +72,9 @@ contract GmpTestToolsTest is Test {
         // Switch to Sepolia network and Alice account
         GmpTestTools.switchNetwork(SEPOLIA_NETWORK, ALICE);
         // If the sender is a contract, it's address must be converted
-        bytes32 source = TestUtils.source(address(shibuyaErc20), true);
+        GmpSender sender = address(shibuyaErc20).toSender(true);
         // Alice deposit 1 ether to Sepolia gateway contract
-        SEPOLIA_GATEWAY.deposit{value: 1 ether}(source, SHIBUYA_NETWORK);
+        SEPOLIA_GATEWAY.deposit{value: 1 ether}(sender, SHIBUYA_NETWORK);
 
         //////////////////////////////
         // Step 4: Send GMP message //

@@ -10,7 +10,14 @@ import {IUpgradable} from "./interfaces/IUpgradable.sol";
 import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
 import {
-    TssKey, GmpMessage, UpdateKeysMessage, Signature, Network, GmpStatus, PrimitivesEip712
+    TssKey,
+    GmpMessage,
+    UpdateKeysMessage,
+    Signature,
+    Network,
+    GmpStatus,
+    GmpSender,
+    PrimitiveUtils
 } from "./Primitives.sol";
 
 abstract contract GatewayEIP712 {
@@ -41,8 +48,9 @@ abstract contract GatewayEIP712 {
 }
 
 contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
-    using PrimitivesEip712 for UpdateKeysMessage;
-    using PrimitivesEip712 for GmpMessage;
+    using PrimitiveUtils for UpdateKeysMessage;
+    using PrimitiveUtils for GmpMessage;
+    using PrimitiveUtils for address;
 
     uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
@@ -60,7 +68,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     mapping(bytes32 => GmpInfo) _messages;
 
     // Source address => Source network => Deposit Amount
-    mapping(bytes32 => mapping(uint16 => uint256)) _deposits;
+    mapping(GmpSender => mapping(uint16 => uint256)) _deposits;
 
     // Source address => Source network => Deposit Amount
     mapping(uint16 => bytes32) _networks;
@@ -118,7 +126,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return _messages[id];
     }
 
-    function depositOf(bytes32 source, uint16 network) external view returns (uint256) {
+    function depositOf(GmpSender source, uint16 network) external view returns (uint256) {
         return _deposits[source][network];
     }
 
@@ -415,7 +423,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     // Deposit balance to refund callers of execute
-    function deposit(bytes32 source, uint16 network) public payable {
+    function deposit(GmpSender source, uint16 network) public payable {
         // Check if the source network is supported
         require(_networks[network] != bytes32(0), "unsupported network");
         _deposits[source][network] += msg.value;
@@ -504,7 +512,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         require(message.destNetwork == NETWORK_ID, "invalid gmp network");
         require(_networks[message.srcNetwork] != bytes32(0), "source network no supported");
 
-        (bytes32 messageHash, bytes memory data) = message.eip712TypedHash(DOMAIN_SEPARATOR);
+        (bytes32 messageHash, bytes memory data) = message.encodeCallback(DOMAIN_SEPARATOR);
         _verifySignature(signature, messageHash);
         (status, result) = _execute(messageHash, message, data);
         uint256 deposited = _deposits[message.source][message.srcNetwork];
@@ -535,11 +543,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         bytes32 domainSeparator = _networks[destinationNetwork];
         require(domainSeparator != bytes32(0), "unsupported network");
 
-        // Check if the msg.sender is a contract or an EOA
-        uint256 isContract = BranchlessMath.toUint(tx.origin != msg.sender);
-
-        // We use 20 bytes for the address and 1 bit for contract flag
-        bytes32 source = bytes32((isContract << 160) | uint256(uint160(msg.sender)));
+        // We use 20 bytes for represent the address and 1 bit for the contract flag
+        GmpSender source = msg.sender.toSender(tx.origin != msg.sender);
 
         // Salt is equal to the previous message id (EIP-712 hash), this allows us to establish a sequence and eaily query the message history.
         bytes32 prevHash = prevMessageHash;
@@ -550,10 +555,12 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Create GMP message and update prevMessageHash
         GmpMessage memory message =
             GmpMessage(source, NETWORK_ID, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
-        prevHash = message.eip712TypedHashMem(domainSeparator);
+        prevHash = message.eip712TypedHash(domainSeparator);
         prevMessageHash = prevHash;
 
-        emit GmpCreated(prevHash, source, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
+        emit GmpCreated(
+            prevHash, GmpSender.unwrap(source), destinationAddress, destinationNetwork, executionGasLimit, salt, data
+        );
         return prevHash;
     }
 }

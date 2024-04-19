@@ -125,23 +125,6 @@ library TestUtils {
         return ((words ** 2) / 512) + (words * 3);
     }
 
-    // Get calldata
-    function getCalldata() internal pure returns (bytes memory out) {
-        /// @solidity memory-safe-assembly
-        assembly {
-            out := mload(0x40)
-            let ptr := add(out, 32)
-            let size := calldatasize()
-            mstore(0x40, add(ptr, size)) // Increment free memory pointer
-            mstore(out, size)
-            calldatacopy(ptr, 0, size)
-        }
-    }
-
-    function randomFromSeed(uint256 seed) internal pure returns (uint256) {
-        return uint256(keccak256(abi.encodePacked("randomFromSeed", keccak256(getCalldata()), seed)));
-    }
-
     /**
      * @dev Generate a new account account from the calldata
      * This will generate a unique deterministic address for each test case
@@ -149,7 +132,7 @@ library TestUtils {
     function createTestAccount(uint256 initialBalance) internal returns (address account) {
         // Generate a new account address from the calldata
         // This will generate a unique deterministic address for each test case
-        account = address(uint160(uint256(keccak256(getCalldata()))));
+        account = address(uint160(uint256(keccak256(msg.data))));
         vm.deal(account, initialBalance);
     }
 
@@ -201,7 +184,7 @@ library TestUtils {
      * @dev Creates an unique TSS signer per test case
      */
     function createSigner() internal pure returns (SigningKey memory) {
-        return signerFromEntropy(keccak256(getCalldata()));
+        return signerFromEntropy(keccak256(msg.data));
     }
 
     // Workaround for set the tx.gasLimit, currently is not possible to define the gaslimit in foundry

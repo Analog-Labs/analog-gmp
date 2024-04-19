@@ -6,6 +6,7 @@ pragma solidity >=0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {console} from "forge-std/console.sol";
+import {Random} from "./Random.sol";
 import {MockERC20} from "./MockERC20.sol";
 import {GmpTestTools} from "./GmpTestTools.sol";
 import {TestUtils, SigningKey, VerifyingKey, SigningUtils} from "./TestUtils.sol";
@@ -21,14 +22,15 @@ import {
     TssKey,
     Network,
     GmpStatus,
-    PrimitivesEip712
+    GmpSender,
+    PrimitiveUtils
 } from "../src/Primitives.sol";
 
 contract ExampleTest is Test {
     using SigningUtils for SigningKey;
     using SigningUtils for VerifyingKey;
-    using PrimitivesEip712 for GmpMessage;
-    using TestUtils for address;
+    using PrimitiveUtils for GmpMessage;
+    using PrimitiveUtils for address;
 
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 private constant DEST_NETWORK_ID = 1337;
@@ -61,7 +63,7 @@ contract ExampleTest is Test {
     function testSignature() external pure {
         SigningKey memory sk = TestUtils.createSigner();
         VerifyingKey memory vk = sk.pubkey;
-        (uint256 c, uint256 z) = sk.sign("hello world!", TestUtils.randomFromSeed(1));
+        (uint256 c, uint256 z) = sk.sign("hello world!", Random.nextUint());
         assertTrue(vk.verify("hello world!", c, z), "invalid signature");
     }
 
@@ -89,7 +91,7 @@ contract ExampleTest is Test {
         srcToken = new MockERC20("Source Token", "A", srcGateway, dstToken, dstGateway.networkId(), ALICE, 1000);
 
         // Step 3: Deposit tokens on destination Gateway Contract
-        bytes32 source = TestUtils.source(address(srcToken), true);
+        GmpSender source = address(srcToken).toSender(true);
         dstGateway.deposit{value: 10_000_000}(source, SRC_NETWORK_ID);
 
         // Step 4: Send GMP message
@@ -104,9 +106,11 @@ contract ExampleTest is Test {
         });
 
         // Expect `GmpCreated` to be emitted
-        bytes32 messageID = gmp.eip712TypedHashMem(dstGateway.DOMAIN_SEPARATOR());
+        bytes32 messageID = gmp.eip712TypedHash(dstGateway.DOMAIN_SEPARATOR());
         vm.expectEmit(true, true, true, true, address(srcGateway));
-        emit IGateway.GmpCreated(messageID, gmp.source, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data);
+        emit IGateway.GmpCreated(
+            messageID, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
+        );
 
         // Submit the GMP message from `sender` contract
         vm.stopPrank();
@@ -114,7 +118,7 @@ contract ExampleTest is Test {
         srcToken.teleport(BOB, 100);
 
         vm.startPrank(_sender, _sender);
-        (uint256 c, uint256 z) = signer.signPrehashed(messageID, TestUtils.randomFromSeed(1));
+        (uint256 c, uint256 z) = signer.signPrehashed(messageID, Random.nextUint());
         Signature memory sig = Signature({xCoord: signer.pubkey.px, e: c, s: z});
         assertTrue(dstGateway.gmpInfo(messageID).status == GmpStatus.NOT_FOUND, "GMP message already executed");
 
