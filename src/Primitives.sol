@@ -88,6 +88,13 @@ enum GmpStatus {
  * @dev EIP-712 utility functions for primitives
  */
 library PrimitiveUtils {
+    /**
+     * @dev GMP message EIP-712 Type Hash.
+     * Declared as raw value to enable it to be used in inline assembly
+     * keccak256("GmpMessage(bytes32 source,uint16 srcNetwork,address dest,uint16 destNetwork,uint256 gasLimit,uint256 salt,bytes data)")
+     */
+    bytes32 internal constant GMP_MESSAGE_TYPE_HASH = 0xeb1e0a6b8c4db87ab3beb15e5ae24e7c880703e1b9ee466077096eaeba83623b;
+
     function toAddress(GmpSender sender) internal pure returns (address) {
         return address(uint160(uint256(GmpSender.unwrap(sender))));
     }
@@ -139,15 +146,18 @@ library PrimitiveUtils {
         return _computeTypedHash(domainSeparator, eip712hash(message));
     }
 
-    function eip712hashMem(GmpMessage memory message) internal pure returns (bytes32 id) {
+    function eip712hash(GmpMessage memory message) internal pure returns (bytes32 id) {
         bytes memory data = message.data;
         /// @solidity memory-safe-assembly
         assembly {
+            // keccak256(message.data)
+            id := keccak256(add(data, 32), mload(data))
+
+            // now compute the GmpMessage Type Hash without memory copying
             let offset := sub(message, 32)
             let backup := mload(offset)
             {
-                id := keccak256(add(data, 32), mload(data))
-                mstore(offset, 0xeb1e0a6b8c4db87ab3beb15e5ae24e7c880703e1b9ee466077096eaeba83623b)
+                mstore(offset, GMP_MESSAGE_TYPE_HASH)
                 {
                     let offset2 := add(offset, 0xe0)
                     let backup2 := mload(offset2)
@@ -169,8 +179,9 @@ library PrimitiveUtils {
         /// @solidity memory-safe-assembly
         assembly {
             r := mload(0x40)
-            // keccak256("GmpMessage(bytes32 source,uint16 srcNetwork,address dest,uint16 destNetwork,uint256 gasLimit,uint256 salt,bytes data)")
-            mstore(add(r, 0x0004), 0xeb1e0a6b8c4db87ab3beb15e5ae24e7c880703e1b9ee466077096eaeba83623b)
+
+            // GmpMessage Type Hash
+            mstore(add(r, 0x0004), GMP_MESSAGE_TYPE_HASH)
             mstore(add(r, 0x0024), calldataload(add(message, 0x00))) // message.source
             mstore(add(r, 0x0044), calldataload(add(message, 0x20))) // message.srcNetwork
             mstore(add(r, 0x0064), calldataload(add(message, 0x40))) // message.dest
@@ -209,34 +220,23 @@ library PrimitiveUtils {
         }
     }
 
-    function eip712TypedHashMem(GmpMessage memory message, bytes32 domainSeparator)
+    function eip712TypedHash(GmpMessage memory message, bytes32 domainSeparator)
         internal
         pure
         returns (bytes32 messageHash)
     {
-        messageHash = eip712hashMem(message);
+        messageHash = eip712hash(message);
         messageHash = _computeTypedHash(domainSeparator, messageHash);
     }
 
     function _computeTypedHash(bytes32 domainSeparator, bytes32 messageHash) private pure returns (bytes32 r) {
         /// @solidity memory-safe-assembly
         assembly {
-            let b2 := mload(0x40)
-            {
-                let b1 := mload(0x20)
-                {
-                    let b0 := mload(0x00)
-                    {
-                        mstore(0, 0x1901)
-                        mstore(0x20, domainSeparator)
-                        mstore(0x40, messageHash)
-                        r := keccak256(0x1e, 0x42)
-                    }
-                    mstore(0x00, b0)
-                }
-                mstore(0x20, b1)
-            }
-            mstore(0x40, b2)
+            mstore(0, 0x1901000000000000000000000000000000000000000000000000000000000000)
+            mstore(0x02, domainSeparator)
+            mstore(0x22, messageHash)
+            r := keccak256(0, 0x42)
+            mstore(0x22, 0)
         }
     }
 }

@@ -558,7 +558,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Create GMP message and update prevMessageHash
         GmpMessage memory message =
             GmpMessage(source, NETWORK_ID, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
-        prevHash = message.eip712TypedHashMem(domainSeparator);
+        prevHash = message.eip712TypedHash(domainSeparator);
         prevMessageHash = prevHash;
 
         emit GmpCreated(

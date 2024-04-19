@@ -41,7 +41,7 @@ contract SigUtilsTest is GatewayEIP712, Test {
             salt: 0,
             data: ""
         });
-        bytes32 typedHash = gmp.eip712TypedHashMem(DOMAIN_SEPARATOR);
+        bytes32 typedHash = gmp.eip712TypedHash(DOMAIN_SEPARATOR);
         bytes32 expected = keccak256(
             hex"19013e3afdf794f679fcbf97eba49dbe6b67cec6c7d029f1ad9a5e1a8ffefa8db2724ed044f24764343e77b5677d43585d5d6f1b7618eeddf59280858c68350af1cd"
         );
@@ -108,9 +108,9 @@ contract GatewayBase is Test {
     IGmpReceiver internal receiver;
 
     uint256 private constant EXECUTE_CALL_COST = 49_662;
-    uint256 private constant SUBMIT_GAS_COST = 5907 + 132;
-    uint16 private constant SRC_NETWORK_ID = 0;
-    uint16 internal constant DEST_NETWORK_ID = 69;
+    uint256 private constant SUBMIT_GAS_COST = 5993;
+    uint16 private constant SRC_NETWORK_ID = 1234;
+    uint16 internal constant DEST_NETWORK_ID = 1337;
     uint8 private constant GMP_STATUS_SUCCESS = 1;
 
     constructor() {
@@ -146,7 +146,7 @@ contract GatewayBase is Test {
     }
 
     function sign(GmpMessage memory gmp) internal view returns (Signature memory) {
-        uint256 hash = uint256(gmp.eip712TypedHashMem(gateway.DOMAIN_SEPARATOR()));
+        uint256 hash = uint256(gmp.eip712TypedHash(gateway.DOMAIN_SEPARATOR()));
         (uint256 e, uint256 s) = signer.signPrehashed(hash, nonce);
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
     }
@@ -163,7 +163,7 @@ contract GatewayBase is Test {
         address sender = TestUtils.createTestAccount(amount);
         uint256 balanceBefore = address(sender).balance;
         vm.prank(sender, sender);
-        gateway.deposit{value: amount}(sender.toSender(false), 0);
+        gateway.deposit{value: amount}(sender.toSender(false), SRC_NETWORK_ID);
         uint256 balanceAfter = address(sender).balance;
         uint256 expectedBalance = balanceBefore - amount;
         assertEq(balanceAfter, expectedBalance, "deposit failed to transfer amount from sender");
@@ -176,7 +176,7 @@ contract GatewayBase is Test {
         assert(gatewayAddress != sender);
         uint256 balanceBefore = gatewayAddress.balance;
         vm.prank(sender, sender);
-        gateway.deposit{value: amount}(sender.toSender(false), 0);
+        gateway.deposit{value: amount}(sender.toSender(false), SRC_NETWORK_ID);
         uint256 balanceAfter = gatewayAddress.balance;
         uint256 expectedBalance = balanceBefore + amount;
         assertEq(balanceAfter, expectedBalance, "deposit failed to transfer amount to gateway");
@@ -253,7 +253,7 @@ contract GatewayBase is Test {
 
             // Verify the GMP message status
             assertTrue(status == GmpStatus.SUCCESS, "Unexpected GMP status");
-            Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.eip712TypedHashMem(gateway.DOMAIN_SEPARATOR()));
+            Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.eip712TypedHash(gateway.DOMAIN_SEPARATOR()));
             assertTrue(info.status == GmpStatus.SUCCESS, "GMP status stored doesn't match the returned status");
             assertEq(info.result, expectResult, "GMP result stored doesn't match the returned result");
 
@@ -321,7 +321,7 @@ contract GatewayBase is Test {
 
             // Verify the GMP message status
             assertTrue(status == GmpStatus.SUCCESS, "Unexpected GMP status");
-            Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.eip712TypedHashMem(gateway.DOMAIN_SEPARATOR()));
+            Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.eip712TypedHash(gateway.DOMAIN_SEPARATOR()));
             assertTrue(info.status == GmpStatus.SUCCESS, "GMP status stored doesn't match the returned status");
             assertEq(info.result, expectResult, "GMP result stored doesn't match the returned result");
 
@@ -393,7 +393,7 @@ contract GatewayBase is Test {
     function testExecuteRevertsWithoutDeposit() external {
         vm.txGasPrice(1);
         GmpSender sender = TestUtils.createTestAccount(100 ether).toSender(false);
-        assertEq(gateway.depositOf(sender, SRC_NETWORK_ID), SRC_NETWORK_ID);
+        assertEq(gateway.depositOf(sender, SRC_NETWORK_ID), 0);
         GmpMessage memory gmp = GmpMessage({
             source: sender,
             srcNetwork: SRC_NETWORK_ID,
@@ -420,10 +420,10 @@ contract GatewayBase is Test {
         vm.txGasPrice(1);
         uint256 insufficientDeposit = EXECUTE_CALL_COST - 1;
         GmpSender sender = TestUtils.createTestAccount(100 ether).toSender(false);
-        gateway.deposit{value: insufficientDeposit}(sender, 0);
+        gateway.deposit{value: insufficientDeposit}(sender, SRC_NETWORK_ID);
         GmpMessage memory gmp = GmpMessage({
             source: sender,
-            srcNetwork: 0,
+            srcNetwork: SRC_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 10000,
@@ -448,10 +448,10 @@ contract GatewayBase is Test {
         uint256 gasLimit = 100000;
         uint256 insufficientDeposit = gasLimit * tx.gasprice;
         GmpSender sender = TestUtils.createTestAccount(100 ether).toSender(false);
-        gateway.deposit{value: insufficientDeposit}(sender, 0);
+        gateway.deposit{value: insufficientDeposit}(sender, SRC_NETWORK_ID);
         GmpMessage memory gmp = GmpMessage({
             source: sender,
-            srcNetwork: 0,
+            srcNetwork: SRC_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: gasLimit,
@@ -512,7 +512,7 @@ contract GatewayBase is Test {
             salt: 0,
             data: abi.encodePacked(uint256(100_000))
         });
-        bytes32 id = gmp.eip712TypedHashMem(gateway.DOMAIN_SEPARATOR());
+        bytes32 id = gmp.eip712TypedHash(gateway.DOMAIN_SEPARATOR());
 
         // Check the previous message hash
         assertEq(gateway.prevMessageHash(), bytes32(uint256(2 ** 256 - 1)), "WROONNGG");
@@ -536,7 +536,7 @@ contract GatewayBase is Test {
 
         // Now the second GMP message should have the salt equals to previous gmp hash
         gmp.salt = uint256(id);
-        id = gmp.eip712TypedHashMem(gateway.DOMAIN_SEPARATOR());
+        id = gmp.eip712TypedHash(gateway.DOMAIN_SEPARATOR());
 
         // Expect event
         vm.expectEmit(true, true, true, true);
@@ -555,7 +555,7 @@ contract GatewayBase is Test {
 
         // Now the second GMP message should have the salt equals to previous gmp hash
         gmp.salt = uint256(id);
-        id = gmp.eip712TypedHashMem(gateway.DOMAIN_SEPARATOR());
+        id = gmp.eip712TypedHash(gateway.DOMAIN_SEPARATOR());
 
         // Expect event
         vm.expectEmit(true, true, true, true);
