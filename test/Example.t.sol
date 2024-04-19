@@ -6,6 +6,7 @@ pragma solidity >=0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {console} from "forge-std/console.sol";
+import {Random} from "./Random.sol";
 import {MockERC20} from "./MockERC20.sol";
 import {GmpTestTools} from "./GmpTestTools.sol";
 import {TestUtils, SigningKey, VerifyingKey, SigningUtils} from "./TestUtils.sol";
@@ -61,7 +62,7 @@ contract ExampleTest is Test {
     function testSignature() external pure {
         SigningKey memory sk = TestUtils.createSigner();
         VerifyingKey memory vk = sk.pubkey;
-        (uint256 c, uint256 z) = sk.sign("hello world!", TestUtils.randomFromSeed(1));
+        (uint256 c, uint256 z) = sk.sign("hello world!", Random.nextUint());
         assertTrue(vk.verify("hello world!", c, z), "invalid signature");
     }
 
@@ -114,7 +115,7 @@ contract ExampleTest is Test {
         srcToken.teleport(BOB, 100);
 
         vm.startPrank(_sender, _sender);
-        (uint256 c, uint256 z) = signer.signPrehashed(messageID, TestUtils.randomFromSeed(1));
+        (uint256 c, uint256 z) = signer.signPrehashed(messageID, Random.nextUint());
         Signature memory sig = Signature({xCoord: signer.pubkey.px, e: c, s: z});
         assertTrue(dstGateway.gmpInfo(messageID).status == GmpStatus.NOT_FOUND, "GMP message already executed");
 

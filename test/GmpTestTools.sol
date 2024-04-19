@@ -5,6 +5,7 @@ pragma solidity >=0.8.0;
 
 import {VmSafe, Vm} from "forge-std/Vm.sol";
 import {TestUtils, SigningKey, SigningUtils} from "./TestUtils.sol";
+import {Random} from "./Random.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
@@ -315,7 +316,7 @@ library GmpTestTools {
             }
 
             // Sign the message
-            (uint256 c, uint256 z) = SigningUtils.signPrehashed(signer, messageID, TestUtils.randomFromSeed(i));
+            (uint256 c, uint256 z) = SigningUtils.signPrehashed(signer, messageID, Random.nextUint());
             Signature memory signature = Signature({xCoord: signer.pubkey.px, e: c, s: z});
 
             // Execute the message
