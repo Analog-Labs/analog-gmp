@@ -543,10 +543,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         bytes32 domainSeparator = _networks[destinationNetwork];
         require(domainSeparator != bytes32(0), "unsupported network");
 
-        // Check if the msg.sender is a contract or an EOA
-        // uint256 isContract = BranchlessMath.toUint(tx.origin != msg.sender);
-
-        // We use 20 bytes for the address and 1 bit for contract flag
+        // We use 20 bytes for represent the address and 1 bit for the contract flag
         GmpSender source = msg.sender.toSender(tx.origin != msg.sender);
 
         // Salt is equal to the previous message id (EIP-712 hash), this allows us to establish a sequence and eaily query the message history.
