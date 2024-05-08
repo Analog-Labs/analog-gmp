@@ -56,7 +56,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
 
     // Measured gas cost difference for `execute` method
-    uint256 internal constant EXECUTE_GAS_DIFF = 10_584;
+    uint256 internal constant EXECUTE_GAS_DIFF = 10_592;
 
     // Non-zero value used to initialize the `prevMessageHash` storage
     bytes32 internal constant FIRST_MESSAGE_PLACEHOLDER = bytes32(uint256(2 ** 256 - 1));

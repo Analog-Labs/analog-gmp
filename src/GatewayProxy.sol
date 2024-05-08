@@ -22,8 +22,11 @@ library ERC1967 {
 }
 
 contract GatewayProxy {
+    /**
+     * @dev Minimal EIP-1967 proxy bytecode.
+     */
     bytes private constant PROXY_BYTECODE =
-        hex"365f5f375f5f365f7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc545af43d5f5f3e6036573d5ffd5b3d5ff3";
+        hex"363d3d373d3d3d363d7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc545af43d82803e903d91603857fd5bf3";
 
     constructor(address implementation, bytes memory initializer) payable {
         require(implementation.code.length > 0, "not a contract");

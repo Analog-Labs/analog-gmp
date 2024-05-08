@@ -107,8 +107,8 @@ contract GatewayBase is Test {
     // Receiver Contract, the will waste the exact amount of gas you sent to it in the data field
     IGmpReceiver internal receiver;
 
-    uint256 private constant EXECUTE_CALL_COST = 49_662;
-    uint256 private constant SUBMIT_GAS_COST = 5993;
+    uint256 private constant EXECUTE_CALL_COST = 49_670;
+    uint256 private constant SUBMIT_GAS_COST = 6001;
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
     uint8 private constant GMP_STATUS_SUCCESS = 1;
@@ -140,7 +140,7 @@ contract GatewayBase is Test {
         // See the file `HelperContract.opcode` for more details.
         {
             bytes memory bytecode =
-                hex"603b80600a5f395ff3fe60a4355a5b6000828203126004570360080180603b015b805a11601657505a03604b03565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b00";
+                hex"603b80600c6000396000f3fe60a4355a5b6000828203126004570360080180603b015b805a11601657505a03604b03565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b00";
             receiver = IGmpReceiver(TestUtils.deployContract(bytecode));
         }
     }
