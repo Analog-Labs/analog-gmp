@@ -2,10 +2,6 @@
 
 **This repository contains all the necessary ingredients for successful cross-chain development utilizing the Analog General Message Passing protocol.**
 
-Foundry consists of:
-
-
-
 ## Dependencies
 
 This project uses **Forge** Ethereum testing framework (like Truffle, Hardhat and DappTools).
