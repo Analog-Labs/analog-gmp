@@ -81,6 +81,7 @@ enum GmpStatus {
     NOT_FOUND,
     SUCCESS,
     REVERT,
+    INSUFFICIENT_FUNDS,
     PENDING
 }
 

@@ -88,11 +88,21 @@ library TestUtils {
                 let ptr := add(data, 32)
                 let end := add(ptr, len)
             } lt(ptr, end) { ptr := add(ptr, 32) } {
+                // Remove padding
                 let v := mload(ptr)
+                {
+                    let padding := sub(end, ptr)
+                    padding := mul(lt(padding, 256), padding)
+                    v := shr(padding, v)
+                }
+
+                // Normalize
                 v := or(v, shr(4, v))
                 v := or(v, shr(2, v))
                 v := or(v, shr(1, v))
                 v := and(v, 0x0101010101010101010101010101010101010101010101010101010101010101)
+
+                // Count bytes in parallel
                 v := add(v, shr(128, v))
                 v := add(v, shr(64, v))
                 v := add(v, shr(32, v))
@@ -224,12 +234,7 @@ library TestUtils {
         returns (uint256 executionCost, uint256 baseCost, bytes memory out)
     {
         // Compute the base tx cost (21k + 4 * zeros + 16 * nonZeros)
-        {
-            uint256 nonZeros = countNonZeros(data);
-            uint256 zeros = data.length - nonZeros;
-            uint256 inputCost = (nonZeros * 16) + (zeros * 4);
-            baseCost = inputCost + 21_000;
-        }
+        baseCost = calculateBaseCost(data);
 
         // Decrement sender base cost
         {
@@ -243,7 +248,7 @@ library TestUtils {
         (VmSafe.CallerMode callerMode, address msgSender, address txOrigin) =
             setCallerMode(VmSafe.CallerMode.RecurrentPrank, sender, sender);
         bool success;
-        (executionCost, success, out) = _call(dest, gasLimit, data);
+        (executionCost, success, out) = _call(dest, gasLimit - baseCost, data);
         setCallerMode(callerMode, msgSender, txOrigin);
 
         // Refund unused gas
@@ -252,6 +257,7 @@ library TestUtils {
             vm.deal(sender, sender.balance + refund);
         }
 
+        // Revert if the execution failed
         assembly {
             if iszero(success) { revert(add(out, 32), mload(out)) }
         }

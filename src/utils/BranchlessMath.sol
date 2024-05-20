@@ -65,20 +65,35 @@ library BranchlessMath {
      * @dev Unsigned saturating subtraction, bounds to zero instead of overflowing.
      * equivalent to: x > y ? x - y : 0
      */
-    function saturatingSub(uint256 x, uint256 y) internal pure returns (uint256) {
+    function saturatingSub(uint256 a, uint256 b) internal pure returns (uint256) {
         unchecked {
-            return (x - y) * toUint(x > y);
+            // equivalent to: a > b ? a - b : 0
+            return (a - b) * toUint(a > b);
         }
     }
 
     /**
-     * @dev Unsigned saturating multiplication, bounds to UINT256 MAX instead of overflowing.
+     * @dev Unsigned saturating multiplication, bounds to `2 ** 256 - 1` instead of overflowing.
      */
-    function saturatingMul(uint256 x, uint256 y) internal pure returns (uint256) {
+    function saturatingMul(uint256 a, uint256 b) internal pure returns (uint256) {
         unchecked {
-            x = x * y;
-            y = 0 - toUint((x / y) != y);
-            return x | y;
+            uint256 c = a * b;
+            bool success;
+            assembly {
+                // Only true when the multiplication doesn't overflow
+                // (c / a == b) || (a == 0)
+                success := or(eq(div(c, a), b), iszero(a))
+            }
+            return c | (toUint(success) - 1);
+        }
+    }
+
+    /**
+     * @dev Unsigned saturating division, bounds to UINT256 MAX instead of overflowing.
+     */
+    function saturatingDiv(uint256 x, uint256 y) internal pure returns (uint256 r) {
+        assembly {
+            r := div(x, y)
         }
     }
 
