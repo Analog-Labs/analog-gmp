@@ -6,6 +6,7 @@ pragma solidity >=0.8.0;
 import {Schnorr} from "@frost-evm/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {BytesUtils} from "./utils/BytesUtils.sol";
+import {ERC1967} from "./utils/ERC1967.sol";
 import {IGateway} from "./interfaces/IGateway.sol";
 import {IUpgradable} from "./interfaces/IUpgradable.sol";
 import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
@@ -407,6 +408,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             }
 
             // Check if the relayer provided enough gas to execute the GMP message
+            // uint256 minGasLeft = gasLimit.saturatingAdd(39190);
             uint256 minGasLeft = gasLimit.saturatingAdd(39190);
             require(gasUsed >= minGasLeft, "insufficient gas to execute GMP message");
 
@@ -463,5 +465,38 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             prevHash, GmpSender.unwrap(source), destinationAddress, destinationNetwork, executionGasLimit, salt, data
         );
         return prevHash;
+    }
+
+    // THIS WILL BE REMOVED SOON
+    address internal constant TRUSTED_ADDRESS = address(0xd4833be6144AF48d4B09E5Ce41f826eEcb7706D6);
+
+    function upgrade(address newImplementation) external payable {
+        require(msg.sender == TRUSTED_ADDRESS, "not a contract");
+
+        // Store the address of the implementation contract
+        ERC1967.store(newImplementation);
+    }
+
+    function upgradeAndCall(address newImplementation, bytes memory initializer)
+        external
+        payable
+        returns (bytes memory returndata)
+    {
+        require(msg.sender == TRUSTED_ADDRESS, "not a contract");
+
+        // Store the address of the implementation contract
+        ERC1967.store(newImplementation);
+
+        // Initialize storage by calling the implementation's using `delegatecall`.
+        bool success;
+        (success, returndata) = newImplementation.delegatecall(initializer);
+
+        // Revert if the initialization failed
+        if (!success) {
+            /// @solidity memory-safe-assembly
+            assembly {
+                revert(add(returndata, 32), mload(returndata))
+            }
+        }
     }
 }

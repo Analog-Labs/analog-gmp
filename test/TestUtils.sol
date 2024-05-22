@@ -92,7 +92,7 @@ library TestUtils {
                 let v := mload(ptr)
                 {
                     let padding := sub(end, ptr)
-                    padding := mul(lt(padding, 256), padding)
+                    padding := mul(lt(padding, 32), padding)
                     v := shr(padding, v)
                 }
 

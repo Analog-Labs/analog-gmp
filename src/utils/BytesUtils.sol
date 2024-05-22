@@ -7,7 +7,7 @@ pragma solidity ^0.8.20;
  * @dev Utilities for branchless operations, useful when a constant gas cost is required.
  */
 library BytesUtils {
-    uint256 internal constant EXECUTION_BASE_COST = 43_354;
+    uint256 internal constant EXECUTION_BASE_COST = 43_376;
 
     /**
      * @dev Compute the transaction base cost.
