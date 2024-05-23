@@ -59,7 +59,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
 
     // Measured gas cost difference for `execute` method
-    uint256 internal constant EXECUTE_GAS_DIFF = 8536;
+    // uint256 internal constant EXECUTE_GAS_DIFF = 8536 + 10150;
 
     // Non-zero value used to initialize the `prevMessageHash` storage
     bytes32 internal constant FIRST_MESSAGE_PLACEHOLDER = bytes32(uint256(2 ** 256 - 1));
@@ -401,19 +401,18 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             gasLimit = BranchlessMath.min(message.gasLimit, gasLimit);
 
             // Check if the source has enough deposit before executing the GMP message
-            uint256 gasRequired = executionCost.saturatingAdd(gasLimit);
-            uint256 minDeposit = gasRequired.saturatingAdd(baseCost).saturatingMul(tx.gasprice);
-            if (deposited < minDeposit) {
+            uint256 minDeposit = baseCost.saturatingAdd(executionCost).saturatingAdd(gasLimit);
+            if (deposited < minDeposit.saturatingMul(tx.gasprice)) {
                 return _gmpInsufficientFunds(messageHash, message);
             }
 
             // Check if the relayer provided enough gas to execute the GMP message
             // uint256 minGasLeft = gasLimit.saturatingAdd(39190);
-            uint256 minGasLeft = gasLimit.saturatingAdd(39190);
+            uint256 minGasLeft = gasLimit.saturatingAdd(39117);
             require(gasUsed >= minGasLeft, "insufficient gas to execute GMP message");
 
             // Add base cost to the gas used
-            gasUsed = gasUsed.saturatingAdd(baseCost);
+            gasUsed = minDeposit;
         }
 
         (status, result) = _execute(messageHash, message, data);
@@ -421,8 +420,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Calculate a gas refund, capped to protect against huge spikes in `tx.gasprice`
         // that could drain funds unnecessarily. During these spikes, relayers should back off.
         unchecked {
-            gasUsed -= gasleft();
-            gasUsed += EXECUTE_GAS_DIFF;
             uint256 refund = BranchlessMath.min(gasUsed * tx.gasprice, deposited);
             _deposits[message.source][message.srcNetwork] -= refund;
             payable(msg.sender).transfer(refund);
