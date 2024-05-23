@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Analog's Contracts (last updated v0.1.0) (src/utils/BytesUtils.sol)
+// Analog's Contracts (last updated v0.1.0) (src/utils/GasUtils.sol)
 
 pragma solidity ^0.8.20;
 
 /**
  * @dev Utilities for branchless operations, useful when a constant gas cost is required.
  */
-library BytesUtils {
+library GasUtils {
     uint256 internal constant EXECUTION_BASE_COST = 43_303 + 4500;
 
     /**

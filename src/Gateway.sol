@@ -5,7 +5,7 @@ pragma solidity >=0.8.0;
 
 import {Schnorr} from "@frost-evm/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
-import {BytesUtils} from "./utils/BytesUtils.sol";
+import {GasUtils} from "./utils/GasUtils.sol";
 import {ERC1967} from "./utils/ERC1967.sol";
 import {IGateway} from "./interfaces/IGateway.sol";
 import {IUpgradable} from "./interfaces/IUpgradable.sol";
@@ -389,7 +389,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         _verifySignature(signature, messageHash);
 
         // Compute the GMP execution gas cost
-        (uint256 baseCost, uint256 executionCost) = BytesUtils.txBaseCost(message.data.length);
+        (uint256 baseCost, uint256 executionCost) = GasUtils.txBaseCost(message.data.length);
         uint256 gasUsed = gasleft();
 
         // Check if the source has enough deposit and if the caller provided

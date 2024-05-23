@@ -9,7 +9,7 @@ import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils} from "./TestUtils.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
-import {BytesUtils} from "../src/utils/BytesUtils.sol";
+import {GasUtils} from "../src/utils/GasUtils.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
@@ -99,7 +99,7 @@ library GatewayUtils {
         pure
         returns (uint256 baseCost, uint256 executionCost)
     {
-        (, executionCost) = BytesUtils.txBaseCost(message.data.length);
+        (, executionCost) = GasUtils.txBaseCost(message.data.length);
         bytes memory encodedCall = abi.encodeCall(IExecutor.execute, (signature, message));
         baseCost = TestUtils.calculateBaseCost(encodedCall);
     }
