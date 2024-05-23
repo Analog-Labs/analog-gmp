@@ -12,7 +12,7 @@ library GasUtils {
     /**
      * @dev Compute the transaction base cost.
      */
-    function txBaseCost(uint256 messageSize) internal pure returns (uint256 baseCost, uint256 executionCost) {
+    function executionGasCost(uint256 messageSize) internal pure returns (uint256 baseCost, uint256 executionCost) {
         // Calculate Gateway.execute dynamic cost
         executionCost = EXECUTION_BASE_COST;
         unchecked {

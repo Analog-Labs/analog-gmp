@@ -58,9 +58,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
 
-    // Measured gas cost difference for `execute` method
-    // uint256 internal constant EXECUTE_GAS_DIFF = 8536 + 10150;
-
     // Non-zero value used to initialize the `prevMessageHash` storage
     bytes32 internal constant FIRST_MESSAGE_PLACEHOLDER = bytes32(uint256(2 ** 256 - 1));
 
@@ -389,7 +386,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         _verifySignature(signature, messageHash);
 
         // Compute the GMP execution gas cost
-        (uint256 baseCost, uint256 executionCost) = GasUtils.txBaseCost(message.data.length);
+        (uint256 baseCost, uint256 executionCost) = GasUtils.executionGasCost(message.data.length);
         uint256 gasUsed = gasleft();
 
         // Check if the source has enough deposit and if the caller provided

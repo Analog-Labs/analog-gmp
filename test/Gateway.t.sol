@@ -99,7 +99,7 @@ library GatewayUtils {
         pure
         returns (uint256 baseCost, uint256 executionCost)
     {
-        (, executionCost) = GasUtils.txBaseCost(message.data.length);
+        (, executionCost) = GasUtils.executionGasCost(message.data.length);
         bytes memory encodedCall = abi.encodeCall(IExecutor.execute, (signature, message));
         baseCost = TestUtils.calculateBaseCost(encodedCall);
     }
@@ -150,8 +150,6 @@ contract GatewayBase is Test {
         // Obs: This is a special contract that wastes an exact amount of gas you send to it, helpful for testing GMP refunds and gas limits.
         // See the file `HelperContract.opcode` for more details.
         {
-            // bytes memory bytecode =
-            //    hex"603b80600c6000396000f3fe60a4355a5b6000828203126004570360080180603b015b805a11601657505a03604b03565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b00";
             bytes memory bytecode =
                 hex"603b80600c6000396000f3fe5a600201803d523d60209160643560240135146018575bfd5b60345a116018575a604803565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bf3";
             receiver = IGmpReceiver(TestUtils.deployContract(bytecode));
