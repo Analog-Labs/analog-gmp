@@ -3,27 +3,14 @@
 
 pragma solidity >=0.8.0;
 
-/// @title Minimal implementation of ERC1967 storage slot
-library ERC1967 {
-    // bytes32(uint256(keccak256('eip1967.proxy.implementation')) - 1)
-    bytes32 internal constant _IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
-
-    function load() internal view returns (address implementation) {
-        assembly {
-            implementation := sload(_IMPLEMENTATION_SLOT)
-        }
-    }
-
-    function store(address implementation) internal {
-        assembly {
-            sstore(_IMPLEMENTATION_SLOT, implementation)
-        }
-    }
-}
+import {ERC1967} from "./utils/ERC1967.sol";
 
 contract GatewayProxy {
+    /**
+     * @dev Minimal EIP-1967 proxy bytecode.
+     */
     bytes private constant PROXY_BYTECODE =
-        hex"365f5f375f5f365f7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc545af43d5f5f3e6036573d5ffd5b3d5ff3";
+        hex"363d3d373d3d3d363d7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc545af43d82803e903d91603857fd5bf3";
 
     constructor(address implementation, bytes memory initializer) payable {
         require(implementation.code.length > 0, "not a contract");

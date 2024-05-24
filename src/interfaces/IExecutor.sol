@@ -34,7 +34,7 @@ interface IExecutor {
      * @param signature Schnorr signature
      * @param message GMP message
      */
-    function execute(Signature memory signature, GmpMessage memory message)
+    function execute(Signature calldata signature, GmpMessage calldata message)
         external
         returns (GmpStatus status, bytes32 result);
 

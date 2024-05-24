@@ -5,6 +5,8 @@ pragma solidity >=0.8.0;
 
 import {Schnorr} from "@frost-evm/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
+import {GasUtils} from "./utils/GasUtils.sol";
+import {ERC1967} from "./utils/ERC1967.sol";
 import {IGateway} from "./interfaces/IGateway.sol";
 import {IUpgradable} from "./interfaces/IUpgradable.sol";
 import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
@@ -51,12 +53,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for address;
+    using BranchlessMath for uint256;
 
     uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
-
-    // Measured gas cost difference for `execute` method
-    uint256 internal constant EXECUTE_GAS_DIFF = 10_584;
 
     // Non-zero value used to initialize the `prevMessageHash` storage
     bytes32 internal constant FIRST_MESSAGE_PLACEHOLDER = bytes32(uint256(2 ** 256 - 1));
@@ -95,10 +95,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      * reference: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html
      */
     struct GmpInfo {
-        uint184 _gap; // gap to keep status and blocknumber 256bit aligned
         GmpStatus status;
         uint64 blockNumber; // block in which the message was processed
-        bytes32 result; // the result of the GMP message
     }
 
     constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
@@ -136,153 +134,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     function networkId() external view returns (uint16) {
         return NETWORK_ID;
-    }
-
-    // Best-effort attempt at estimating the base gas use of the transaction.
-    // This includes:
-    // * Cost paid for every transaction: 21000 gas
-    // * Cost of calldata: Zero byte = 4 gas, Non-zero byte = 16 gas
-    // * Cost of code inside submitInitial that is not metered: 14_698
-    //
-    // Reference: Ethereum Yellow Paper
-    function _transactionBaseGas() internal pure returns (uint256 result) {
-        /// @solidity memory-safe-assembly
-        assembly {
-            let mask := 0x0101010101010101010101010101010101010101010101010101010101010101
-            // 1
-            let ptr := 0
-            let v := calldataload(0)
-            v := or(v, shr(4, v))
-            v := or(v, shr(2, v))
-            v := or(v, shr(1, v))
-            v := and(v, mask)
-            {
-                // 2
-                ptr := add(ptr, 32)
-                let r := calldataload(ptr)
-                r := or(r, shr(4, r))
-                r := or(r, shr(2, r))
-                r := or(r, shr(1, r))
-                r := and(r, mask)
-                v := add(v, r)
-                // 3
-                ptr := add(ptr, 32)
-                r := calldataload(ptr)
-                r := or(r, shr(4, r))
-                r := or(r, shr(2, r))
-                r := or(r, shr(1, r))
-                r := and(r, mask)
-                v := add(v, r)
-                // 4
-                ptr := add(ptr, 32)
-                r := calldataload(ptr)
-                r := or(r, shr(4, r))
-                r := or(r, shr(2, r))
-                r := or(r, shr(1, r))
-                r := and(r, mask)
-                v := add(v, r)
-                // 5
-                ptr := add(ptr, 32)
-                r := calldataload(ptr)
-                r := or(r, shr(4, r))
-                r := or(r, shr(2, r))
-                r := or(r, shr(1, r))
-                r := and(r, mask)
-                v := add(v, r)
-                // 6
-                ptr := add(ptr, 32)
-                r := calldataload(ptr)
-                r := or(r, shr(4, r))
-                r := or(r, shr(2, r))
-                r := or(r, shr(1, r))
-                r := and(r, mask)
-                v := add(v, r)
-                // 7
-                ptr := add(ptr, 32)
-                r := calldataload(ptr)
-                r := or(r, shr(4, r))
-                r := or(r, shr(2, r))
-                r := or(r, shr(1, r))
-                r := and(r, mask)
-                v := add(v, r)
-                // 8
-                ptr := add(ptr, 32)
-                r := calldataload(ptr)
-                r := or(r, shr(4, r))
-                r := or(r, shr(2, r))
-                r := or(r, shr(1, r))
-                r := and(r, mask)
-                v := add(v, r)
-                // 9
-                ptr := add(ptr, 32)
-                r := calldataload(ptr)
-                r := or(r, shr(4, r))
-                r := or(r, shr(2, r))
-                r := or(r, shr(1, r))
-                r := and(r, mask)
-                v := add(v, r)
-                // 10
-                ptr := add(ptr, 32)
-                r := calldataload(ptr)
-                r := or(r, shr(4, r))
-                r := or(r, shr(2, r))
-                r := or(r, shr(1, r))
-                r := and(r, mask)
-                v := add(v, r)
-                // 11
-                ptr := add(ptr, 32)
-                r := calldataload(ptr)
-                r := or(r, shr(4, r))
-                r := or(r, shr(2, r))
-                r := or(r, shr(1, r))
-                r := and(r, mask)
-                v := add(v, r)
-                // 12
-                ptr := add(ptr, 32)
-                r := calldataload(ptr)
-                r := or(r, shr(4, r))
-                r := or(r, shr(2, r))
-                r := or(r, shr(1, r))
-                r := and(r, mask)
-                v := add(v, r)
-                // 13
-                ptr := add(ptr, 32)
-                r := calldataload(ptr)
-                r := or(r, shr(4, r))
-                r := or(r, shr(2, r))
-                r := or(r, shr(1, r))
-                r := and(r, mask)
-                v := add(v, r)
-                // 14
-                ptr := add(ptr, 32)
-                r := calldataload(ptr)
-                r := or(r, shr(4, r))
-                r := or(r, shr(2, r))
-                r := or(r, shr(1, r))
-                r := and(r, mask)
-                v := add(v, r)
-                // 15
-                ptr := add(ptr, 32)
-                r := calldataload(ptr)
-                r := or(r, shr(4, r))
-                r := or(r, shr(2, r))
-                r := or(r, shr(1, r))
-                r := and(r, mask)
-                v := add(v, r)
-            }
-
-            // Count bytes in parallel
-            v := add(v, shr(128, v))
-            v := add(v, shr(64, v))
-            v := add(v, shr(32, v))
-            v := add(v, shr(16, v))
-            v := and(v, 0xffff)
-            v := add(and(v, 0xff), shr(8, v))
-
-            result := add(21000, add(mul(sub(calldatasize(), v), 4), mul(v, 16)))
-            let words := shr(5, add(calldatasize(), 31))
-            result := add(result, add(shr(9, mul(words, words)), mul(words, 3)))
-        }
     }
 
     /**
@@ -429,6 +280,26 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         _deposits[source][network] += msg.value;
     }
 
+    function _gmpInsufficientFunds(bytes32 payloadHash, GmpMessage calldata message)
+        private
+        returns (GmpStatus status, bytes32 result)
+    {
+        // Verify if this GMP message was already executed
+        GmpInfo storage gmp = _messages[payloadHash];
+        require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
+
+        // Set status and result
+        status = GmpStatus.INSUFFICIENT_FUNDS;
+        result = bytes32(0);
+
+        // Store gmp execution status on storage
+        gmp.status = status;
+        gmp.blockNumber = uint64(block.number);
+
+        // Emit event
+        emit GmpExecuted(payloadHash, message.source, message.dest, status, result);
+    }
+
     // Execute GMP message
     function _execute(bytes32 payloadHash, GmpMessage calldata message, bytes memory data)
         private
@@ -442,25 +313,24 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         gmp.status = GmpStatus.PENDING;
         gmp.blockNumber = uint64(block.number);
 
-        // Execute GMP call
-        bytes32[1] memory output = [bytes32(0)];
-        bool success;
-        address dest = message.dest;
-
         // Cap the GMP gas limit to 80% of the block gas limit
         // OBS: we assume the remaining 20% is enough for the Gateway execution, which is a safe assumption
         // once most EVM blockchains have gas limits above 10M and don't need more than 60k gas for the Gateway execution.
-        uint256 maxGasLimit = (block.gaslimit / 5) * 4; // 80% of the block gas limit
+        uint256 maxGasLimit = block.gaslimit.saturatingMul(4).saturatingDiv(5); // 80% of the block gas limit
         uint256 gasLimit = BranchlessMath.min(message.gasLimit, maxGasLimit);
 
         // Make sure the gas left is enough to execute the GMP message
-        unchecked {
-            // Subtract 5000 gas, 2600 (CALL) + 2400 (other instructions with some margin)
-            uint256 gasAvailable = BranchlessMath.saturatingSub(gasleft(), 5000);
-            // “all but one 64th", reference: https://eips.ethereum.org/EIPS/eip-150
-            gasAvailable -= gasAvailable >> 6;
-            require(gasAvailable > gasLimit, "gas left below message.gasLimit");
-        }
+        // unchecked {
+        //     // Subtract 5000 gas, 2600 (CALL) + 2400 (other instructions with some margin)
+        //     uint256 gasAvailable = BranchlessMath.saturatingSub(gasleft(), 10000);
+        //     // “all but one 64th", reference: https://eips.ethereum.org/EIPS/eip-150
+        //     gasAvailable -= gasAvailable >> 6;
+        //     require(gasAvailable > gasLimit, "gas left below message.gasLimit");
+        // }
+
+        // Execute GMP call
+        bool success;
+        address dest = message.dest;
 
         /// @solidity memory-safe-assembly
         assembly {
@@ -468,6 +338,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             // regardless if the call reverts or not.
             let ptr := add(data, 32)
             let size := mload(data)
+            mstore(data, 0)
 
             // returns 1 if the call succeed, and 0 if it reverted
             success :=
@@ -477,19 +348,19 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                     0, // value in wei to transfer (always zero for GMP)
                     ptr, // input memory pointer
                     size, // input size
-                    output, // output memory pointer
+                    data, // output memory pointer
                     32 // output size (fixed 32 bytes)
                 )
-        }
 
-        // Get Result
-        result = output[0];
+            // Get Result, reuse data to keep a predictable memory expansion
+            result := mload(data)
+            mstore(data, size)
+        }
 
         // Update GMP status
         status = GmpStatus(BranchlessMath.select(success, uint256(GmpStatus.SUCCESS), uint256(GmpStatus.REVERT)));
 
-        // Persist result and status on storage
-        gmp.result = result;
+        // Persist gmp execution status on storage
         gmp.status = status;
 
         // Emit event
@@ -505,25 +376,51 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         external
         returns (GmpStatus status, bytes32 result)
     {
-        uint256 startGas = gasleft();
-
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
         require(message.destNetwork == NETWORK_ID, "invalid gmp network");
         require(_networks[message.srcNetwork] != bytes32(0), "source network no supported");
 
+        // Verify the signature
         (bytes32 messageHash, bytes memory data) = message.encodeCallback(DOMAIN_SEPARATOR);
         _verifySignature(signature, messageHash);
-        (status, result) = _execute(messageHash, message, data);
+
+        // Compute the GMP execution gas cost
+        (uint256 baseCost, uint256 executionCost) = GasUtils.executionGasCost(message.data.length);
+        uint256 gasUsed = gasleft();
+
+        // Check if the source has enough deposit and if the caller provided
+        // enough gas to execute the GMP message
         uint256 deposited = _deposits[message.source][message.srcNetwork];
+        unchecked {
+            // Cap the GMP gas limit to 50% of the block gas limit
+            uint256 gasLimit = block.gaslimit >> 1; // 50% of the block gas limit
+            gasLimit = BranchlessMath.min(message.gasLimit, gasLimit);
+
+            // Check if the source has enough deposit before executing the GMP message
+            uint256 minDeposit = baseCost.saturatingAdd(executionCost).saturatingAdd(gasLimit);
+            if (deposited < minDeposit.saturatingMul(tx.gasprice)) {
+                return _gmpInsufficientFunds(messageHash, message);
+            }
+
+            // Check if the relayer provided enough gas to execute the GMP message
+            // uint256 minGasLeft = gasLimit.saturatingAdd(39190);
+            uint256 minGasLeft = gasLimit.saturatingAdd(39117);
+            require(gasUsed >= minGasLeft, "insufficient gas to execute GMP message");
+
+            // Add base cost to the gas used
+            gasUsed = minDeposit;
+        }
+
+        (status, result) = _execute(messageHash, message, data);
 
         // Calculate a gas refund, capped to protect against huge spikes in `tx.gasprice`
         // that could drain funds unnecessarily. During these spikes, relayers should back off.
-        uint256 gasUsed = _transactionBaseGas() + (startGas - gasleft()) + EXECUTE_GAS_DIFF;
-        uint256 refund = gasUsed * tx.gasprice;
-        require(deposited >= refund, "deposit below max refund");
-        _deposits[message.source][message.srcNetwork] = deposited - refund;
-        payable(msg.sender).transfer(refund);
+        unchecked {
+            uint256 refund = BranchlessMath.min(gasUsed * tx.gasprice, deposited);
+            _deposits[message.source][message.srcNetwork] -= refund;
+            payable(msg.sender).transfer(refund);
+        }
     }
 
     /**
@@ -562,5 +459,38 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             prevHash, GmpSender.unwrap(source), destinationAddress, destinationNetwork, executionGasLimit, salt, data
         );
         return prevHash;
+    }
+
+    // THIS WILL BE REMOVED SOON
+    address internal constant TRUSTED_ADDRESS = address(0xd4833be6144AF48d4B09E5Ce41f826eEcb7706D6);
+
+    function upgrade(address newImplementation) external payable {
+        require(msg.sender == TRUSTED_ADDRESS, "not a contract");
+
+        // Store the address of the implementation contract
+        ERC1967.store(newImplementation);
+    }
+
+    function upgradeAndCall(address newImplementation, bytes memory initializer)
+        external
+        payable
+        returns (bytes memory returndata)
+    {
+        require(msg.sender == TRUSTED_ADDRESS, "not a contract");
+
+        // Store the address of the implementation contract
+        ERC1967.store(newImplementation);
+
+        // Initialize storage by calling the implementation's using `delegatecall`.
+        bool success;
+        (success, returndata) = newImplementation.delegatecall(initializer);
+
+        // Revert if the initialization failed
+        if (!success) {
+            /// @solidity memory-safe-assembly
+            assembly {
+                revert(add(returndata, 32), mload(returndata))
+            }
+        }
     }
 }
