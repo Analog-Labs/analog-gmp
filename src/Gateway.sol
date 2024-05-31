@@ -461,14 +461,39 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return prevHash;
     }
 
-    // THIS WILL BE REMOVED SOON
-    address internal constant TRUSTED_ADDRESS = address(0xd4833be6144AF48d4B09E5Ce41f826eEcb7706D6);
+    function _getAdmin() private view returns (address admin) {
+        admin = ERC1967.getAdmin();
+        // If the admin slot is empty, then the 0xd4833be6144AF48d4B09E5Ce41f826eEcb7706D6 is the admin
+        admin = BranchlessMath.select(admin == address(0x0), 0xd4833be6144AF48d4B09E5Ce41f826eEcb7706D6, admin);
+    }
+
+    function setAdmin(address newAdmin) external payable {
+        require(msg.sender == _getAdmin(), "unauthorized");
+        ERC1967.setAdmin(newAdmin);
+    }
+
+    // DANGER: This function is for migration purposes only, it allows the admin to set any storage slot.
+    function adminSetStorage(uint256[][2] calldata values) external payable {
+        require(msg.sender == _getAdmin(), "unauthorized");
+        require(values.length > 0, "invalid values");
+
+        uint256 prev = 0;
+        for (uint256 i = 0; i < values.length; i++) {
+            uint256 key = values[i][0];
+            require(key >= prev, "invalid storage slot");
+            uint256 value = values[i][1];
+            assembly {
+                sstore(value, value)
+            }
+            prev = key;
+        }
+    }
 
     function upgrade(address newImplementation) external payable {
-        require(msg.sender == TRUSTED_ADDRESS, "not a contract");
+        require(msg.sender == _getAdmin(), "unauthorized");
 
         // Store the address of the implementation contract
-        ERC1967.store(newImplementation);
+        ERC1967.setImplementation(newImplementation);
     }
 
     function upgradeAndCall(address newImplementation, bytes memory initializer)
@@ -476,10 +501,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         payable
         returns (bytes memory returndata)
     {
-        require(msg.sender == TRUSTED_ADDRESS, "not a contract");
+        require(msg.sender == _getAdmin(), "unauthorized");
 
         // Store the address of the implementation contract
-        ERC1967.store(newImplementation);
+        ERC1967.setImplementation(newImplementation);
 
         // Initialize storage by calling the implementation's using `delegatecall`.
         bool success;
