@@ -126,19 +126,24 @@ contract GatewayBase is Test {
 
     constructor() {
         signer = new Signer(secret);
-        TssKey[] memory keys = new TssKey[](1);
-        keys[0] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()});
         address deployer = TestUtils.createTestAccount(100 ether);
         vm.startPrank(deployer, deployer);
+
+        // 1 - Deploy the implementation contract
         address proxyAddr = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
         Gateway implementation = new Gateway(DEST_NETWORK_ID, proxyAddr);
+
+        // 2 - Deploy the Proxy Contract
+        TssKey[] memory keys = new TssKey[](1);
+        keys[0] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()}); // Shard key
         Network[] memory networks = new Network[](2);
-        networks[0].id = SRC_NETWORK_ID;
-        networks[0].gateway = proxyAddr;
-        networks[1].id = DEST_NETWORK_ID;
-        networks[1].gateway = proxyAddr;
-        bytes memory initializer = abi.encodeCall(Gateway.initialize, (keys, networks));
+        networks[0].id = SRC_NETWORK_ID; // sepolia network id
+        networks[0].gateway = proxyAddr; // sepolia proxy address
+        networks[1].id = DEST_NETWORK_ID; // shibuya network id
+        networks[1].gateway = proxyAddr; // shibuya proxy address
+        bytes memory initializer = abi.encodeCall(Gateway.initialize, (msg.sender, keys, networks));
         gateway = Gateway(address(new GatewayProxy(address(implementation), initializer)));
+
         vm.stopPrank();
     }
 

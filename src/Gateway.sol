@@ -101,9 +101,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
 
-    function initialize(TssKey[] memory keys, Network[] calldata networks) external {
+    // EIP-712 typed hash
+    function initialize(address admin, TssKey[] memory keys, Network[] calldata networks) external {
         require(PROXY_ADDRESS == address(this), "only proxy can be initialize");
         require(prevMessageHash == 0, "already initialized");
+        ERC1967.setAdmin(admin);
 
         // Initialize the prevMessageHash with a non-zero value to avoid the first GMP to spent more gas,
         // once initialize the storage cost 21k gas, while alter it cost just 2800 gas.
@@ -470,6 +472,20 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     function setAdmin(address newAdmin) external payable {
         require(msg.sender == _getAdmin(), "unauthorized");
         ERC1967.setAdmin(newAdmin);
+    }
+
+    // OBS: remove != revoke (when revoked, you cannot register again)
+    function sudoRemoveShards(TssKey[] memory shards) external payable {
+        require(msg.sender == _getAdmin(), "unauthorized");
+        for (uint256 i; i < shards.length; i++) {
+            bytes32 shardId = _tssKeyToShardId(shards[i]);
+            delete _shards[shardId];
+        }
+    }
+
+    function sudoAddShards(TssKey[] memory shards) external payable {
+        require(msg.sender == _getAdmin(), "unauthorized");
+        _registerKeys(shards);
     }
 
     // DANGER: This function is for migration purposes only, it allows the admin to set any storage slot.

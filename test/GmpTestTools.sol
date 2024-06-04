@@ -127,7 +127,7 @@ library GmpTestTools {
             TestUtils.setCallerMode(VmSafe.CallerMode.Prank, gateway, gateway);
 
         // Initialize the gateway
-        Gateway(gateway).initialize(keys, networks);
+        Gateway(gateway).initialize(msgSender, keys, networks);
 
         // Restore previous caller mode
         TestUtils.setCallerMode(callerMode, msgSender, txOrigin);
