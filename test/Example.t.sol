@@ -52,7 +52,7 @@ contract ExampleTest is Test {
             networks[i].gateway = vm.computeCreateAddress(_sender, vm.getNonce(_sender) + 1 + (i * 2));
         }
 
-        bytes memory initializer = abi.encodeCall(Gateway.initialize, (keys, networks));
+        bytes memory initializer = abi.encodeCall(Gateway.initialize, (msg.sender, keys, networks));
         for (uint256 i = 0; i < networks.length; i++) {
             address implementation = address(new Gateway(networks[i].id, networks[i].gateway));
             address proxy = address(new GatewayProxy(implementation, initializer));
