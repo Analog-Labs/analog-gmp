@@ -39,6 +39,13 @@ library BranchlessMath {
     }
 
     /**
+     * @dev If `condition` is true returns `a`, otherwise returns `b`.
+     */
+    function select(bool condition, address a, address b) internal pure returns (address) {
+        return address(uint160(select(condition, uint256(uint160(a)), uint256(uint160(b)))));
+    }
+
+    /**
      * @dev If `condition` is true return `value`, otherwise return zero.
      */
     function selectIf(bool condition, uint256 value) internal pure returns (uint256) {
