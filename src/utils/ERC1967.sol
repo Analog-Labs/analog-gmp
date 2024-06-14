@@ -75,6 +75,7 @@ library ERC1967 {
         if (newImplementation.code.length == 0) {
             revert ERC1967InvalidImplementation(newImplementation);
         }
+        emit Upgraded(newImplementation);
         _setAddressSlot(IMPLEMENTATION_SLOT, newImplementation);
     }
 
