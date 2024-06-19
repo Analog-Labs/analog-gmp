@@ -84,7 +84,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     struct KeyInfo {
         uint216 _gap; // gap, so we can use later for store more information about a shard
-        uint8 status; // status, 0 = unregisted, 1 = active, 3 = revoked
+        uint8 status; // 0 = unregisted, 1 = active, 2 = revoked
         uint32 nonce; // shard nonce
     }
 
@@ -463,6 +463,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return prevHash;
     }
 
+    /*//////////////////////////////////////////////////////////////
+                               ADMIN LOGIC
+    //////////////////////////////////////////////////////////////*/
+
     function _getAdmin() private view returns (address admin) {
         admin = ERC1967.getAdmin();
         // If the admin slot is empty, then the 0xd4833be6144AF48d4B09E5Ce41f826eEcb7706D6 is the admin
@@ -489,17 +493,26 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     // DANGER: This function is for migration purposes only, it allows the admin to set any storage slot.
-    function adminSetStorage(uint256[][2] calldata values) external payable {
+    function sudoSetStorage(uint256[2][] calldata values) external payable {
         require(msg.sender == _getAdmin(), "unauthorized");
         require(values.length > 0, "invalid values");
 
         uint256 prev = 0;
         for (uint256 i = 0; i < values.length; i++) {
-            uint256 key = values[i][0];
-            require(key >= prev, "invalid storage slot");
-            uint256 value = values[i][1];
+            uint256[2] memory entry = values[i];
+            // Guarantee that the storage slot is in ascending order
+            // and that there are no repeated storage slots
+            uint256 key = entry[0];
+            require(i == 0 || key > prev, "repeated storage slot");
+
+            // Protect admin and implementation slots
+            require(key != uint256(ERC1967.ADMIN_SLOT), "use setAdmin instead");
+            require(key != uint256(ERC1967.IMPLEMENTATION_SLOT), "use upgrade instead");
+
+            // Set storage slot
+            uint256 value = entry[1];
             assembly {
-                sstore(value, value)
+                sstore(key, value)
             }
             prev = key;
         }
