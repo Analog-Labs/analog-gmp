@@ -199,27 +199,19 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                 uint8 yParity = newKey.yParity;
                 require(yParity == (yParity & 1), "y parity bit must be 0 or 1, cannot register shard");
 
-                // If nonce is zero, it's a new shard, otherwise it is an existing shard which was previously revoked.
-                if (nonce == 0) {
-                    // if is a new shard shard, set its initial nonce to 1
-                    shard.nonce = 1;
-                } else {
-                    // If the shard exists, the provided y-parity must match the original one
-                    uint8 actualYParity = (status & SHARD_Y_PARITY) > 0 ? 1 : 0;
-                    require(
-                        actualYParity == yParity,
-                        "the provided y-parity doesn't match the existing y-parity, cannot register shard"
-                    );
-                }
+                // If nonce is zero, it's a new shard.
+                // If the shard exists, the provided y-parity must match the original one
+                uint8 actualYParity = uint8(BranchlessMath.toUint((status & SHARD_Y_PARITY) > 0));
+                require(
+                    nonce == 0 || actualYParity == yParity,
+                    "the provided y-parity doesn't match the existing y-parity, cannot register shard"
+                );
 
-                // store the y-parity in the `KeyInfo`
-                if (yParity > 0) {
-                    // enable SHARD_Y_PARITY bitflag
-                    status |= SHARD_Y_PARITY;
-                } else {
-                    // disable SHARD_Y_PARITY bitflag
-                    status &= ~SHARD_Y_PARITY;
-                }
+                // if is a new shard shard, set its initial nonce to 1
+                shard.nonce = uint32(BranchlessMath.select(nonce == 0, 1, nonce));
+
+                // enable/disable the y-parity flag
+                status = uint8(BranchlessMath.select(yParity > 0, status | SHARD_Y_PARITY, status & ~SHARD_Y_PARITY));
 
                 // enable SHARD_ACTIVE bitflag
                 status |= SHARD_ACTIVE;
