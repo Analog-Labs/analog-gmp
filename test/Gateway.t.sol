@@ -249,7 +249,7 @@ contract GatewayBase is Test {
             from: sender,
             to: address(gateway),
             value: 0,
-            gasLimit: baseCost + executionCost + 2160 + 693,
+            gasLimit: baseCost + executionCost + 2160 + 769,
             executionCost: 0,
             baseCost: 0
         });
@@ -309,7 +309,7 @@ contract GatewayBase is Test {
             from: sender,
             to: address(gateway),
             value: 0,
-            gasLimit: baseCost + executionCost + 2160 + 725 + 955,
+            gasLimit: baseCost + executionCost + 2160 + 725 + 1030,
             executionCost: 0,
             baseCost: 0
         });

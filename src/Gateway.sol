@@ -320,17 +320,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Cap the GMP gas limit to 80% of the block gas limit
         // OBS: we assume the remaining 20% is enough for the Gateway execution, which is a safe assumption
         // once most EVM blockchains have gas limits above 10M and don't need more than 60k gas for the Gateway execution.
-        uint256 maxGasLimit = block.gaslimit.saturatingMul(4).saturatingDiv(5); // 80% of the block gas limit
+        uint256 maxGasLimit = block.gaslimit >> 1; // 50% of the block gas limit
         uint256 gasLimit = BranchlessMath.min(message.gasLimit, maxGasLimit);
-
-        // Make sure the gas left is enough to execute the GMP message
-        // unchecked {
-        //     // Subtract 5000 gas, 2600 (CALL) + 2400 (other instructions with some margin)
-        //     uint256 gasAvailable = BranchlessMath.saturatingSub(gasleft(), 10000);
-        //     // “all but one 64th", reference: https://eips.ethereum.org/EIPS/eip-150
-        //     gasAvailable -= gasAvailable >> 6;
-        //     require(gasAvailable > gasLimit, "gas left below message.gasLimit");
-        // }
 
         // Execute GMP call
         bool success;
