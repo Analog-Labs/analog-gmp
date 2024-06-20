@@ -76,6 +76,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Hash of the previous GMP message submitted.
     bytes32 public prevMessageHash;
 
+    // Replay protection mechanism, stores the hash of the executed messages
+    // messageHash => shardId
+    mapping(bytes32 => bytes32) _executedMessages;
+
     /**
      * @dev Shard info stored in the Gateway Contract
      * OBS: the order of the attributes matters! ethereum storage is 256bit aligned, try to keep
@@ -269,9 +273,15 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Register/Revoke TSS keys using shard TSS signature
     function updateKeys(Signature calldata signature, UpdateKeysMessage memory message) public {
         bytes32 messageHash = message.eip712TypedHash(DOMAIN_SEPARATOR);
+
+        // Verify signature and if the message was already executed
+        require(_executedMessages[messageHash] == bytes32(0), "message already executed");
         _verifySignature(signature, messageHash);
 
-        // Register shards pubkeys
+        // Store the message hash to prevent replay attacks
+        _executedMessages[messageHash] = bytes32(signature.xCoord);
+
+        // Register/Revoke shards pubkeys
         _updateKeys(messageHash, message.revoke, message.register);
     }
 
