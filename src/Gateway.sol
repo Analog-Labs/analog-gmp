@@ -76,6 +76,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Hash of the previous GMP message submitted.
     bytes32 public prevMessageHash;
 
+    // Replay protection mechanism, stores the hash of the executed messages
+    // messageHash => shardId
+    mapping(bytes32 => bytes32) _executedMessages;
+
     /**
      * @dev Shard info stored in the Gateway Contract
      * OBS: the order of the attributes matters! ethereum storage is 256bit aligned, try to keep
@@ -84,7 +88,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     struct KeyInfo {
         uint216 _gap; // gap, so we can use later for store more information about a shard
-        uint8 status; // status, 0 = unregisted, 1 = active, 3 = revoked
+        uint8 status; // 0 = unregisted, 1 = active, 2 = revoked
         uint32 nonce; // shard nonce
     }
 
@@ -195,27 +199,19 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                 uint8 yParity = newKey.yParity;
                 require(yParity == (yParity & 1), "y parity bit must be 0 or 1, cannot register shard");
 
-                // If nonce is zero, it's a new shard, otherwise it is an existing shard which was previously revoked.
-                if (nonce == 0) {
-                    // if is a new shard shard, set its initial nonce to 1
-                    shard.nonce = 1;
-                } else {
-                    // If the shard exists, the provided y-parity must match the original one
-                    uint8 actualYParity = (status & SHARD_Y_PARITY) > 0 ? 1 : 0;
-                    require(
-                        actualYParity == yParity,
-                        "the provided y-parity doesn't match the existing y-parity, cannot register shard"
-                    );
-                }
+                // If nonce is zero, it's a new shard.
+                // If the shard exists, the provided y-parity must match the original one
+                uint8 actualYParity = uint8(BranchlessMath.toUint((status & SHARD_Y_PARITY) > 0));
+                require(
+                    nonce == 0 || actualYParity == yParity,
+                    "the provided y-parity doesn't match the existing y-parity, cannot register shard"
+                );
 
-                // store the y-parity in the `KeyInfo`
-                if (yParity > 0) {
-                    // enable SHARD_Y_PARITY bitflag
-                    status |= SHARD_Y_PARITY;
-                } else {
-                    // disable SHARD_Y_PARITY bitflag
-                    status &= ~SHARD_Y_PARITY;
-                }
+                // if is a new shard shard, set its initial nonce to 1
+                shard.nonce = uint32(BranchlessMath.select(nonce == 0, 1, nonce));
+
+                // enable/disable the y-parity flag
+                status = uint8(BranchlessMath.select(yParity > 0, status | SHARD_Y_PARITY, status & ~SHARD_Y_PARITY));
 
                 // enable SHARD_ACTIVE bitflag
                 status |= SHARD_ACTIVE;
@@ -269,9 +265,15 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Register/Revoke TSS keys using shard TSS signature
     function updateKeys(Signature calldata signature, UpdateKeysMessage memory message) public {
         bytes32 messageHash = message.eip712TypedHash(DOMAIN_SEPARATOR);
+
+        // Verify signature and if the message was already executed
+        require(_executedMessages[messageHash] == bytes32(0), "message already executed");
         _verifySignature(signature, messageHash);
 
-        // Register shards pubkeys
+        // Store the message hash to prevent replay attacks
+        _executedMessages[messageHash] = bytes32(signature.xCoord);
+
+        // Register/Revoke shards pubkeys
         _updateKeys(messageHash, message.revoke, message.register);
     }
 
@@ -318,17 +320,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Cap the GMP gas limit to 80% of the block gas limit
         // OBS: we assume the remaining 20% is enough for the Gateway execution, which is a safe assumption
         // once most EVM blockchains have gas limits above 10M and don't need more than 60k gas for the Gateway execution.
-        uint256 maxGasLimit = block.gaslimit.saturatingMul(4).saturatingDiv(5); // 80% of the block gas limit
+        uint256 maxGasLimit = block.gaslimit >> 1; // 50% of the block gas limit
         uint256 gasLimit = BranchlessMath.min(message.gasLimit, maxGasLimit);
-
-        // Make sure the gas left is enough to execute the GMP message
-        // unchecked {
-        //     // Subtract 5000 gas, 2600 (CALL) + 2400 (other instructions with some margin)
-        //     uint256 gasAvailable = BranchlessMath.saturatingSub(gasleft(), 10000);
-        //     // “all but one 64th", reference: https://eips.ethereum.org/EIPS/eip-150
-        //     gasAvailable -= gasAvailable >> 6;
-        //     require(gasAvailable > gasLimit, "gas left below message.gasLimit");
-        // }
 
         // Execute GMP call
         bool success;
@@ -463,6 +456,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return prevHash;
     }
 
+    /*//////////////////////////////////////////////////////////////
+                               ADMIN LOGIC
+    //////////////////////////////////////////////////////////////*/
+
     function _getAdmin() private view returns (address admin) {
         admin = ERC1967.getAdmin();
         // If the admin slot is empty, then the 0xd4833be6144AF48d4B09E5Ce41f826eEcb7706D6 is the admin
@@ -489,17 +486,26 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     // DANGER: This function is for migration purposes only, it allows the admin to set any storage slot.
-    function adminSetStorage(uint256[][2] calldata values) external payable {
+    function sudoSetStorage(uint256[2][] calldata values) external payable {
         require(msg.sender == _getAdmin(), "unauthorized");
         require(values.length > 0, "invalid values");
 
         uint256 prev = 0;
         for (uint256 i = 0; i < values.length; i++) {
-            uint256 key = values[i][0];
-            require(key >= prev, "invalid storage slot");
-            uint256 value = values[i][1];
+            uint256[2] memory entry = values[i];
+            // Guarantee that the storage slot is in ascending order
+            // and that there are no repeated storage slots
+            uint256 key = entry[0];
+            require(i == 0 || key > prev, "repeated storage slot");
+
+            // Protect admin and implementation slots
+            require(key != uint256(ERC1967.ADMIN_SLOT), "use setAdmin instead");
+            require(key != uint256(ERC1967.IMPLEMENTATION_SLOT), "use upgrade instead");
+
+            // Set storage slot
+            uint256 value = entry[1];
             assembly {
-                sstore(value, value)
+                sstore(key, value)
             }
             prev = key;
         }

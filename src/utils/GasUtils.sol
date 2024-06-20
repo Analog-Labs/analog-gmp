@@ -7,7 +7,7 @@ pragma solidity ^0.8.20;
  * @dev Utilities for branchless operations, useful when a constant gas cost is required.
  */
 library GasUtils {
-    uint256 internal constant EXECUTION_BASE_COST = 43_303 + 4500;
+    uint256 internal constant EXECUTION_BASE_COST = 43_204 + 4500;
 
     /**
      * @dev Compute the transaction base cost.
@@ -28,13 +28,13 @@ library GasUtils {
             words = (words + 31) & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0;
             words += 0x0200; // Memory size
             words = (words + 31) >> 5; // to words
-            executionCost += ((words * words) / 512) + (words * 3);
+            executionCost += ((words * words) >> 9) + (words * 3);
 
             // Calculate Proxy memory expansion cost
             // Proxy execute(selector + signature + gmpData)
             words = 388 + ((messageSize + 31) & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0);
             words = (words + 31) >> 5;
-            executionCost += ((words * words) / 512) + (words * 6);
+            executionCost += ((words * words) >> 9) + (words * 6);
 
             // Base Cost calculation
             executionCost += ((words - 1) / 15) * 1845;
