@@ -44,11 +44,4 @@ interface IExecutor {
      * @param message Shard's keys to register and revoke
      */
     function updateKeys(Signature memory signature, UpdateKeysMessage memory message) external;
-
-    /**
-     * Update TSS key set
-     * @param signature Schnorr signature
-     * @param message Shard's keys to register and revoke
-     */
-    function setFee(Signature memory signature, UpdateKeysMessage memory message) external;
 }
