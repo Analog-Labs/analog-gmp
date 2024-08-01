@@ -31,6 +31,8 @@ interface IGateway {
 
     function networkId() external view returns (uint16);
 
+    function estimateMessageCost(uint16 networkid, uint256 messageSize) external view returns (uint256);
+
     /**
      * @notice Pay for gas of contract execution on destination chain.
      * @dev This function is called on the destination chain before calling the gateway to execute a source contract.

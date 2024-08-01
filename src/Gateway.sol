@@ -7,10 +7,12 @@ import {Schnorr} from "@frost-evm/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {GasUtils} from "./utils/GasUtils.sol";
 import {ERC1967} from "./utils/ERC1967.sol";
+import {UFloat9x56, UFloatMath} from "./utils/Float9x56.sol";
 import {IGateway} from "./interfaces/IGateway.sol";
 import {IUpgradable} from "./interfaces/IUpgradable.sol";
 import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
+
 import {
     TssKey,
     GmpMessage,
@@ -54,9 +56,15 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for address;
     using BranchlessMath for uint256;
+    using UFloatMath for UFloat9x56;
 
     uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
+
+    /**
+     * @dev Maximum size of the message payload
+     */
+    uint256 MAX_MESSAGE_SIZE = 0x6000;
 
     // Non-zero value used to initialize the `prevMessageHash` storage
     bytes32 internal constant FIRST_MESSAGE_PLACEHOLDER = bytes32(uint256(2 ** 256 - 1));
@@ -70,7 +78,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Source address => Source network => Deposit Amount
     mapping(GmpSender => mapping(uint16 => uint256)) _deposits;
 
-    // Source address => Source network => Deposit Amount
+    // Network ID => Source network
+    // deprecated: _networkInfo
     mapping(uint16 => bytes32) _networks;
 
     // Hash of the previous GMP message submitted.
@@ -79,6 +88,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Replay protection mechanism, stores the hash of the executed messages
     // messageHash => shardId
     mapping(bytes32 => bytes32) _executedMessages;
+
+    // Network ID => Source network
+    mapping(uint16 => NetworkInfo) _networkInfo;
 
     /**
      * @dev Shard info stored in the Gateway Contract
@@ -101,6 +113,19 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     struct GmpInfo {
         GmpStatus status;
         uint64 blockNumber; // block in which the message was processed
+    }
+
+    /**
+     * @dev Network info stored in the Gateway Contract
+     */
+    struct NetworkInfo {
+        bytes32 domainSeparator; // domain EIP-712 - Replay Protection Mechanism.
+        /// @dev The maximum amount of gas we allow on this particular network.
+        uint64 gasLimit;
+        /// @dev Gas price of destination chain, in terms of the source chain token.
+        UFloat9x56 relativeGasPrice;
+        /// @dev base fee for cross-chain message approval on destination, in terms of source native gas token.
+        uint128 baseFee;
     }
 
     constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
@@ -175,7 +200,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     function _updateNetworks(Network[] calldata networks) private {
         for (uint256 i = 0; i < networks.length; i++) {
             Network calldata network = networks[i];
-            _networks[network.id] = computeDomainSeparator(network.id, network.gateway);
+            bytes32 domainSeparator = computeDomainSeparator(network.id, network.gateway);
+            _networks[network.id] = domainSeparator;
+            _networkInfo[network.id].domainSeparator = domainSeparator;
         }
     }
 
@@ -418,6 +445,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         }
     }
 
+    function getNetwork(uint16 id) public view returns (bytes32) {
+        return _networks[id];
+    }
+
+    // function setFee(uint16 id, UFloat9x56 relativeGasPrice) external {
+    //     _networks[id].relativeGasPrice = relativeGasPrice;
+    // }
+
     /**
      * @dev Send message from chain A to chain B
      * @param destinationAddress the target address on the destination chain
@@ -431,9 +466,20 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint256 executionGasLimit,
         bytes memory data
     ) external payable returns (bytes32) {
+        // Check if the message data is too large
+        require(data.length < 0x6000, "msg data too large");
+
         // Check if the destination network is supported
-        bytes32 domainSeparator = _networks[destinationNetwork];
+        NetworkInfo storage info = _networkInfo[destinationNetwork];
+        bytes32 domainSeparator = info.domainSeparator;
         require(domainSeparator != bytes32(0), "unsupported network");
+
+        // Check if the source has enough deposit to execute the GMP message
+        {
+            (uint256 baseGas, uint256 executionGas) = GasUtils.executionGasCost(data.length);
+            uint256 gasPrice = uint256(info.baseFee) + info.relativeGasPrice.mul(baseGas + executionGas);
+            require(msg.value >= gasPrice, "insufficient deposit");
+        }
 
         // We use 20 bytes for represent the address and 1 bit for the contract flag
         GmpSender source = msg.sender.toSender(tx.origin != msg.sender);
@@ -454,6 +500,18 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             prevHash, GmpSender.unwrap(source), destinationAddress, destinationNetwork, executionGasLimit, salt, data
         );
         return prevHash;
+    }
+
+    function estimateMessageCost(uint16 networkid, uint256 messageSize) external view returns (uint256) {
+        if (messageSize > MAX_MESSAGE_SIZE) {
+            return 2 ** 256 - 1;
+        }
+        NetworkInfo storage network = _networkInfo[networkid];
+        uint256 baseFee = uint256(network.baseFee);
+        UFloat9x56 relativeGasPrice = _networkInfo[networkid].relativeGasPrice;
+        require(baseFee > 0 || UFloat9x56.unwrap(relativeGasPrice) > 0);
+        (uint256 baseGas, uint256 executionGas) = GasUtils.executionGasCost(messageSize);
+        return relativeGasPrice.mul(baseGas + executionGas) + baseFee;
     }
 
     /*//////////////////////////////////////////////////////////////
