@@ -202,7 +202,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             Network calldata network = networks[i];
             bytes32 domainSeparator = computeDomainSeparator(network.id, network.gateway);
             _networks[network.id] = domainSeparator;
-            _networkInfo[network.id].domainSeparator = domainSeparator;
+            NetworkInfo storage info = _networkInfo[network.id];
+            info.domainSeparator = domainSeparator;
+            info.gasLimit = 15_000_000; // Default to 15M gas
+            info.relativeGasPrice = UFloatMath.ONE;
+            info.baseFee = 0;
         }
     }
 

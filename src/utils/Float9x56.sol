@@ -11,6 +11,8 @@ pragma solidity >=0.8.0;
 type UFloat9x56 is uint64;
 
 library UFloatMath {
+    UFloat9x56 internal constant ONE = UFloat9x56.wrap(0xff00000000000000);
+
     /**
      * @dev multiply an UFloat9x56 by an uint256 in constant gas.
      */
