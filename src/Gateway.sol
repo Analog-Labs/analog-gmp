@@ -62,9 +62,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
 
     /**
-     * @dev Maximum size of the message payload
+     * @dev Maximum size of the GMP payload
      */
-    uint256 MAX_MESSAGE_SIZE = 0x6000;
+    uint256 internal constant MAX_PAYLOAD_SIZE = 0x6000;
 
     // Non-zero value used to initialize the `prevMessageHash` storage
     bytes32 internal constant FIRST_MESSAGE_PLACEHOLDER = bytes32(uint256(2 ** 256 - 1));
@@ -201,7 +201,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         for (uint256 i = 0; i < networks.length; i++) {
             Network calldata network = networks[i];
             bytes32 domainSeparator = computeDomainSeparator(network.id, network.gateway);
-            _networks[network.id] = domainSeparator;
+            // _networks[network.id] = domainSeparator;
             NetworkInfo storage info = _networkInfo[network.id];
             info.domainSeparator = domainSeparator;
             info.gasLimit = 15_000_000; // Default to 15M gas
@@ -311,7 +311,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Deposit balance to refund callers of execute
     function deposit(GmpSender source, uint16 network) public payable {
         // Check if the source network is supported
-        require(_networks[network] != bytes32(0), "unsupported network");
+        require(_networkInfo[network].domainSeparator != bytes32(0), "unsupported network");
         _deposits[source][network] += msg.value;
     }
 
@@ -348,11 +348,17 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         gmp.status = GmpStatus.PENDING;
         gmp.blockNumber = uint64(block.number);
 
-        // Cap the GMP gas limit to 80% of the block gas limit
-        // OBS: we assume the remaining 20% is enough for the Gateway execution, which is a safe assumption
+        // Cap the GMP gas limit to 50% of the block gas limit
+        // OBS: we assume the remaining 50% is enough for the Gateway execution, which is a safe assumption
         // once most EVM blockchains have gas limits above 10M and don't need more than 60k gas for the Gateway execution.
-        uint256 maxGasLimit = block.gaslimit >> 1; // 50% of the block gas limit
-        uint256 gasLimit = BranchlessMath.min(message.gasLimit, maxGasLimit);
+        uint256 gasNeeded = BranchlessMath.min(message.gasLimit, block.gaslimit >> 1);
+        unchecked {
+            // Discount `all but one 64th`, to guarantee it was provided enough gas to execute the GMP message
+            // https://eips.ethereum.org/EIPS/eip-150
+            uint256 gasLeft = gasleft().saturatingSub(5_000);
+            gasLeft = gasLeft.saturatingSub(gasLeft.saturatingDiv(64));
+            require(gasLeft >= gasNeeded, "insufficient gas to execute GMP message");
+        }
 
         // Execute GMP call
         bool success;
@@ -369,7 +375,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             // returns 1 if the call succeed, and 0 if it reverted
             success :=
                 call(
-                    gasLimit, // call gas limit (defined in the GMP message)
+                    gasNeeded, // call gas limit defined in the GMP message or 50% of the block gas limit
                     dest, // dest address
                     0, // value in wei to transfer (always zero for GMP)
                     ptr, // input memory pointer
@@ -402,50 +408,36 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         external
         returns (GmpStatus status, bytes32 result)
     {
+        uint256 initialGas = gasleft().saturatingAdd(5000);
+
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
         require(message.destNetwork == NETWORK_ID, "invalid gmp network");
-        require(_networks[message.srcNetwork] != bytes32(0), "source network no supported");
+
+        // Check if the message data is too large
+        require(message.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
+
+        uint256 gasUsed;
+        unchecked {
+            (uint256 baseGas, uint256 executionGas) = GasUtils.executionGasCost(message.data.length);
+            initialGas = baseGas + executionGas;
+        }
 
         // Verify the signature
         (bytes32 messageHash, bytes memory data) = message.encodeCallback(DOMAIN_SEPARATOR);
         _verifySignature(signature, messageHash);
 
-        // Compute the GMP execution gas cost
-        (uint256 baseCost, uint256 executionCost) = GasUtils.executionGasCost(message.data.length);
-        uint256 gasUsed = gasleft();
-
-        // Check if the source has enough deposit and if the caller provided
-        // enough gas to execute the GMP message
-        uint256 deposited = _deposits[message.source][message.srcNetwork];
-        unchecked {
-            // Cap the GMP gas limit to 50% of the block gas limit
-            uint256 gasLimit = block.gaslimit >> 1; // 50% of the block gas limit
-            gasLimit = BranchlessMath.min(message.gasLimit, gasLimit);
-
-            // Check if the source has enough deposit before executing the GMP message
-            uint256 minDeposit = baseCost.saturatingAdd(executionCost).saturatingAdd(gasLimit);
-            if (deposited < minDeposit.saturatingMul(tx.gasprice)) {
-                return _gmpInsufficientFunds(messageHash, message);
-            }
-
-            // Check if the relayer provided enough gas to execute the GMP message
-            // uint256 minGasLeft = gasLimit.saturatingAdd(39190);
-            uint256 minGasLeft = gasLimit.saturatingAdd(39117);
-            require(gasUsed >= minGasLeft, "insufficient gas to execute GMP message");
-
-            // Add base cost to the gas used
-            gasUsed = minDeposit;
-        }
-
+        // Execute GMP message
         (status, result) = _execute(messageHash, message, data);
 
-        // Calculate a gas refund, capped to protect against huge spikes in `tx.gasprice`
-        // that could drain funds unnecessarily. During these spikes, relayers should back off.
+        // Refund the chronicle gas
         unchecked {
-            uint256 refund = BranchlessMath.min(gasUsed * tx.gasprice, deposited);
-            _deposits[message.source][message.srcNetwork] -= refund;
-            payable(msg.sender).transfer(refund);
+            gasUsed = initialGas.saturatingSub(gasleft());
+            uint256 refund = BranchlessMath.min(gasUsed * tx.gasprice, address(this).balance);
+            /// @solidity memory-safe-assembly
+            assembly {
+                pop(call(gas(), caller(), refund, 0, 0, 0, 0))
+            }
         }
     }
 
@@ -471,7 +463,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         bytes memory data
     ) external payable returns (bytes32) {
         // Check if the message data is too large
-        require(data.length < 0x6000, "msg data too large");
+        require(data.length < MAX_PAYLOAD_SIZE, "msg data too large");
 
         // Check if the destination network is supported
         NetworkInfo storage info = _networkInfo[destinationNetwork];
@@ -507,12 +499,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     function estimateMessageCost(uint16 networkid, uint256 messageSize) external view returns (uint256) {
-        if (messageSize > MAX_MESSAGE_SIZE) {
+        if (messageSize > MAX_PAYLOAD_SIZE) {
+            // If the message size is too large, return the maximum possible cost
             return 2 ** 256 - 1;
         }
+
         NetworkInfo storage network = _networkInfo[networkid];
         uint256 baseFee = uint256(network.baseFee);
-        UFloat9x56 relativeGasPrice = _networkInfo[networkid].relativeGasPrice;
+        UFloat9x56 relativeGasPrice = network.relativeGasPrice;
         require(baseFee > 0 || UFloat9x56.unwrap(relativeGasPrice) > 0);
         (uint256 baseGas, uint256 executionGas) = GasUtils.executionGasCost(messageSize);
         return relativeGasPrice.mul(baseGas + executionGas) + baseFee;
