@@ -28,7 +28,7 @@ library GasUtils {
             executionGas(messageSize).saturatingAdd(gasLimit).saturatingAdd(messageSize.saturatingMul(16));
 
         // Calculate the gas cost: gasPrice * gasNeeded + baseFee
-        return UFloatMath.saturatingMul(gasPrice, gasNeeded) + baseFee;
+        return UFloatMath.saturatingMul(gasPrice, gasNeeded).saturatingAdd(baseFee);
     }
 
     function executionGas(uint256 messageSize) internal pure returns (uint256 executionCost) {

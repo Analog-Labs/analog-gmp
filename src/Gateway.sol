@@ -62,7 +62,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
-    uint8 internal constant SHARD_CAN_UPDATE_NETWORK = (1 << 1); // Pubkey y parity bitflag
 
     /**
      * @dev Maximum size of the GMP payload
@@ -132,6 +131,15 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint128 baseFee;
     }
 
+    /**
+     * @dev Network info stored in the Gateway Contract
+     * @param id Message unique id.
+     * @param networkId Network identifier.
+     * @param domainSeparator Domain EIP-712 - Replay Protection Mechanism.
+     * @param relativeGasPrice Gas price of destination chain, in terms of the source chain token.
+     * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
+     * @param gasLimit The maximum amount of gas we allow on this particular network.
+     */
     event NetworkUpdated(
         bytes32 indexed id,
         uint16 indexed networkId,
