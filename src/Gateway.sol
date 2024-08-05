@@ -17,6 +17,7 @@ import {
     TssKey,
     GmpMessage,
     UpdateKeysMessage,
+    UpdateNetworkInfo,
     Signature,
     Network,
     GmpStatus,
@@ -53,6 +54,7 @@ abstract contract GatewayEIP712 {
 
 contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     using PrimitiveUtils for UpdateKeysMessage;
+    using PrimitiveUtils for UpdateNetworkInfo;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for address;
     using BranchlessMath for uint256;
@@ -60,6 +62,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
+    uint8 internal constant SHARD_CAN_UPDATE_NETWORK = (1 << 1); // Pubkey y parity bitflag
 
     /**
      * @dev Maximum size of the GMP payload
@@ -117,16 +120,26 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     /**
      * @dev Network info stored in the Gateway Contract
+     * @param domainSeparator Domain EIP-712 - Replay Protection Mechanism.
+     * @param gasLimit The maximum amount of gas we allow on this particular network.
+     * @param relativeGasPrice Gas price of destination chain, in terms of the source chain token.
+     * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
      */
     struct NetworkInfo {
-        bytes32 domainSeparator; // domain EIP-712 - Replay Protection Mechanism.
-        /// @dev The maximum amount of gas we allow on this particular network.
+        bytes32 domainSeparator;
         uint64 gasLimit;
-        /// @dev Gas price of destination chain, in terms of the source chain token.
         UFloat9x56 relativeGasPrice;
-        /// @dev base fee for cross-chain message approval on destination, in terms of source native gas token.
         uint128 baseFee;
     }
+
+    event NetworkUpdated(
+        bytes32 indexed id,
+        uint16 indexed networkId,
+        bytes32 indexed domainSeparator,
+        UFloat9x56 relativeGasPrice,
+        uint128 baseFee,
+        uint64 gasLimit
+    );
 
     constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
 
@@ -201,7 +214,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         for (uint256 i = 0; i < networks.length; i++) {
             Network calldata network = networks[i];
             bytes32 domainSeparator = computeDomainSeparator(network.id, network.gateway);
-            // _networks[network.id] = domainSeparator;
             NetworkInfo storage info = _networkInfo[network.id];
             info.domainSeparator = domainSeparator;
             info.gasLimit = 15_000_000; // Default to 15M gas
@@ -253,6 +265,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         }
     }
 
+    // Revoke TSS keys
     function _revokeKeys(TssKey[] memory keys) private {
         // We don't perform any arithmetic operation, except iterate a loop
         unchecked {
@@ -445,12 +458,30 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return _networks[id];
     }
 
-    // function setFee(uint16 id, UFloat9x56 relativeGasPrice) external {
-    //     _networks[id].relativeGasPrice = relativeGasPrice;
-    // }
+    /**
+     * @dev Update network information
+     * @param signature Schnorr signature
+     * @param info new network info
+     */
+    function setNetworkInfo(Signature calldata signature, UpdateNetworkInfo calldata info) external {
+        require(info.mortality <= block.number, "message expired");
+        // Verify signature and if the message was already executed
+        bytes32 messageHash = info.eip712TypedHash(DOMAIN_SEPARATOR);
+        require(_executedMessages[messageHash] == bytes32(0), "message already executed");
+        _verifySignature(signature, messageHash);
+
+        // Update network info and store the message hash to prevent replay attacks
+        _networkInfo[info.networkId] =
+            NetworkInfo(info.domainSeparator, info.gasLimit, info.relativeGasPrice, info.baseFee);
+        _executedMessages[messageHash] = bytes32(signature.xCoord);
+
+        emit NetworkUpdated(
+            messageHash, info.networkId, info.domainSeparator, info.relativeGasPrice, info.baseFee, info.gasLimit
+        );
+    }
 
     /**
-     * @dev Send message from chain A to chain B
+     * @dev Send message from this chain to another chain.
      * @param destinationAddress the target address on the destination chain
      * @param destinationNetwork the target chain where the contract call will be made
      * @param executionGasLimit the gas limit available for the contract call

@@ -31,6 +31,12 @@ interface IGateway {
 
     function networkId() external view returns (uint16);
 
+    /**
+     * @notice Estimate the gas cost of execute a GMP message.
+     * @dev This function is called on the destination chain before calling the gateway to execute a source contract.
+     * @param networkid The target chain where the contract call will be made
+     * @param messageSize Message size
+     */
     function estimateMessageCost(uint16 networkid, uint256 messageSize) external view returns (uint256);
 
     /**

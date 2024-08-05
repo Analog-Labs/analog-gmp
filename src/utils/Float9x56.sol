@@ -14,7 +14,7 @@ library UFloatMath {
     /**
      * @dev Constant representing 1.0 in UFloat9x56.
      */
-    UFloat9x56 internal constant ONE = UFloat9x56.wrap(0xff00000000000000);
+    UFloat9x56 internal constant ONE = UFloat9x56.wrap(0x8000000000000000);
 
     /**
      * @dev multiply an UFloat9x56 by an uint256 in constant gas.

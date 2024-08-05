@@ -4,6 +4,7 @@
 pragma solidity >=0.8.0;
 
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
+import {UFloatMath, UFloat9x56} from "./utils/Float9x56.sol";
 
 /**
  * @dev GmpSender is the sender of a GMP message
@@ -62,6 +63,24 @@ struct GmpMessage {
 struct UpdateKeysMessage {
     TssKey[] revoke;
     TssKey[] register;
+}
+
+/**
+ * @dev Message payload used to update the network info.
+ * @param networkId Domain EIP-712 - Replay Protection Mechanism.
+ * @param domainSeparator Domain EIP-712 - Replay Protection Mechanism.
+ * @param gasLimit The maximum amount of gas we allow on this particular network.
+ * @param relativeGasPrice Gas price of destination chain, in terms of the source chain token.
+ * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
+ * @param mortality maximum block in which this message is valid.
+ */
+struct UpdateNetworkInfo {
+    uint16 networkId;
+    bytes32 domainSeparator;
+    uint64 gasLimit;
+    UFloat9x56 relativeGasPrice;
+    uint128 baseFee;
+    uint64 mortality;
 }
 
 /**
@@ -137,6 +156,30 @@ library PrimitiveUtils {
                 eip712hash(message.register)
             )
         );
+    }
+
+    // computes the hash of the fully encoded EIP-712 message for the domain, which can be used to recover the signer
+    function eip712hash(UpdateNetworkInfo calldata message) internal pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                keccak256(
+                    "UpdateNetworkInfo(uint16 networkId,bytes32 domainSeparator,uint64 gasLimit,UFloat9x56 relativeGasPrice,uint128 baseFee)"
+                ),
+                message.networkId,
+                message.domainSeparator,
+                message.gasLimit,
+                message.relativeGasPrice,
+                message.baseFee
+            )
+        );
+    }
+
+    function eip712TypedHash(UpdateNetworkInfo calldata message, bytes32 domainSeparator)
+        internal
+        pure
+        returns (bytes32)
+    {
+        return _computeTypedHash(domainSeparator, eip712hash(message));
     }
 
     function eip712TypedHash(UpdateKeysMessage memory message, bytes32 domainSeparator)
