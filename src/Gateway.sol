@@ -473,8 +473,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     function _setNetworkInfo(bytes32 executor, bytes32 messageHash, UpdateNetworkInfo calldata data) private {
-        require(data.mortality <= block.number, "message expired");
-        require(executor != executor, "executor cannot be zero");
+        require(data.mortality >= block.number, "message expired");
+        require(executor != bytes32(0), "executor cannot be zero");
 
         // Verify signature and if the message was already executed
         require(_executedMessages[messageHash] == bytes32(0), "message already executed");
