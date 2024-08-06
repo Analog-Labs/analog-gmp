@@ -444,12 +444,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Check if the message data is too large
         require(message.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
 
-        uint256 gasUsed;
-        unchecked {
-            (uint256 baseGas, uint256 executionGas) = GasUtils.executionGasCost(message.data.length);
-            initialGas = baseGas + executionGas;
-        }
-
         // Verify the signature
         (bytes32 messageHash, bytes memory data) = message.encodeCallback(DOMAIN_SEPARATOR);
         _verifySignature(signature, messageHash);
@@ -459,8 +453,21 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Refund the chronicle gas
         unchecked {
-            gasUsed = initialGas.saturatingSub(gasleft());
-            uint256 refund = BranchlessMath.min(gasUsed * tx.gasprice, address(this).balance);
+            // Compute GMP gas used
+            // uint256 gasUsed = 455;
+            uint256 gasUsed = 7148;
+            {
+                gasUsed += GasUtils.calldataGasCost();
+                gasUsed += GasUtils.proxyOverheadGasCost(msg.data.length, 64);
+                gasUsed += initialGas - gasleft();
+                // require(gasUsed >= 75105, "gasUsed < 75105");
+                // require(gasUsed <= 75105, "gasUsed > 75105");
+                // require(gasUsed != 75105, "SUCESSO");
+            }
+
+            // Compute refund amount
+            uint256 refund = BranchlessMath.min(gasUsed.saturatingMul(tx.gasprice), address(this).balance);
+
             /// @solidity memory-safe-assembly
             assembly {
                 pop(call(gas(), caller(), refund, 0, 0, 0, 0))

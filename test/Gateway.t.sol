@@ -161,6 +161,7 @@ contract GatewayBase is Test {
         networks[1].gateway = proxyAddr; // shibuya proxy address
         bytes memory initializer = abi.encodeCall(Gateway.initialize, (msg.sender, keys, networks));
         gateway = Gateway(address(new GatewayProxy(address(implementation), initializer)));
+        vm.deal(address(gateway), 100 ether);
 
         _srcDomainSeparator = GatewayUtils.computeDomainSeparator(SRC_NETWORK_ID, address(gateway));
         _dstDomainSeparator = GatewayUtils.computeDomainSeparator(DEST_NETWORK_ID, address(gateway));
@@ -266,8 +267,6 @@ contract GatewayBase is Test {
         vm.txGasPrice(1);
         address sender = TestUtils.createTestAccount(100 ether);
 
-        // vm.deal(address(bytes20(keccak256("dummy_address"))), 100 ether);
-
         // Build and sign GMP message
         GmpMessage memory gmp = GmpMessage({
             source: sender.toSender(false),
@@ -303,12 +302,20 @@ contract GatewayBase is Test {
         vm.expectRevert();
         (status, returned) = ctx.execute(sig, gmp);
 
+        // Check if the gateway has enough balance to refund the gas
+        uint256 gatewayBalance = address(gateway).balance;
+        uint256 senderBalance = address(sender).balance;
+        assertGe(gatewayBalance, executionCost + baseCost);
+        assertGe(senderBalance, ctx.gasLimit + ctx.value);
+
         // Give sufficient gas
         ctx.gasLimit += 1;
         (status, returned) = ctx.execute(sig, gmp);
 
-        assertEq(ctx.baseCost, baseCost);
-        assertEq(ctx.executionCost, executionCost);
+        assertEq(ctx.baseCost, baseCost, "ctx.baseCost != baseCost");
+        assertEq(ctx.executionCost, executionCost, "ctx.executionCost != executionCost");
+        assertEq(gatewayBalance - address(gateway).balance, executionCost + baseCost, "wrong refund amount");
+        assertEq(senderBalance, address(sender).balance, "sender balance should not change");
 
         /*
         ctx.submitMessage(gmp);

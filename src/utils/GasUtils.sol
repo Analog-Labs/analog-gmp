@@ -11,8 +11,8 @@ import {BranchlessMath} from "./BranchlessMath.sol";
  */
 library GasUtils {
     // uint256 internal constant BASE_OVERHEAD_COST = 21000;
-    // uint256 internal constant EXECUTION_BASE_COST = 43_204 + 4500 - 12908;
-    uint256 internal constant EXECUTION_BASE_COST = 39628;
+    // uint256 internal constant EXECUTION_BASE_COST = 39628;
+    uint256 internal constant EXECUTION_BASE_COST = 39194 + 6700;
 
     using BranchlessMath for uint256;
 
@@ -96,7 +96,7 @@ library GasUtils {
      */
     function executionGasNeeded(uint256 messageSize, uint256 gasLimit) internal pure returns (uint256 gasNeeded) {
         unchecked {
-            gasNeeded = EXECUTION_BASE_COST;
+            gasNeeded = EXECUTION_BASE_COST + 2114;
 
             // Convert message size to calldata size
             uint256 calldataSize = ((messageSize + 31) & 0xffe0) + 388;

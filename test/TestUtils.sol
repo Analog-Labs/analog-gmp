@@ -82,21 +82,16 @@ library TestUtils {
     function countNonZeros(bytes memory data) internal pure returns (uint256 nonZeros) {
         /// @solidity memory-safe-assembly
         assembly {
-            nonZeros := 0
-            for {
-                let len := mload(data)
-                let ptr := add(data, 32)
-                let end := add(ptr, len)
-            } lt(ptr, end) { ptr := add(ptr, 32) } {
-                // Remove padding
-                let v := mload(ptr)
-                {
-                    let padding := sub(end, ptr)
-                    padding := mul(lt(padding, 32), padding)
-                    v := shr(padding, v)
-                }
+            // Efficient algorithm for counting non-zero bytes in parallel
+            let size := mload(data)
 
+            // Temporary set the length of the data to zero
+            mstore(data, 0)
+
+            nonZeros := 0
+            for { let ptr := add(data, size) } gt(ptr, data) { ptr := sub(ptr, 32) } {
                 // Normalize
+                let v := mload(ptr)
                 v := or(v, shr(4, v))
                 v := or(v, shr(2, v))
                 v := or(v, shr(1, v))
@@ -111,7 +106,43 @@ library TestUtils {
                 v := and(v, 0xff)
                 nonZeros := add(nonZeros, v)
             }
+
+            // Restore the original length of the data
+            mstore(data, size)
         }
+
+        // /// @solidity memory-safe-assembly
+        // assembly {
+        //     nonZeros := 0
+        //     for {
+        //         let len := mload(data)
+        //         let ptr := add(data, 32)
+        //         let end := add(ptr, len)
+        //     } lt(ptr, end) { ptr := add(ptr, 32) } {
+        //         // Remove padding
+        //         let v := mload(ptr)
+        //         {
+        //             let padding := sub(end, ptr)
+        //             padding := mul(lt(padding, 32), padding)
+        //             v := shr(padding, v)
+        //         }
+
+        //         // Normalize
+        //         v := or(v, shr(4, v))
+        //         v := or(v, shr(2, v))
+        //         v := or(v, shr(1, v))
+        //         v := and(v, 0x0101010101010101010101010101010101010101010101010101010101010101)
+
+        //         // Count bytes in parallel
+        //         v := add(v, shr(128, v))
+        //         v := add(v, shr(64, v))
+        //         v := add(v, shr(32, v))
+        //         v := add(v, shr(16, v))
+        //         v := add(v, shr(8, v))
+        //         v := and(v, 0xff)
+        //         nonZeros := add(nonZeros, v)
+        //     }
+        // }
     }
 
     /**
