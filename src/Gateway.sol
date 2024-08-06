@@ -12,6 +12,7 @@ import {IGateway} from "./interfaces/IGateway.sol";
 import {IUpgradable} from "./interfaces/IUpgradable.sol";
 import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
+import {console} from "forge-std/console.sol";
 
 import {
     TssKey,
@@ -78,6 +79,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     mapping(bytes32 => GmpInfo) _messages;
 
     // Source address => Source network => Deposit Amount
+    // deprecated: _networkInfo
     mapping(GmpSender => mapping(uint16 => uint256)) _deposits;
 
     // Network ID => Source network
@@ -372,13 +374,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Cap the GMP gas limit to 50% of the block gas limit
         // OBS: we assume the remaining 50% is enough for the Gateway execution, which is a safe assumption
         // once most EVM blockchains have gas limits above 10M and don't need more than 60k gas for the Gateway execution.
-        uint256 gasNeeded = BranchlessMath.min(message.gasLimit, block.gaslimit >> 1);
+        uint256 gasLimit = BranchlessMath.min(message.gasLimit, block.gaslimit >> 1);
         unchecked {
-            // Discount `all but one 64th`, to guarantee it was provided enough gas to execute the GMP message
+            // Add `all but one 64th` to the gas needed, as the defined by EIP-150
             // https://eips.ethereum.org/EIPS/eip-150
-            uint256 gasLeft = gasleft().saturatingSub(5_000);
-            gasLeft = gasLeft.saturatingSub(gasLeft.saturatingDiv(64));
-            require(gasLeft >= gasNeeded, "insufficient gas to execute GMP message");
+            uint256 gasNeeded = gasLimit.saturatingMul(64).saturatingDiv(63);
+            // to guarantee it was provided enough gas to execute the GMP message
+            gasNeeded = gasNeeded.saturatingAdd(6412);
+            require(gasleft() >= gasNeeded, "insufficient gas to execute GMP message");
         }
 
         // Execute GMP call
@@ -396,7 +399,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             // returns 1 if the call succeed, and 0 if it reverted
             success :=
                 call(
-                    gasNeeded, // call gas limit defined in the GMP message or 50% of the block gas limit
+                    gasLimit, // call gas limit defined in the GMP message or 50% of the block gas limit
                     dest, // dest address
                     0, // value in wei to transfer (always zero for GMP)
                     ptr, // input memory pointer
@@ -429,7 +432,23 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         external
         returns (GmpStatus status, bytes32 result)
     {
-        uint256 initialGas = gasleft().saturatingAdd(5000);
+        uint256 initialGas = gasleft();
+        initialGas = initialGas.saturatingAdd(431);
+        // {
+        //     bytes memory p0 = msg.data;
+        //     console.logBytes(p0);
+        // }
+        // require(initialGas <= 39670, "initialGas > 39670");
+        // require(initialGas >= 39670, "initialGas < 39670");
+        // require(initialGas != 39670, "SUCESSO");
+        // unchecked {
+        //     (uint256 baseGas, uint256 executionGas) = GasUtils.executionGasCost(message.data.length);
+        //     require(baseGas <= 24304, "baseGas > 24304");
+        //     require(baseGas >= 24304, "baseGas < 24304");
+        //     require(executionGas <= 39671, "executionGas > 39671");
+        //     require(executionGas >= 39671, "executionGas < 39671");
+        //     require(executionGas != 39671, "SUCESSO");
+        // }
 
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
@@ -466,13 +485,43 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return _networks[id];
     }
 
+    function _setNetworkInfo(bytes32 executor, bytes32 messageHash, UpdateNetworkInfo calldata data) private {
+        require(data.mortality <= block.number, "message expired");
+        require(executor != executor, "executor cannot be zero");
+
+        // Verify signature and if the message was already executed
+        require(_executedMessages[messageHash] == bytes32(0), "message already executed");
+
+        // Update network info and store the message hash to prevent replay attacks
+        NetworkInfo storage networkInfo = _networkInfo[data.networkId];
+
+        // Verify if the domain separator is not zero
+        require((networkInfo.domainSeparator | data.domainSeparator) != bytes32(0), "domain separator cannot be zero");
+
+        // Update domain separator if it's not zero
+        if (data.domainSeparator != bytes32(0)) {
+            networkInfo.domainSeparator = messageHash;
+        }
+
+        // Update gas limit if it's not zero
+        networkInfo.gasLimit = uint64(BranchlessMath.select(data.gasLimit > 0, data.gasLimit, networkInfo.gasLimit));
+        if (UFloat9x56.unwrap(data.relativeGasPrice) > 0 || data.baseFee > 0) {
+            networkInfo.relativeGasPrice = networkInfo.relativeGasPrice;
+            networkInfo.baseFee = networkInfo.baseFee;
+        }
+        _executedMessages[messageHash] = executor;
+
+        emit NetworkUpdated(
+            messageHash, data.networkId, data.domainSeparator, data.relativeGasPrice, data.baseFee, data.gasLimit
+        );
+    }
+
     /**
      * @dev Update network information
      * @param signature Schnorr signature
      * @param info new network info
      */
     function setNetworkInfo(Signature calldata signature, UpdateNetworkInfo calldata info) external {
-        require(info.mortality <= block.number, "message expired");
         // Verify signature and if the message was already executed
         bytes32 messageHash = info.eip712TypedHash(DOMAIN_SEPARATOR);
         require(_executedMessages[messageHash] == bytes32(0), "message already executed");
@@ -511,8 +560,12 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Check if the source has enough deposit to execute the GMP message
         {
-            (uint256 baseGas, uint256 executionGas) = GasUtils.executionGasCost(data.length);
-            uint256 gasPrice = uint256(info.baseFee) + info.relativeGasPrice.mul(baseGas + executionGas);
+            uint256 gasNeeded =
+                GasUtils.estimateGasCost(info.relativeGasPrice, info.baseFee, data.length, executionGasLimit);
+            uint256 gasPrice = info.relativeGasPrice.mul(gasNeeded).saturatingAdd(info.baseFee);
+            assembly {
+                gasPrice := mul(gasPrice, gt(gasPrice, 0xffffffffff))
+            }
             require(msg.value >= gasPrice, "insufficient deposit");
         }
 

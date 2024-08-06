@@ -199,7 +199,7 @@ library TestUtils {
 
     // Workaround for set the tx.gasLimit, currently is not possible to define the gaslimit in foundry
     // Reference: https://github.com/foundry-rs/foundry/issues/2224
-    function _call(address addr, uint256 gasLimit, bytes memory data)
+    function _call(address addr, uint256 gasLimit, uint256 value, bytes memory data)
         private
         returns (uint256 gasUsed, bool success, bytes memory out)
     {
@@ -209,13 +209,13 @@ library TestUtils {
         assembly {
             success :=
                 call(
-                    0x7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E, // gas limit
+                    0x7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E, // Code Injection TAG
+                    gasLimit, // gas limit
                     addr, // addr
-                    gasLimit, // value
-                    add(data, 32),
-                    mload(data),
-                    0,
-                    0
+                    value, // value
+                    add(data, 32), // arg offset
+                    mload(data), // arg size
+                    0 // return offset
                 )
             gasUsed := mload(0)
 
@@ -229,7 +229,7 @@ library TestUtils {
     }
 
     // Execute a contract call and calculate the acurrate execution gas cost
-    function executeCall(address sender, address dest, uint256 gasLimit, bytes memory data)
+    function executeCall(address sender, address dest, uint256 gasLimit, uint256 value, bytes memory data)
         internal
         returns (uint256 executionCost, uint256 baseCost, bytes memory out)
     {
@@ -238,18 +238,19 @@ library TestUtils {
 
         // Decrement sender base cost
         {
-            uint256 gasRequired = baseCost + gasLimit;
-            uint256 fees = gasRequired * tx.gasprice;
-            require(sender.balance >= fees, "account has no sufficient funds");
-            vm.deal(sender, sender.balance - fees);
+            uint256 txFees = (baseCost + gasLimit) * tx.gasprice;
+            require(sender.balance >= (txFees + value), "account has no sufficient funds");
+            vm.deal(sender, sender.balance - txFees);
         }
 
         // Execute
-        (VmSafe.CallerMode callerMode, address msgSender, address txOrigin) =
-            setCallerMode(VmSafe.CallerMode.RecurrentPrank, sender, sender);
         bool success;
-        (executionCost, success, out) = _call(dest, gasLimit - baseCost, data);
-        setCallerMode(callerMode, msgSender, txOrigin);
+        {
+            (VmSafe.CallerMode callerMode, address msgSender, address txOrigin) =
+                setCallerMode(VmSafe.CallerMode.RecurrentPrank, sender, sender);
+            (executionCost, success, out) = _call(dest, gasLimit - baseCost, value, data);
+            setCallerMode(callerMode, msgSender, txOrigin);
+        }
 
         // Refund unused gas
         uint256 refund = (gasLimit - executionCost) * tx.gasprice;
