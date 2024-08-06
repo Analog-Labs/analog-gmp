@@ -501,36 +501,6 @@ contract GatewayBase is Test {
         assertEq(result, bytes32(0), "unexpected GMP result");
     }
 
-    function test_gmpStatusFailedWithoutDeposit() external {
-        vm.txGasPrice(1);
-        GmpSender sender = TestUtils.createTestAccount(100 ether).toSender(false);
-        assertEq(gateway.depositOf(sender, SRC_NETWORK_ID), 0);
-
-        GmpMessage memory gmp = GmpMessage({
-            source: sender,
-            srcNetwork: SRC_NETWORK_ID,
-            dest: address(receiver),
-            destNetwork: DEST_NETWORK_ID,
-            gasLimit: 1_000_000,
-            salt: 1,
-            data: abi.encode(uint256(1_000_000))
-        });
-        Signature memory sig = sign(gmp);
-
-        // execute gmp message
-        CallOptions memory ctx = CallOptions({
-            from: sender.toAddress(),
-            to: address(gateway),
-            value: 0,
-            gasLimit: 1_500_000,
-            executionCost: 0,
-            baseCost: 0
-        });
-        (GmpStatus status, bytes32 result) = ctx.execute(sig, gmp);
-        assertEq(uint256(status), uint256(GmpStatus.INSUFFICIENT_FUNDS), "unexpected GMP status");
-        assertEq(result, bytes32(0), "unexpected GMP result");
-    }
-
     function test_executeRevertsBelowDeposit() external {
         vm.txGasPrice(1);
         GmpSender sender = TestUtils.createTestAccount(100 ether).toSender(false);

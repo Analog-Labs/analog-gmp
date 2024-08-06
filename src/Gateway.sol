@@ -517,6 +517,15 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     /**
+     * @dev set network info using admin account
+     */
+    function setNetworkInfo(UpdateNetworkInfo calldata info) external {
+        require(msg.sender == _getAdmin(), "unauthorized");
+        bytes32 messageHash = info.eip712TypedHash(DOMAIN_SEPARATOR);
+        _setNetworkInfo(bytes32(uint256(uint160(_getAdmin()))), messageHash, info);
+    }
+
+    /**
      * @dev Update network information
      * @param signature Schnorr signature
      * @param info new network info
