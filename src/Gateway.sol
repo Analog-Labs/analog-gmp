@@ -12,7 +12,6 @@ import {IGateway} from "./interfaces/IGateway.sol";
 import {IUpgradable} from "./interfaces/IUpgradable.sol";
 import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
-// import {console} from "forge-std/console.sol";
 
 import {
     TssKey,
@@ -437,21 +436,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     {
         uint256 initialGas = gasleft();
         initialGas = initialGas.saturatingAdd(475);
-        // {
-        //     bytes memory p0 = msg.data;
-        //     console.logBytes(p0);
-        // }
-        // require(initialGas <= 39740, "initialGas > 39740");
-        // require(initialGas >= 39740, "initialGas < 39740");
-        // require(initialGas != 39740, "SUCESSO");
-        // unchecked {
-        //     (uint256 baseGas, uint256 executionGas) = GasUtils.executionGasCost(message.data.length);
-        //     require(baseGas <= 24304, "baseGas > 24304");
-        //     require(baseGas >= 24304, "baseGas < 24304");
-        //     require(executionGas <= 39671, "executionGas > 39671");
-        //     require(executionGas >= 39671, "executionGas < 39671");
-        //     require(executionGas != 39671, "SUCESSO");
-        // }
 
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
@@ -563,15 +547,13 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         bytes32 domainSeparator = info.domainSeparator;
         require(domainSeparator != bytes32(0), "unsupported network");
 
-        // Check if the source has enough deposit to execute the GMP message
+        // Check if the sender has deposited enougth funds to execute the GMP message
         {
-            uint256 gasNeeded =
-                GasUtils.estimateGasCost(info.relativeGasPrice, info.baseFee, data.length, executionGasLimit);
-            uint256 gasPrice = info.relativeGasPrice.mul(gasNeeded).saturatingAdd(info.baseFee);
-            assembly {
-                gasPrice := mul(gasPrice, gt(gasPrice, 0xffffffffff))
-            }
-            require(msg.value >= gasPrice, "insufficient deposit");
+            uint256 nonZeros = GasUtils.countNonZeros(data);
+            uint256 zeros = data.length - nonZeros;
+            uint256 msgPrice =
+                GasUtils.estimateWeiCost(info.relativeGasPrice, info.baseFee, nonZeros, zeros, executionGasLimit);
+            require(msg.value >= msgPrice, "insufficient deposit");
         }
 
         // We use 20 bytes for represent the address and 1 bit for the contract flag

@@ -41,24 +41,52 @@ library GasUtils {
     }
 
     /**
-     * @dev Estimate the gas cost of a GMP message.
+     * @dev Estimate the price in wei for send an GMP message.
+     * @param gasPrice The gas price in UFloat9x56 format.
+     * @param baseFee The base fee in wei.
+     * @param nonZeros The number of non-zero bytes in the gmp data.
+     * @param zeros The number of zero bytes in the gmp data.
+     * @param gasLimit The message gas limit.
      */
-    function estimateGasCost(UFloat9x56 gasPrice, uint256 baseFee, uint256 messageSize, uint256 gasLimit)
+    function estimateWeiCost(UFloat9x56 gasPrice, uint256 baseFee, uint256 nonZeros, uint256 zeros, uint256 gasLimit)
         internal
         pure
         returns (uint256)
     {
         unchecked {
-            // Calculate the gas needed for the transaction
-            uint256 gap = (messageSize.saturatingAdd(31) >> 5) << 5;
-            gap = gap.saturatingSub(messageSize);
-            uint256 gasNeeded = proxyOverheadGasCost(messageSize.saturatingAdd(388).saturatingAdd(gap), 32);
-            gasNeeded = gasNeeded.saturatingAdd(messageSize.saturatingAdd(177).saturatingMul(16));
-            gasNeeded = gasNeeded.saturatingAdd(gap.saturatingAdd(211).saturatingMul(4));
-            gasNeeded = gasNeeded.saturatingAdd(computeExecutionRefund(messageSize).saturatingAdd(gasLimit));
+            // Add execution cost
+            uint256 gasCost = estimateGas(zeros, nonZeros, gasLimit);
 
-            // Calculate the gas cost: gasPrice * gasNeeded + baseFee
-            return UFloatMath.saturatingMul(gasPrice, gasNeeded).saturatingAdd(baseFee);
+            // Calculate the gas cost: gasPrice * gasCost + baseFee
+            return UFloatMath.saturatingMul(gasPrice, gasCost).saturatingAdd(baseFee);
+        }
+    }
+
+    /**
+     * @dev Estimate the gas cost of a GMP message.
+     * @param nonZeros The number of non-zero bytes in the gmp data.
+     * @param zeros The number of zero bytes in the gmp data.
+     * @param gasLimit The message gas limit.
+     */
+    function estimateGas(uint256 nonZeros, uint256 zeros, uint256 gasLimit) internal pure returns (uint256) {
+        uint256 messageSize = zeros + nonZeros;
+        unchecked {
+            // add execution cost
+            uint256 gasCost = computeExecutionRefund(messageSize).saturatingAdd(gasLimit);
+
+            // add base cost
+            gasCost = gasCost.saturatingAdd(21000);
+
+            // calldata zero bytes
+            zeros = 31 + 30 + 12 + 30 + 31 + 30;
+            zeros = zeros.saturatingAdd(((messageSize + 31) & 0xffffe0) - nonZeros);
+            gasCost = gasCost.saturatingAdd(zeros.saturatingMul(4));
+
+            // calldata non-zero bytes
+            nonZeros = nonZeros.saturatingAdd(4 + 96 + 1 + 32 + 2 + 20 + 2 + 32 + 32 + 1 + 2);
+            gasCost = gasCost.saturatingAdd(nonZeros.saturatingMul(16));
+
+            return gasCost;
         }
     }
 
@@ -316,148 +344,38 @@ library GasUtils {
     }
 
     /**
-     * @dev Compute the transaction base cost.
+     * @dev Count the number of non-zero bytes in a byte sequence.
      */
-    function computeBaseCost(bytes memory data) internal pure returns (uint256 baseCost) {
-        // Efficient algorithm for counting non-zero calldata bytes in chunks of 480 bytes at time
-        // computation gas cost = 1845 * ceil(msg.data.length / 480) + 61
+    function countNonZeros(bytes memory data) internal pure returns (uint256 nonZeros) {
+        /// @solidity memory-safe-assembly
         assembly {
-            baseCost := 0
-            for {
-                let ptr := add(data, 0x20)
-                let end := add(ptr, mload(data))
-                let mask := 0x0101010101010101010101010101010101010101010101010101010101010101
-            } lt(ptr, end) { ptr := add(ptr, 32) } {
-                // 1
+            // Efficient algorithm for counting non-zero bytes in parallel
+            let size := mload(data)
+
+            // Temporary set the length of the data to zero
+            mstore(data, 0)
+
+            nonZeros := 0
+            for { let ptr := add(data, size) } gt(ptr, data) { ptr := sub(ptr, 32) } {
+                // Normalize
                 let v := mload(ptr)
                 v := or(v, shr(4, v))
                 v := or(v, shr(2, v))
                 v := or(v, shr(1, v))
-                v := and(v, mask)
-                {
-                    // 2
-                    ptr := add(ptr, 32)
-                    let r := mload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 3
-                    ptr := add(ptr, 32)
-                    r := mload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 4
-                    ptr := add(ptr, 32)
-                    r := mload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 5
-                    ptr := add(ptr, 32)
-                    r := mload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 6
-                    ptr := add(ptr, 32)
-                    r := mload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 7
-                    ptr := add(ptr, 32)
-                    r := mload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 8
-                    ptr := add(ptr, 32)
-                    r := mload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 9
-                    ptr := add(ptr, 32)
-                    r := mload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 10
-                    ptr := add(ptr, 32)
-                    r := mload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 11
-                    ptr := add(ptr, 32)
-                    r := mload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 12
-                    ptr := add(ptr, 32)
-                    r := mload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 13
-                    ptr := add(ptr, 32)
-                    r := mload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 14
-                    ptr := add(ptr, 32)
-                    r := mload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 15
-                    ptr := add(ptr, 32)
-                    r := mload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                }
+                v := and(v, 0x0101010101010101010101010101010101010101010101010101010101010101)
+
                 // Count bytes in parallel
                 v := add(v, shr(128, v))
                 v := add(v, shr(64, v))
                 v := add(v, shr(32, v))
                 v := add(v, shr(16, v))
-                v := and(v, 0xffff)
-                v := add(and(v, 0xff), shr(8, v))
-                baseCost := add(baseCost, v)
+                v := add(v, shr(8, v))
+                v := and(v, 0xff)
+                nonZeros := add(nonZeros, v)
             }
-            baseCost := add(21000, add(mul(sub(mload(data), baseCost), 4), mul(baseCost, 16)))
+
+            // Restore the original length of the data
+            mstore(data, size)
         }
     }
 

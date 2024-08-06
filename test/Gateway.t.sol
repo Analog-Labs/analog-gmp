@@ -242,6 +242,13 @@ contract GatewayBase is Test {
         assertEq(output.length, 32);
     }
 
+    function test_gasUtils() external pure {
+        assertEq(GasUtils.estimateGas(0, 0, 0), 69775);
+        assertEq(GasUtils.estimateGas(0, 33, 0), 70068);
+        assertEq(GasUtils.estimateGas(33, 0, 0), 70464);
+        assertEq(GasUtils.estimateGas(20, 13, 0), 70308);
+    }
+
     function test_gasMeter() external {
         vm.txGasPrice(1);
         address sender = TestUtils.createTestAccount(100 ether);
