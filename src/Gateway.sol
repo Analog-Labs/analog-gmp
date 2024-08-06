@@ -531,19 +531,12 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      * @param info new network info
      */
     function setNetworkInfo(Signature calldata signature, UpdateNetworkInfo calldata info) external {
-        // Verify signature and if the message was already executed
+        // Verify signature and check if the message was already executed
         bytes32 messageHash = info.eip712TypedHash(DOMAIN_SEPARATOR);
-        require(_executedMessages[messageHash] == bytes32(0), "message already executed");
         _verifySignature(signature, messageHash);
 
-        // Update network info and store the message hash to prevent replay attacks
-        _networkInfo[info.networkId] =
-            NetworkInfo(info.domainSeparator, info.gasLimit, info.relativeGasPrice, info.baseFee);
-        _executedMessages[messageHash] = bytes32(signature.xCoord);
-
-        emit NetworkUpdated(
-            messageHash, info.networkId, info.domainSeparator, info.relativeGasPrice, info.baseFee, info.gasLimit
-        );
+        // Update network info
+        _setNetworkInfo(bytes32(signature.xCoord), messageHash, info);
     }
 
     /**
