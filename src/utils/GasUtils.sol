@@ -12,7 +12,7 @@ import {BranchlessMath} from "./BranchlessMath.sol";
 library GasUtils {
     // uint256 internal constant BASE_OVERHEAD_COST = 21000;
     // uint256 internal constant EXECUTION_BASE_COST = 43_204 + 4500 - 12908;
-    uint256 internal constant EXECUTION_BASE_COST = 39605;
+    uint256 internal constant EXECUTION_BASE_COST = 39628;
 
     using BranchlessMath for uint256;
 
@@ -66,7 +66,7 @@ library GasUtils {
      * @dev Compute the gas needed for the transaction, this is different from the gas used.
      * `gas needed > gas used` because of EIP-150
      */
-    function executionGasNeeded(uint256 messageSize) internal pure returns (uint256 gasNeeded) {
+    function executionGasNeeded(uint256 messageSize, uint256 gasLimit) internal pure returns (uint256 gasNeeded) {
         unchecked {
             gasNeeded = EXECUTION_BASE_COST;
 
@@ -90,6 +90,9 @@ library GasUtils {
             words += 0x0200; // Memory size
             words = (words + 31) >> 5; // to words
             gasNeeded += ((words * words) >> 9) + (words * 3);
+
+            // Add the gas limit
+            gasNeeded += gasLimit.saturatingMul(64).saturatingDiv(63);
 
             // Add `all but one 64th`, as the defined by EIP-150
             gasNeeded = gasNeeded.saturatingMul(64).saturatingDiv(63);

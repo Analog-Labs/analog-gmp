@@ -12,7 +12,7 @@ import {IGateway} from "./interfaces/IGateway.sol";
 import {IUpgradable} from "./interfaces/IUpgradable.sol";
 import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
-import {console} from "forge-std/console.sol";
+// import {console} from "forge-std/console.sol";
 
 import {
     TssKey,
@@ -332,11 +332,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     // Deposit balance to refund callers of execute
-    function deposit(GmpSender source, uint16 network) public payable {
+    function deposit(GmpSender source, uint16 network) external payable {
         // Check if the source network is supported
         require(_networkInfo[network].domainSeparator != bytes32(0), "unsupported network");
         _deposits[source][network] += msg.value;
     }
+
+    // Deposit balance to refund callers of execute
+    function deposit() external payable {}
 
     function _gmpInsufficientFunds(bytes32 payloadHash, GmpMessage calldata message)
         private
@@ -433,14 +436,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         returns (GmpStatus status, bytes32 result)
     {
         uint256 initialGas = gasleft();
-        initialGas = initialGas.saturatingAdd(431);
+        initialGas = initialGas.saturatingAdd(475);
         // {
         //     bytes memory p0 = msg.data;
         //     console.logBytes(p0);
         // }
-        // require(initialGas <= 39670, "initialGas > 39670");
-        // require(initialGas >= 39670, "initialGas < 39670");
-        // require(initialGas != 39670, "SUCESSO");
+        // require(initialGas <= 39740, "initialGas > 39740");
+        // require(initialGas >= 39740, "initialGas < 39740");
+        // require(initialGas != 39740, "SUCESSO");
         // unchecked {
         //     (uint256 baseGas, uint256 executionGas) = GasUtils.executionGasCost(message.data.length);
         //     require(baseGas <= 24304, "baseGas > 24304");

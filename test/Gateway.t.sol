@@ -256,7 +256,7 @@ contract GatewayBase is Test {
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 0,
             salt: 0,
-            data: hex"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            data: hex""
         });
         // ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
@@ -270,7 +270,7 @@ contract GatewayBase is Test {
             from: sender,
             to: address(gateway),
             value: 0,
-            gasLimit: GasUtils.executionGasNeeded(gmp.data.length) + baseCost - 1,
+            gasLimit: GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit) + baseCost - 1,
             executionCost: 0,
             baseCost: 0
         });
