@@ -55,7 +55,7 @@ library GasUtils {
     {
         unchecked {
             // Add execution cost
-            uint256 gasCost = estimateGas(zeros, nonZeros, gasLimit);
+            uint256 gasCost = estimateGas(nonZeros, zeros, gasLimit);
 
             // Calculate the gas cost: gasPrice * gasCost + baseFee
             return UFloatMath.saturatingMul(gasPrice, gasCost).saturatingAdd(baseFee);

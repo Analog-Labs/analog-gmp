@@ -11,6 +11,7 @@ import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {GasUtils} from "../src/utils/GasUtils.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
+import {UFloat9x56, UFloatMath} from "../src/utils/Float9x56.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
@@ -247,6 +248,18 @@ contract GatewayBase is Test {
         assertEq(GasUtils.estimateGas(0, 33, 0), 70068);
         assertEq(GasUtils.estimateGas(33, 0, 0), 70464);
         assertEq(GasUtils.estimateGas(20, 13, 0), 70308);
+
+        UFloat9x56 one = UFloatMath.ONE;
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 69775);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 70068);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 70464);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 70308);
+
+        UFloat9x56 two = UFloat9x56.wrap(0x8080000000000000);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), 69775 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), 70068 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), 70464 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), 70308 * 2);
     }
 
     function test_gasMeter() external {
