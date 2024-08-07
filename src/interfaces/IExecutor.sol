@@ -3,7 +3,16 @@
 
 pragma solidity >=0.8.0;
 
-import {Signature, GmpMessage, TssKey, GmpStatus, GmpStatus, UpdateKeysMessage, GmpSender} from "../Primitives.sol";
+import {
+    Signature,
+    GmpMessage,
+    TssKey,
+    GmpStatus,
+    GmpStatus,
+    UpdateKeysMessage,
+    UpdateNetworkInfo,
+    GmpSender
+} from "../Primitives.sol";
 
 /**
  * @dev Required interface of an Gateway compliant contract
@@ -44,4 +53,16 @@ interface IExecutor {
      * @param message Shard's keys to register and revoke
      */
     function updateKeys(Signature memory signature, UpdateKeysMessage memory message) external;
+
+    /**
+     * Update or insert a new network info
+     * @param signature Schnorr signature
+     * @param info Network info
+     */
+    function setNetworkInfo(Signature memory signature, UpdateNetworkInfo memory info) external;
+
+    /**
+     * Deposit funds to the gateway contract
+     */
+    function deposit() external payable;
 }

@@ -39,6 +39,11 @@ contract ExampleTest is Test {
     address private constant ALICE = address(bytes20(keccak256("Alice")));
     address private constant BOB = address(bytes20(keccak256("Bob")));
 
+    function setUp() external {
+        vm.deal(ALICE, 100 ether);
+        vm.deal(BOB, 100 ether);
+    }
+
     function deployGateway(VerifyingKey memory pubkey, uint16[] memory networkIds)
         private
         returns (Network[] memory networks)
@@ -57,6 +62,7 @@ contract ExampleTest is Test {
             address implementation = address(new Gateway(networks[i].id, networks[i].gateway));
             address proxy = address(new GatewayProxy(implementation, initializer));
             assertEq(proxy, networks[i].gateway, "GatewayProxy address mismatch");
+            vm.deal(proxy, 100 ether);
         }
     }
 
@@ -68,6 +74,7 @@ contract ExampleTest is Test {
     }
 
     function testTeleportTokens() external {
+        vm.txGasPrice(1);
         _sender = TestUtils.createTestAccount(100 ether);
         vm.startPrank(_sender, _sender);
 
@@ -90,11 +97,8 @@ contract ExampleTest is Test {
             new MockERC20("Destination Token", "B", dstGateway, srcToken, srcGateway.networkId(), ALICE, 0);
         srcToken = new MockERC20("Source Token", "A", srcGateway, dstToken, dstGateway.networkId(), ALICE, 1000);
 
-        // Step 3: Deposit tokens on destination Gateway Contract
+        // Step 3: Send GMP message
         GmpSender source = address(srcToken).toSender(true);
-        dstGateway.deposit{value: 10_000_000}(source, SRC_NETWORK_ID);
-
-        // Step 4: Send GMP message
         GmpMessage memory gmp = GmpMessage({
             source: source,
             srcNetwork: SRC_NETWORK_ID,
@@ -112,10 +116,15 @@ contract ExampleTest is Test {
             messageID, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
         );
 
-        // Submit the GMP message from `sender` contract
-        vm.stopPrank();
-        vm.prank(ALICE, ALICE);
-        srcToken.teleport(BOB, 100);
+        {
+            // Estimate the cost of teleporting 100 tokens
+            uint256 gmpCost = srcToken.teleportCost();
+
+            // Submit the GMP message from `sender` contract
+            vm.stopPrank();
+            vm.prank(ALICE, ALICE);
+            srcToken.teleport{value: gmpCost}(BOB, 100);
+        }
 
         vm.startPrank(_sender, _sender);
         (uint256 c, uint256 z) = signer.signPrehashed(messageID, Random.nextUint());

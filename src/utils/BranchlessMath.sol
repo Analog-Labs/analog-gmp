@@ -100,6 +100,9 @@ library BranchlessMath {
      */
     function saturatingDiv(uint256 x, uint256 y) internal pure returns (uint256 r) {
         assembly {
+            // Solidity reverts with a division by zero error, while using inline assembly division does
+            // not revert, it returns zero.
+            // Reference: https://github.com/ethereum/solidity/issues/15200
             r := div(x, y)
         }
     }

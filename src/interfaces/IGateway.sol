@@ -32,20 +32,16 @@ interface IGateway {
     function networkId() external view returns (uint16);
 
     /**
-     * @notice Pay for gas of contract execution on destination chain.
+     * @notice Estimate the gas cost of execute a GMP message.
      * @dev This function is called on the destination chain before calling the gateway to execute a source contract.
-     * @param sender The address making the payment
-     * @param sourceNetwork The target chain where the contract call will be made
+     * @param networkid The target chain where the contract call will be made
+     * @param messageSize Message size
+     * @param messageSize Message gas limit
      */
-    function deposit(GmpSender sender, uint16 sourceNetwork) external payable;
-
-    /**
-     * @notice Pay for gas of contract execution on destination chain.
-     * @dev This function is called on the destination chain before calling the gateway to execute a source contract.
-     * @param sender The address making the payment
-     * @param sourceNetwork The target chain where the contract call will be made
-     */
-    function depositOf(GmpSender sender, uint16 sourceNetwork) external view returns (uint256);
+    function estimateMessageCost(uint16 networkid, uint256 messageSize, uint256 gasLimit)
+        external
+        view
+        returns (uint256);
 
     /**
      * @dev Send message from chain A to chain B
