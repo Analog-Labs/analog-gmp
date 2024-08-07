@@ -412,11 +412,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Refund the chronicle gas
         unchecked {
             // Compute GMP gas used
-            uint256 gasUsed = 7174;
+            uint256 gasUsed = 7214;
             {
-                gasUsed += GasUtils.calldataGasCost();
-                gasUsed += GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64);
-                gasUsed += initialGas - gasleft();
+                gasUsed = gasUsed.saturatingAdd(GasUtils.calldataGasCost());
+                gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
+                gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
             }
 
             // Compute refund amount

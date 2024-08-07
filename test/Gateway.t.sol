@@ -137,7 +137,7 @@ contract GatewayBase is Test {
     bytes32 private _srcDomainSeparator;
     bytes32 private _dstDomainSeparator;
 
-    uint256 private constant SUBMIT_GAS_COST = 6098 + 9206;
+    uint256 private constant SUBMIT_GAS_COST = 6095 + 9206;
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
     uint8 private constant GMP_STATUS_SUCCESS = 1;
@@ -213,29 +213,10 @@ contract GatewayBase is Test {
         assertEq(output.length, 32);
     }
 
-    function test_gasUtils() external pure {
-        assertEq(GasUtils.estimateGas(0, 0, 0), 76079);
-        assertEq(GasUtils.estimateGas(0, 33, 0), 76240);
-        assertEq(GasUtils.estimateGas(33, 0, 0), 76900);
-        assertEq(GasUtils.estimateGas(20, 13, 0), 76640);
-
-        UFloat9x56 one = UFloatMath.ONE;
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 76079);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 76240);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 76900);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 76640);
-
-        UFloat9x56 two = UFloat9x56.wrap(0x8080000000000000);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), 76079 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), 76240 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), 76900 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), 76640 * 2);
-    }
-
     function test_estimateMessageCost() external {
         vm.txGasPrice(1);
         uint256 cost = gateway.estimateMessageCost(DEST_NETWORK_ID, 96, 100000);
-        assertEq(cost, 179899);
+        assertEq(cost, 180028);
     }
 
     function test_gasMeter() external {

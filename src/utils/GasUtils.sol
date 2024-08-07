@@ -10,7 +10,7 @@ import {BranchlessMath} from "./BranchlessMath.sol";
  * @dev Utilities for branchless operations, useful when a constant gas cost is required.
  */
 library GasUtils {
-    uint256 internal constant EXECUTION_BASE_COST = 39232 + 6700;
+    uint256 internal constant EXECUTION_BASE_COST = 39361 + 6700;
 
     using BranchlessMath for uint256;
 
@@ -68,9 +68,8 @@ library GasUtils {
         uint256 messageSize = uint256(dataNonZeros) + uint256(dataZeros);
         unchecked {
             // add execution cost
-            uint256 gasCost = computeExecutionRefund(uint16(BranchlessMath.min(messageSize, type(uint16).max)));
-            gasCost = gasCost.saturatingAdd(gasLimit);
-
+            uint256 gasCost =
+                computeExecutionRefund(uint16(BranchlessMath.min(messageSize, type(uint16).max)), gasLimit);
             // add base cost
             gasCost = gasCost.saturatingAdd(21000);
 
@@ -140,9 +139,13 @@ library GasUtils {
     /**
      * @dev Compute the gas that should be refunded to the executor for the execution.
      */
-    function computeExecutionRefund(uint16 messageSize) internal pure returns (uint256 executionCost) {
+    function computeExecutionRefund(uint16 messageSize, uint256 gasLimit)
+        internal
+        pure
+        returns (uint256 executionCost)
+    {
         // Add the base execution gas cost
-        executionCost = EXECUTION_BASE_COST;
+        executionCost = EXECUTION_BASE_COST.saturatingAdd(gasLimit);
 
         // Safety: The operations below can't overflow because the message size can't be greater than 2^16
         unchecked {
