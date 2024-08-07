@@ -259,6 +259,7 @@ contract GatewayBase is Test {
             to: address(gateway),
             value: 0,
             gasLimit: GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit) + baseCost - 1,
+            // gasLimit: 100_000,
             executionCost: 0,
             baseCost: 0
         });
@@ -286,19 +287,16 @@ contract GatewayBase is Test {
         assertEq(gatewayBalance - address(gateway).balance, executionCost + baseCost, "wrong refund amount");
         assertEq(senderBalance, address(sender).balance, "sender balance should not change");
 
-        /*
+        {
+            uint256 nonZeros = GasUtils.countNonZeros(gmp.data);
+            uint256 zeros = gmp.data.length - nonZeros;
+            ctx.value = GasUtils.estimateGas(nonZeros, zeros, gmp.gasLimit) - 1;
+        }
+        vm.expectRevert("insufficient tx value");
         ctx.submitMessage(gmp);
 
-        // Give sufficient gas
-        ctx.gasLimit += 1;
-
-        // Execute GMP message first time (which have 4500 gas overhead)
-        (status, returned) = ctx.execute(sig, gmp);
-        assertEq(returned, bytes32(0), "GMP result stored doesn't match the returned result");
-        assertEq(executionCost, ctx.executionCost, "executionCost != ctx.executionCost");
-        assertEq(baseCost, ctx.baseCost, "baseCost != ctx.baseCost");
-        assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "Unexpected GMP status");
-        */
+        ctx.value += 1;
+        ctx.submitMessage(gmp);
     }
 
     function test_refund() external {

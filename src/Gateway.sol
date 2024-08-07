@@ -413,7 +413,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         returns (GmpStatus status, bytes32 result)
     {
         uint256 initialGas = gasleft();
-        initialGas = initialGas.saturatingAdd(475);
+        initialGas = initialGas.saturatingAdd(454);
 
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
@@ -432,15 +432,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Refund the chronicle gas
         unchecked {
             // Compute GMP gas used
-            // uint256 gasUsed = 455;
-            uint256 gasUsed = 7148;
+            uint256 gasUsed = 7169;
             {
                 gasUsed += GasUtils.calldataGasCost();
                 gasUsed += GasUtils.proxyOverheadGasCost(msg.data.length, 64);
                 gasUsed += initialGas - gasleft();
-                // require(gasUsed >= 75105, "gasUsed < 75105");
-                // require(gasUsed <= 75105, "gasUsed > 75105");
-                // require(gasUsed != 75105, "SUCESSO");
             }
 
             // Compute refund amount
@@ -529,13 +525,13 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         require(domainSeparator != bytes32(0), "unsupported network");
 
         // Check if the sender has deposited enougth funds to execute the GMP message
-        /*{
+        {
             uint256 nonZeros = GasUtils.countNonZeros(data);
             uint256 zeros = data.length - nonZeros;
             uint256 msgPrice =
                 GasUtils.estimateWeiCost(info.relativeGasPrice, info.baseFee, nonZeros, zeros, executionGasLimit);
             require(msg.value >= msgPrice, "insufficient tx value");
-        }*/
+        }
 
         // We use 20 bytes for represent the address and 1 bit for the contract flag
         GmpSender source = msg.sender.toSender(tx.origin != msg.sender);

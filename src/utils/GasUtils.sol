@@ -356,22 +356,32 @@ library GasUtils {
             mstore(data, 0)
 
             nonZeros := 0
-            for { let ptr := add(data, size) } gt(ptr, data) { ptr := sub(ptr, 32) } {
-                // Normalize
-                let v := mload(ptr)
-                v := or(v, shr(4, v))
-                v := or(v, shr(2, v))
-                v := or(v, shr(1, v))
-                v := and(v, 0x0101010101010101010101010101010101010101010101010101010101010101)
+            for {
+                // 32 byte aligned pointer, ex: if data.length is 54, then `ptr = data + 32`
+                let ptr := add(data, and(add(size, 31), 0xffffffe0))
+                let end := xor(data, mul(xor(sub(ptr, 480), data), gt(sub(ptr, data), 480)))
+            } true { end := xor(data, mul(xor(sub(ptr, 480), data), gt(sub(ptr, data), 480))) } {
+                // Normalize and count non-zero bytes in parallel
+                let v := 0
+                for {} gt(ptr, end) { ptr := sub(ptr, 32) } {
+                    let r := mload(ptr)
+                    r := or(r, shr(4, r))
+                    r := or(r, shr(2, r))
+                    r := or(r, shr(1, r))
+                    r := and(r, 0x0101010101010101010101010101010101010101010101010101010101010101)
+                    v := add(v, r)
+                }
 
-                // Count bytes in parallel
+                // Sum bytes in parallel
                 v := add(v, shr(128, v))
                 v := add(v, shr(64, v))
                 v := add(v, shr(32, v))
                 v := add(v, shr(16, v))
-                v := add(v, shr(8, v))
-                v := and(v, 0xff)
+                v := and(v, 0xffff)
+                v := add(and(v, 0xff), shr(8, v))
                 nonZeros := add(nonZeros, v)
+
+                if eq(ptr, data) { break }
             }
 
             // Restore the original length of the data
