@@ -535,21 +535,29 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return prevHash;
     }
 
+    /**
+     * @notice Estimate the gas cost of execute a GMP message.
+     * @dev This function is called on the destination chain before calling the gateway to execute a source contract.
+     * @param networkid The target chain where the contract call will be made
+     * @param messageSize Message size
+     * @param messageSize Message gas limit
+     */
     function estimateMessageCost(uint16 networkid, uint256 messageSize, uint256 gasLimit)
         external
         view
         returns (uint256)
     {
-        if (messageSize > MAX_PAYLOAD_SIZE) {
-            // If the message size is too large, return the maximum possible cost
-            // return 2 ** 256 - 1;
-            return 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
-        }
-
         NetworkInfo storage network = _networkInfo[networkid];
         uint256 baseFee = uint256(network.baseFee);
         UFloat9x56 relativeGasPrice = network.relativeGasPrice;
+
+        // Verify if the network exists
         require(baseFee > 0 || UFloat9x56.unwrap(relativeGasPrice) > 0, "unsupported network");
+
+        // if the message data is too large, we use the maximum base fee.
+        baseFee = BranchlessMath.select(messageSize > MAX_PAYLOAD_SIZE, 2 ** 256 - 1, baseFee);
+
+        // Estimate the cost
         return GasUtils.estimateWeiCost(relativeGasPrice, baseFee, uint16(messageSize), 0, gasLimit);
     }
 

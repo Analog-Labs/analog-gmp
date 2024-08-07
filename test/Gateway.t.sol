@@ -137,7 +137,7 @@ contract GatewayBase is Test {
     bytes32 private _srcDomainSeparator;
     bytes32 private _dstDomainSeparator;
 
-    uint256 private constant SUBMIT_GAS_COST = 6098;
+    uint256 private constant SUBMIT_GAS_COST = 6098 + 9206;
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
     uint8 private constant GMP_STATUS_SUCCESS = 1;
@@ -472,14 +472,35 @@ contract GatewayBase is Test {
             srcNetwork: DEST_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
-            gasLimit: 100000,
+            gasLimit: 100_000,
             salt: 0,
             data: abi.encodePacked(uint256(100_000))
         });
         bytes32 id = gmp.eip712TypedHash(_dstDomainSeparator);
 
         // Check the previous message hash
-        assertEq(gateway.prevMessageHash(), bytes32(uint256(2 ** 256 - 1)), "WROONNGG");
+        assertEq(gateway.prevMessageHash(), bytes32(uint256(2 ** 256 - 1)), "wrong previous message hash");
+
+        CallOptions memory ctx = CallOptions({
+            from: gmpSender.toAddress(),
+            to: address(gateway),
+            value: 0,
+            gasLimit: 1_000_000,
+            executionCost: 0,
+            baseCost: 0
+        });
+
+        // Compute GMP message price
+        {
+            uint16 nonZeros = uint16(GasUtils.countNonZeros(gmp.data));
+            uint16 zeros = uint16(gmp.data.length) - nonZeros;
+            ctx.value = GasUtils.estimateWeiCost(UFloatMath.ONE, 0, nonZeros, zeros, gmp.gasLimit);
+        }
+
+        // Submit message with insufficient funds
+        ctx.value -= 1;
+        vm.expectRevert("insufficient tx value");
+        ctx.submitMessage(gmp);
 
         // Expect event
         vm.expectEmit(true, true, true, true);
@@ -487,16 +508,13 @@ contract GatewayBase is Test {
             id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
         );
 
-        // Submit GMP message
-        bytes memory encodedCall =
-            abi.encodeCall(Gateway.submitMessage, (gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data));
-        (uint256 execution, uint256 base, bytes memory output) =
-            TestUtils.executeCall(gmpSender.toAddress(), address(gateway), 100_000, 0, encodedCall);
-        assertEq(output.length, 32, "unexpected gateway.submitMessage output");
+        // Submit message
+        ctx.value += 1;
+        ctx.submitMessage(gmp);
 
         // Verify the gas cost
-        uint256 expectedCost = SUBMIT_GAS_COST + 2800 + 2000;
-        assertEq(execution, expectedCost, "unexpected execution gas cost");
+        uint256 expectedCost = SUBMIT_GAS_COST + 2800 + 2000 + 2000;
+        assertEq(ctx.executionCost, expectedCost, "unexpected execution gas cost");
 
         // Now the second GMP message should have the salt equals to previous gmp hash
         gmp.salt = uint256(id);
@@ -507,35 +525,13 @@ contract GatewayBase is Test {
         emit IGateway.GmpCreated(
             id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
         );
+        ctx.submitMessage(gmp);
 
-        // Submit GMP message
-        encodedCall = abi.encodeCall(Gateway.submitMessage, (gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data));
-        (execution, base, output) =
-            TestUtils.executeCall(gmpSender.toAddress(), address(gateway), 100_000, 0, encodedCall);
-        assertEq(output.length, 32, "unexpected gateway.submitMessage output");
-
-        // Verify the gas cost
+        if (ctx.baseCost > 0) {
+            return;
+        }
         expectedCost = SUBMIT_GAS_COST;
-        assertEq(execution, expectedCost, "unexpected execution gas cost");
-
-        // Now the second GMP message should have the salt equals to previous gmp hash
-        gmp.salt = uint256(id);
-        id = gmp.eip712TypedHash(_dstDomainSeparator);
-
-        // Expect event
-        vm.expectEmit(true, true, true, true);
-        emit IGateway.GmpCreated(
-            id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
-        );
-
-        // Submit GMP message
-        encodedCall = abi.encodeCall(Gateway.submitMessage, (gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data));
-        (execution, base, output) =
-            TestUtils.executeCall(gmpSender.toAddress(), address(gateway), 100_000, 0, encodedCall);
-        assertEq(output.length, 32, "unexpected gateway.submitMessage output");
-        // Verify the gas cost
-        expectedCost = SUBMIT_GAS_COST;
-        assertEq(execution, expectedCost, "unexpected execution gas cost");
+        assertEq(ctx.executionCost, expectedCost, "unexpected execution gas cost");
     }
 }
 

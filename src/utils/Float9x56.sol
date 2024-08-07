@@ -17,6 +17,11 @@ library UFloatMath {
     UFloat9x56 internal constant ONE = UFloat9x56.wrap(0x8000000000000000);
 
     /**
+     * @dev Maximum value representable in UFloat9x56, i.e., 2^200 * (2^56 - 1).
+     */
+    UFloat9x56 internal constant MAX = UFloat9x56.wrap(0xffffffffffffffff);
+
+    /**
      * @dev multiply an UFloat9x56 by an uint256 in constant gas.
      */
     function mul(UFloat9x56 x, uint256 y) internal pure returns (uint256 result) {
