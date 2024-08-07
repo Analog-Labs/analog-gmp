@@ -71,10 +71,6 @@ contract GmpTestToolsTest is Test {
 
         // Switch to Sepolia network and Alice account
         GmpTestTools.switchNetwork(SEPOLIA_NETWORK, ALICE);
-        // If the sender is a contract, it's address must be converted
-        GmpSender sender = address(shibuyaErc20).toSender(true);
-        // Alice deposit 1 ether to Sepolia gateway contract
-        SEPOLIA_GATEWAY.deposit{value: 1 ether}(sender, SHIBUYA_NETWORK);
 
         //////////////////////////////
         // Step 4: Send GMP message //

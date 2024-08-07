@@ -77,14 +77,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // GMP message status
     mapping(bytes32 => GmpInfo) _messages;
 
-    // Source address => Source network => Deposit Amount
-    // deprecated: _networkInfo
-    mapping(GmpSender => mapping(uint16 => uint256)) _deposits;
-
-    // Network ID => Source network
-    // deprecated: _networkInfo
-    mapping(uint16 => bytes32) _networks;
-
     // Hash of the previous GMP message submitted.
     bytes32 public prevMessageHash;
 
@@ -175,10 +167,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     function gmpInfo(bytes32 id) external view returns (GmpInfo memory) {
         return _messages[id];
-    }
-
-    function depositOf(GmpSender source, uint16 network) external view returns (uint256) {
-        return _deposits[source][network];
     }
 
     function keyInfo(bytes32 id) external view returns (KeyInfo memory) {
@@ -330,16 +318,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         _updateKeys(messageHash, message.revoke, message.register);
     }
 
-    // Deposit balance to refund callers of execute
-    function deposit(GmpSender source, uint16 network) external payable {
-        // Check if the source network is supported
-        require(_networkInfo[network].domainSeparator != bytes32(0), "unsupported network");
-        _deposits[source][network] += msg.value;
-    }
-
-    // Deposit balance to refund callers of execute
-    function deposit() external payable {}
-
     function _gmpInsufficientFunds(bytes32 payloadHash, GmpMessage calldata message)
         private
         returns (GmpStatus status, bytes32 result)
@@ -475,10 +453,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         }
     }
 
-    function getNetwork(uint16 id) public view returns (bytes32) {
-        return _networks[id];
-    }
-
     function _setNetworkInfo(bytes32 executor, bytes32 messageHash, UpdateNetworkInfo calldata data) private {
         require(data.mortality >= block.number, "message expired");
         require(executor != bytes32(0), "executor cannot be zero");
@@ -555,13 +529,13 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         require(domainSeparator != bytes32(0), "unsupported network");
 
         // Check if the sender has deposited enougth funds to execute the GMP message
-        {
+        /*{
             uint256 nonZeros = GasUtils.countNonZeros(data);
             uint256 zeros = data.length - nonZeros;
             uint256 msgPrice =
                 GasUtils.estimateWeiCost(info.relativeGasPrice, info.baseFee, nonZeros, zeros, executionGasLimit);
-            require(msg.value >= msgPrice, "insufficient deposit");
-        }
+            require(msg.value >= msgPrice, "insufficient tx value");
+        }*/
 
         // We use 20 bytes for represent the address and 1 bit for the contract flag
         GmpSender source = msg.sender.toSender(tx.origin != msg.sender);

@@ -40,22 +40,6 @@ interface IGateway {
     function estimateMessageCost(uint16 networkid, uint256 messageSize) external view returns (uint256);
 
     /**
-     * @notice Pay for gas of contract execution on destination chain.
-     * @dev This function is called on the destination chain before calling the gateway to execute a source contract.
-     * @param sender The address making the payment
-     * @param sourceNetwork The target chain where the contract call will be made
-     */
-    function deposit(GmpSender sender, uint16 sourceNetwork) external payable;
-
-    /**
-     * @notice Pay for gas of contract execution on destination chain.
-     * @dev This function is called on the destination chain before calling the gateway to execute a source contract.
-     * @param sender The address making the payment
-     * @param sourceNetwork The target chain where the contract call will be made
-     */
-    function depositOf(GmpSender sender, uint16 sourceNetwork) external view returns (uint256);
-
-    /**
      * @dev Send message from chain A to chain B
      * @param destinationAddress the target address on the destination chain
      * @param destinationNetwork the target chain where the contract call will be made

@@ -90,11 +90,8 @@ contract ExampleTest is Test {
             new MockERC20("Destination Token", "B", dstGateway, srcToken, srcGateway.networkId(), ALICE, 0);
         srcToken = new MockERC20("Source Token", "A", srcGateway, dstToken, dstGateway.networkId(), ALICE, 1000);
 
-        // Step 3: Deposit tokens on destination Gateway Contract
+        // Step 3: Send GMP message
         GmpSender source = address(srcToken).toSender(true);
-        dstGateway.deposit{value: 10_000_000}(source, SRC_NETWORK_ID);
-
-        // Step 4: Send GMP message
         GmpMessage memory gmp = GmpMessage({
             source: source,
             srcNetwork: SRC_NETWORK_ID,
