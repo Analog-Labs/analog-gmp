@@ -435,7 +435,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             uint256 gasUsed = 7169;
             {
                 gasUsed += GasUtils.calldataGasCost();
-                gasUsed += GasUtils.proxyOverheadGasCost(msg.data.length, 64);
+                gasUsed += GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64);
                 gasUsed += initialGas - gasleft();
             }
 
@@ -528,8 +528,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         {
             uint256 nonZeros = GasUtils.countNonZeros(data);
             uint256 zeros = data.length - nonZeros;
-            uint256 msgPrice =
-                GasUtils.estimateWeiCost(info.relativeGasPrice, info.baseFee, nonZeros, zeros, executionGasLimit);
+            uint256 msgPrice = GasUtils.estimateWeiCost(
+                info.relativeGasPrice, info.baseFee, uint16(nonZeros), uint16(zeros), executionGasLimit
+            );
             require(msg.value >= msgPrice, "insufficient tx value");
         }
 

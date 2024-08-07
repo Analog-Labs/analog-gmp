@@ -10,9 +10,7 @@ import {BranchlessMath} from "./BranchlessMath.sol";
  * @dev Utilities for branchless operations, useful when a constant gas cost is required.
  */
 library GasUtils {
-    // uint256 internal constant BASE_OVERHEAD_COST = 21000;
-    // uint256 internal constant EXECUTION_BASE_COST = 39628;
-    uint256 internal constant EXECUTION_BASE_COST = 39194 + 6700;
+    uint256 internal constant EXECUTION_BASE_COST = 39230 + 6700;
 
     using BranchlessMath for uint256;
 
@@ -21,16 +19,16 @@ library GasUtils {
      * @param calldataLen The length of the calldata
      * @param returnLen The length of the return data
      */
-    function proxyOverheadGasCost(uint256 calldataLen, uint256 returnLen) internal pure returns (uint256) {
+    function proxyOverheadGasCost(uint16 calldataLen, uint16 returnLen) internal pure returns (uint256) {
         unchecked {
             // Base cost: OPCODES + COLD READ STORAGE _implementation
             uint256 gasCost = 2257 + 2500;
 
             // CALLDATACOPY
-            gasCost += ((calldataLen + 31) >> 5) * 3;
+            gasCost += ((uint256(calldataLen) + 31) >> 5) * 3;
 
-            // RETURN DATA SIZE
-            gasCost += ((returnLen + 31) >> 5) * 3;
+            // RETURNDATACOPY
+            gasCost += ((uint256(returnLen) + 31) >> 5) * 3;
 
             // MEMORY EXPANSION
             uint256 words = BranchlessMath.max(calldataLen, returnLen);
@@ -48,7 +46,7 @@ library GasUtils {
      * @param zeros The number of zero bytes in the gmp data.
      * @param gasLimit The message gas limit.
      */
-    function estimateWeiCost(UFloat9x56 gasPrice, uint256 baseFee, uint256 nonZeros, uint256 zeros, uint256 gasLimit)
+    function estimateWeiCost(UFloat9x56 gasPrice, uint256 baseFee, uint16 nonZeros, uint16 zeros, uint256 gasLimit)
         internal
         pure
         returns (uint256)
@@ -64,26 +62,27 @@ library GasUtils {
 
     /**
      * @dev Estimate the gas cost of a GMP message.
-     * @param nonZeros The number of non-zero bytes in the gmp data.
-     * @param zeros The number of zero bytes in the gmp data.
+     * @param dataNonZeros The number of non-zero bytes in the gmp data.
+     * @param dataZeros The number of zero bytes in the gmp data.
      * @param gasLimit The message gas limit.
      */
-    function estimateGas(uint256 nonZeros, uint256 zeros, uint256 gasLimit) internal pure returns (uint256) {
-        uint256 messageSize = zeros + nonZeros;
+    function estimateGas(uint16 dataNonZeros, uint16 dataZeros, uint256 gasLimit) internal pure returns (uint256) {
+        uint256 messageSize = uint256(dataNonZeros) + uint256(dataZeros);
         unchecked {
             // add execution cost
-            uint256 gasCost = computeExecutionRefund(messageSize).saturatingAdd(gasLimit);
+            uint256 gasCost = computeExecutionRefund(uint16(BranchlessMath.min(messageSize, type(uint16).max)));
+            gasCost = gasCost.saturatingAdd(gasLimit);
 
             // add base cost
             gasCost = gasCost.saturatingAdd(21000);
 
             // calldata zero bytes
-            zeros = 31 + 30 + 12 + 30 + 31 + 30;
-            zeros = zeros.saturatingAdd(((messageSize + 31) & 0xffffe0) - nonZeros);
+            uint256 zeros = 31 + 30 + 12 + 30 + 31 + 30;
+            zeros = zeros.saturatingAdd((messageSize.saturatingAdd(31) & 0xffffe0) - uint256(dataZeros));
             gasCost = gasCost.saturatingAdd(zeros.saturatingMul(4));
 
             // calldata non-zero bytes
-            nonZeros = nonZeros.saturatingAdd(4 + 96 + 1 + 32 + 2 + 20 + 2 + 32 + 32 + 1 + 2);
+            uint256 nonZeros = uint256(dataNonZeros).saturatingAdd(4 + 96 + 1 + 32 + 2 + 20 + 2 + 32 + 32 + 1 + 2);
             gasCost = gasCost.saturatingAdd(nonZeros.saturatingMul(16));
 
             return gasCost;
@@ -143,19 +142,26 @@ library GasUtils {
     /**
      * @dev Compute the gas that should be refunded to the executor for the execution.
      */
-    function computeExecutionRefund(uint256 messageSize) internal pure returns (uint256 executionCost) {
+    function computeExecutionRefund(uint16 messageSize) internal pure returns (uint256 executionCost) {
+        // Add the base execution gas cost
         executionCost = EXECUTION_BASE_COST;
+
+        // Safety: The operations below can't overflow because the message size can't be greater than 2^16
         unchecked {
-            uint256 words = (messageSize + 31) & 0xffe0;
-            words += 388;
-            executionCost += proxyOverheadGasCost(words, 64);
+            // Add padding to the message size, making it a multiple of 32
+            uint256 messagePadded = (uint256(messageSize) + 31) & 0xffffe0;
+
+            // Proxy Overhead
+            uint256 words = messagePadded + 388; // selector + Signature + GmpMessage
+            words = BranchlessMath.min(words, type(uint16).max);
+            executionCost += proxyOverheadGasCost(uint16(words), 64);
 
             // Base Cost calculation
             words = (words + 31) >> 5;
             executionCost += ((words - 1) / 15) * 1845;
 
             // calldatacopy (3 gas per word)
-            words = (messageSize + 31) >> 5;
+            words = messagePadded >> 5;
             executionCost += words * 3;
 
             // keccak256 (6 gas per word)
@@ -180,7 +186,7 @@ library GasUtils {
         unchecked {
             uint256 words = (messageSize + 31) & 0xffe0;
             words += 388;
-            executionCost += proxyOverheadGasCost(words, 64);
+            executionCost += proxyOverheadGasCost(uint16(words), 64);
 
             // Base Cost calculation
             words = (words + 31) >> 5;

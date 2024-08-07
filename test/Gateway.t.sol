@@ -290,7 +290,7 @@ contract GatewayBase is Test {
         {
             uint256 nonZeros = GasUtils.countNonZeros(gmp.data);
             uint256 zeros = gmp.data.length - nonZeros;
-            ctx.value = GasUtils.estimateGas(nonZeros, zeros, gmp.gasLimit) - 1;
+            ctx.value = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gmp.gasLimit) - 1;
         }
         vm.expectRevert("insufficient tx value");
         ctx.submitMessage(gmp);
