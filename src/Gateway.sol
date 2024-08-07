@@ -318,26 +318,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         _updateKeys(messageHash, message.revoke, message.register);
     }
 
-    function _gmpInsufficientFunds(bytes32 payloadHash, GmpMessage calldata message)
-        private
-        returns (GmpStatus status, bytes32 result)
-    {
-        // Verify if this GMP message was already executed
-        GmpInfo storage gmp = _messages[payloadHash];
-        require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
-
-        // Set status and result
-        status = GmpStatus.INSUFFICIENT_FUNDS;
-        result = bytes32(0);
-
-        // Store gmp execution status on storage
-        gmp.status = status;
-        gmp.blockNumber = uint64(block.number);
-
-        // Emit event
-        emit GmpExecuted(payloadHash, message.source, message.dest, status, result);
-    }
-
     // Execute GMP message
     function _execute(bytes32 payloadHash, GmpMessage calldata message, bytes memory data)
         private
@@ -413,7 +393,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         returns (GmpStatus status, bytes32 result)
     {
         uint256 initialGas = gasleft();
-        initialGas = initialGas.saturatingAdd(454);
+        initialGas = initialGas.saturatingAdd(431);
 
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
@@ -432,7 +412,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Refund the chronicle gas
         unchecked {
             // Compute GMP gas used
-            uint256 gasUsed = 7169;
+            uint256 gasUsed = 7174;
             {
                 gasUsed += GasUtils.calldataGasCost();
                 gasUsed += GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64);

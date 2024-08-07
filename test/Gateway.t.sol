@@ -214,28 +214,28 @@ contract GatewayBase is Test {
     }
 
     function test_gasUtils() external pure {
-        assertEq(GasUtils.estimateGas(0, 0, 0), 76077);
-        assertEq(GasUtils.estimateGas(0, 33, 0), 76238);
-        assertEq(GasUtils.estimateGas(33, 0, 0), 76898);
-        assertEq(GasUtils.estimateGas(20, 13, 0), 76638);
+        assertEq(GasUtils.estimateGas(0, 0, 0), 76079);
+        assertEq(GasUtils.estimateGas(0, 33, 0), 76240);
+        assertEq(GasUtils.estimateGas(33, 0, 0), 76900);
+        assertEq(GasUtils.estimateGas(20, 13, 0), 76640);
 
         UFloat9x56 one = UFloatMath.ONE;
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 76077);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 76238);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 76898);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 76638);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 76079);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 76240);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 76900);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 76640);
 
         UFloat9x56 two = UFloat9x56.wrap(0x8080000000000000);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), 76077 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), 76238 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), 76898 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), 76638 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), 76079 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), 76240 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), 76900 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), 76640 * 2);
     }
 
     function test_estimateMessageCost() external {
         vm.txGasPrice(1);
         uint256 cost = gateway.estimateMessageCost(DEST_NETWORK_ID, 96, 100000);
-        assertEq(cost, 179897);
+        assertEq(cost, 179899);
     }
 
     function test_gasMeter() external {
@@ -400,36 +400,6 @@ contract GatewayBase is Test {
         });
         vm.expectRevert("invalid gmp network");
         ctx.execute(wrongNetworkSig, wrongNetwork);
-    }
-
-    function test_wrongSource() external {
-        vm.txGasPrice(1);
-        GmpSender sender = TestUtils.createTestAccount(100 ether).toSender(false);
-        GmpMessage memory gmp = GmpMessage({
-            source: GmpSender.wrap(0x0),
-            srcNetwork: SRC_NETWORK_ID,
-            dest: address(0),
-            destNetwork: DEST_NETWORK_ID,
-            gasLimit: 1000,
-            salt: 1,
-            data: ""
-        });
-        Signature memory sig = sign(gmp);
-
-        // Deposit funds
-        (uint256 baseCost, uint256 executionCost) = GatewayUtils.computeGmpGasCost(sig, gmp);
-
-        CallOptions memory ctx = CallOptions({
-            from: sender.toAddress(),
-            to: address(gateway),
-            value: 0,
-            gasLimit: baseCost + executionCost + gmp.gasLimit + 100_000,
-            executionCost: 0,
-            baseCost: 0
-        });
-        (GmpStatus status, bytes32 result) = ctx.execute(sig, gmp);
-        assertEq(uint256(status), uint256(GmpStatus.INSUFFICIENT_FUNDS), "unexpected GMP status");
-        assertEq(result, bytes32(0), "unexpected GMP result");
     }
 
     function test_ExecuteRevertsBelowGasLimit() external {

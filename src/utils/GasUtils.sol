@@ -10,7 +10,7 @@ import {BranchlessMath} from "./BranchlessMath.sol";
  * @dev Utilities for branchless operations, useful when a constant gas cost is required.
  */
 library GasUtils {
-    uint256 internal constant EXECUTION_BASE_COST = 39230 + 6700;
+    uint256 internal constant EXECUTION_BASE_COST = 39232 + 6700;
 
     using BranchlessMath for uint256;
 
