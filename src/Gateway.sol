@@ -573,6 +573,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return GasUtils.estimateWeiCost(relativeGasPrice, baseFee, uint16(messageSize), 0, gasLimit);
     }
 
+    /**
+     * Deposit funds to the gateway contract
+     */
+    function deposit() external payable {}
+
     /*//////////////////////////////////////////////////////////////
                                ADMIN LOGIC
     //////////////////////////////////////////////////////////////*/

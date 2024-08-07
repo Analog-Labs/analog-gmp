@@ -60,4 +60,9 @@ interface IExecutor {
      * @param info Network info
      */
     function setNetworkInfo(Signature memory signature, UpdateNetworkInfo memory info) external;
+
+    /**
+     * Deposit funds to the gateway contract
+     */
+    function deposit() external payable;
 }
