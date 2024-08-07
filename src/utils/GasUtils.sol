@@ -51,13 +51,11 @@ library GasUtils {
         pure
         returns (uint256)
     {
-        unchecked {
-            // Add execution cost
-            uint256 gasCost = estimateGas(nonZeros, zeros, gasLimit);
+        // Add execution cost
+        uint256 gasCost = estimateGas(nonZeros, zeros, gasLimit);
 
-            // Calculate the gas cost: gasPrice * gasCost + baseFee
-            return UFloatMath.saturatingMul(gasPrice, gasCost).saturatingAdd(baseFee);
-        }
+        // Calculate the gas cost: gasPrice * gasCost + baseFee
+        return UFloatMath.saturatingMul(gasPrice, gasCost).saturatingAdd(baseFee);
     }
 
     /**
@@ -255,6 +253,28 @@ library GasUtils {
 
             // Restore the original length of the data
             mstore(data, size)
+        }
+    }
+
+    /**
+     * @dev Count non-zeros of a single 32 bytes word.
+     */
+    function countNonZeros(bytes32 value) internal pure returns (uint256 nonZeros) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            // Normalize and count non-zero bytes in parallel
+            value := or(value, shr(4, value))
+            value := or(value, shr(2, value))
+            value := or(value, shr(1, value))
+            value := and(value, 0x0101010101010101010101010101010101010101010101010101010101010101)
+
+            // Sum bytes in parallel
+            value := add(value, shr(128, value))
+            value := add(value, shr(64, value))
+            value := add(value, shr(32, value))
+            value := add(value, shr(16, value))
+            value := add(value, shr(8, value))
+            nonZeros := and(value, 0xff)
         }
     }
 

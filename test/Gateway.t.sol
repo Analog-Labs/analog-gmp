@@ -232,6 +232,12 @@ contract GatewayBase is Test {
         assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), 76638 * 2);
     }
 
+    function test_estimateMessageCost() external {
+        vm.txGasPrice(1);
+        uint256 cost = gateway.estimateMessageCost(DEST_NETWORK_ID, 96, 100000);
+        assertEq(cost, 179897);
+    }
+
     function test_gasMeter() external {
         vm.txGasPrice(1);
         address sender = TestUtils.createTestAccount(100 ether);

@@ -36,8 +36,12 @@ interface IGateway {
      * @dev This function is called on the destination chain before calling the gateway to execute a source contract.
      * @param networkid The target chain where the contract call will be made
      * @param messageSize Message size
+     * @param messageSize Message gas limit
      */
-    function estimateMessageCost(uint16 networkid, uint256 messageSize) external view returns (uint256);
+    function estimateMessageCost(uint16 networkid, uint256 messageSize, uint256 gasLimit)
+        external
+        view
+        returns (uint256);
 
     /**
      * @dev Send message from chain A to chain B

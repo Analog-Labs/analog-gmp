@@ -555,18 +555,22 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return prevHash;
     }
 
-    function estimateMessageCost(uint16 networkid, uint256 messageSize) external view returns (uint256) {
+    function estimateMessageCost(uint16 networkid, uint256 messageSize, uint256 gasLimit)
+        external
+        view
+        returns (uint256)
+    {
         if (messageSize > MAX_PAYLOAD_SIZE) {
             // If the message size is too large, return the maximum possible cost
-            return 2 ** 256 - 1;
+            // return 2 ** 256 - 1;
+            return 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
         }
 
         NetworkInfo storage network = _networkInfo[networkid];
         uint256 baseFee = uint256(network.baseFee);
         UFloat9x56 relativeGasPrice = network.relativeGasPrice;
-        require(baseFee > 0 || UFloat9x56.unwrap(relativeGasPrice) > 0);
-        (uint256 baseGas, uint256 executionGas) = GasUtils.executionGasCost(messageSize);
-        return relativeGasPrice.mul(baseGas + executionGas) + baseFee;
+        require(baseFee > 0 || UFloat9x56.unwrap(relativeGasPrice) > 0, "unsupported network");
+        return GasUtils.estimateWeiCost(relativeGasPrice, baseFee, uint16(messageSize), 0, gasLimit);
     }
 
     /*//////////////////////////////////////////////////////////////

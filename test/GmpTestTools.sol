@@ -20,7 +20,7 @@ library GmpTestTools {
     Vm private constant vm = Vm(VM_ADDRESS);
 
     // Sepolia Properties
-    Gateway internal constant SEPOLIA_GATEWAY = Gateway(0x40E6E96Ca269A3F81020311ff51b122Cf8B52898);
+    Gateway internal constant SEPOLIA_GATEWAY = Gateway(0x000000007f56768De3133034fa730a909003A166);
     uint16 internal constant SEPOLIA_NETWORK_ID = 5;
     bytes32 internal constant SEPOLIA_SHARD_SECRET = keccak256("analog.sepolia.shard.secret");
     bytes32 internal constant SEPOLIA_DOMAIN_SEPARATOR = keccak256(
@@ -34,7 +34,7 @@ library GmpTestTools {
     );
 
     // Shibuya Properties
-    Gateway internal constant SHIBUYA_GATEWAY = Gateway(0xd6081eEa537865f2109cfaC53e7A6937566F82fB);
+    Gateway internal constant SHIBUYA_GATEWAY = Gateway(0x000000007f56768DE3133034fA730A909003a167);
     uint16 internal constant SHIBUYA_NETWORK_ID = 7;
     bytes32 internal constant SHIBUYA_SHARD_SECRET = keccak256("analog.shibuya.shard.secret");
     bytes32 internal constant SHIBUYA_DOMAIN_SEPARATOR = keccak256(

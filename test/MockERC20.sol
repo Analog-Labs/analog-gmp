@@ -15,6 +15,12 @@ contract MockERC20 is ERC20, IGmpReceiver {
     // Gas limit used to execute `onGmpReceived` method.
     uint256 private constant MSG_GAS_LIMIT = 100_000;
 
+    /**
+     * @dev Struct to represent a cross-chain transfer message.
+     * @param from The sender address.
+     * @param to The recipient address.
+     * @param amount The amount of tokens to teleport.
+     */
     struct CrossChainTransfer {
         address from;
         address to;
@@ -38,10 +44,33 @@ contract MockERC20 is ERC20, IGmpReceiver {
         }
     }
 
-    function teleport(address to, uint256 amount) external returns (bytes32) {
-        _burn(msg.sender, amount);
+    /**
+     * @dev Estimate the cost of teleporting tokens to another network.
+     */
+    function teleportCost() external view returns (uint256) {
+        // Estimate the cost
+        return _gateway.estimateMessageCost(_recipientNetwork, 96, MSG_GAS_LIMIT);
+    }
+
+    /**
+     * @dev Teleport tokens to from this contract to another contract on a different network.
+     * IMPORTANT: the caller is responsible to compute the teleport cost and send the required amount of ETH.
+     * The teleport cost can be computed using the `teleportCost` method.
+     *
+     * @param to The recipient address on the destination network.
+     * @param amount The amount of tokens to teleport.
+     */
+    function teleport(address to, uint256 amount) external payable returns (bytes32) {
+        // Encode the message
         bytes memory message = abi.encode(CrossChainTransfer({from: msg.sender, to: to, amount: amount}));
-        return _gateway.submitMessage(address(_recipientErc20), _recipientNetwork, MSG_GAS_LIMIT, message);
+
+        // Burn the tokens
+        _burn(msg.sender, amount);
+
+        // Submit the GMP message
+        return _gateway.submitMessage{value: msg.value}(
+            address(_recipientErc20), _recipientNetwork, MSG_GAS_LIMIT, message
+        );
     }
 
     function onGmpReceived(bytes32 id, uint128 network, bytes32 sender, bytes calldata data)
