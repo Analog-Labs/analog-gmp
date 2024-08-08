@@ -531,7 +531,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             prevMessageHash = prevHash;
             payload = message.data;
         }
-        // Emit event without copy the data
+
+        // Emit `GmpCreated` event without copy the data
         bytes32 eventSelector = GmpCreated.selector;
         assembly {
             let ptr := sub(payload, 0x80)
