@@ -340,7 +340,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             // https://eips.ethereum.org/EIPS/eip-150
             uint256 gasNeeded = gasLimit.saturatingMul(64).saturatingDiv(63);
             // to guarantee it was provided enough gas to execute the GMP message
-            gasNeeded = gasNeeded.saturatingAdd(6412);
+            // gasNeeded = gasNeeded.saturatingAdd(6412);
+            gasNeeded = gasNeeded.saturatingAdd(10000);
             require(gasleft() >= gasNeeded, "insufficient gas to execute GMP message");
         }
 
@@ -348,7 +349,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         bool success;
         address dest = message.dest;
 
-        /// @solidity memory-safe-assembly
+        // /// @solidity memory-safe-assembly
         assembly {
             // Using low-level assembly because the GMP is considered executed
             // regardless if the call reverts or not.
@@ -413,11 +414,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         unchecked {
             // Compute GMP gas used
             uint256 gasUsed = 7214;
-            {
-                gasUsed = gasUsed.saturatingAdd(GasUtils.calldataGasCost());
-                gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
-                gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
-            }
+            gasUsed = gasUsed.saturatingAdd(GasUtils.calldataGasCost());
+            gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
+            gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
 
             // Compute refund amount
             uint256 refund = BranchlessMath.min(gasUsed.saturatingMul(tx.gasprice), address(this).balance);
@@ -494,7 +493,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         address destinationAddress,
         uint16 destinationNetwork,
         uint256 executionGasLimit,
-        bytes memory data
+        bytes calldata data
     ) external payable returns (bytes32) {
         // Check if the message data is too large
         require(data.length < MAX_PAYLOAD_SIZE, "msg data too large");
@@ -506,7 +505,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Check if the sender has deposited enougth funds to execute the GMP message
         {
-            uint256 nonZeros = GasUtils.countNonZeros(data);
+            uint256 nonZeros = GasUtils.countNonZerosCalldata(data);
             uint256 zeros = data.length - nonZeros;
             uint256 msgPrice = GasUtils.estimateWeiCost(
                 info.relativeGasPrice, info.baseFee, uint16(nonZeros), uint16(zeros), executionGasLimit
@@ -524,15 +523,33 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint256 salt = BranchlessMath.select(prevHash == FIRST_MESSAGE_PLACEHOLDER, 0, uint256(prevHash));
 
         // Create GMP message and update prevMessageHash
-        GmpMessage memory message =
-            GmpMessage(source, NETWORK_ID, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
-        prevHash = message.eip712TypedHash(domainSeparator);
-        prevMessageHash = prevHash;
+        bytes memory payload;
+        {
+            GmpMessage memory message =
+                GmpMessage(source, NETWORK_ID, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
+            prevHash = message.eip712TypedHash(domainSeparator);
+            prevMessageHash = prevHash;
+            payload = message.data;
+        }
+        // Emit event without copy the data
+        bytes32 eventSelector = GmpCreated.selector;
+        assembly {
+            let ptr := sub(payload, 0x80)
+            mstore(ptr, destinationNetwork) // dest network
+            mstore(add(ptr, 0x20), executionGasLimit) // gas limit
+            mstore(add(ptr, 0x40), salt) // salt
+            mstore(add(ptr, 0x60), 0x80) // data offset
+            let size := and(add(mload(payload), 31), 0xffffffe0)
+            size := add(size, 160)
+            log4(ptr, size, eventSelector, prevHash, source, destinationAddress)
+            mstore(0, prevHash)
+            return(0, 32)
+        }
 
-        emit GmpCreated(
-            prevHash, GmpSender.unwrap(source), destinationAddress, destinationNetwork, executionGasLimit, salt, data
-        );
-        return prevHash;
+        // emit GmpCreated(
+        //     prevHash, GmpSender.unwrap(source), destinationAddress, destinationNetwork, executionGasLimit, salt, data
+        // );
+        // return prevHash;
     }
 
     /**

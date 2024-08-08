@@ -75,6 +75,14 @@ contract GasUtilsBase is Test {
         _srcDomainSeparator = GatewayUtils.computeDomainSeparator(SRC_NETWORK_ID, address(gateway));
         _dstDomainSeparator = GatewayUtils.computeDomainSeparator(DEST_NETWORK_ID, address(gateway));
 
+        // Obs: This is a special contract that wastes an exact amount of gas you send to it, helpful for testing GMP refunds and gas limits.
+        // See the file `HelperContract.opcode` for more details.
+        {
+            bytes memory bytecode =
+                hex"603b80600c6000396000f3fe5a600201803d523d60209160643560240135146018575bfd5b60345a116018575a604803565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bf3";
+            receiver = IGmpReceiver(TestUtils.deployContract(bytecode));
+        }
+
         vm.stopPrank();
     }
 
@@ -91,42 +99,112 @@ contract GasUtilsBase is Test {
     }
 
     /**
-     * @dev Compare the estimated gas cost VS the actual gas cost of the `execute` method.
+     * @dev Create a GMP message with the provided parameters.
      */
-    function test_baseExecutionCost(uint16 messageSize) external {
-        vm.assume(messageSize <= 0x6000);
-        vm.txGasPrice(1);
-        address sender = TestUtils.createTestAccount(100 ether);
+    function _buildGmpMessage(address sender, uint256 gasLimit, uint256 gasUsed, uint256 messageSize)
+        private
+        view
+        returns (GmpMessage memory message, Signature memory signature, CallOptions memory context)
+    {
+        require(gasUsed == 0 || messageSize >= 32, "If gasUsed > 0, then messageSize must be >= 32");
+        require(messageSize <= 0x6000, "message is too big");
 
-        // Build and sign GMP message
-        GmpMessage memory gmp = GmpMessage({
+        // Setup data and receiver addresses.
+        bytes memory data = new bytes(messageSize);
+        address gmpReceiver;
+        if (gasUsed > 0) {
+            gmpReceiver = address(receiver);
+            assembly {
+                mstore(add(data, 32), gasUsed)
+            }
+        } else {
+            // Create a new unique receiver address for each message, otherwise the gas refund will not work.
+            gmpReceiver = address(bytes20(keccak256(abi.encode(sender, gasLimit, messageSize))));
+        }
+
+        // Build the GMP message
+        message = GmpMessage({
             source: sender.toSender(false),
             srcNetwork: SRC_NETWORK_ID,
-            dest: address(bytes20(keccak256("dummy_address"))),
+            dest: gmpReceiver,
             destNetwork: DEST_NETWORK_ID,
-            gasLimit: 0,
+            gasLimit: gasLimit,
             salt: 0,
-            data: new bytes(messageSize)
+            data: data
         });
 
-        Signature memory sig = sign(gmp);
+        // Sign the message
+        signature = sign(message);
 
         // Calculate memory expansion cost and base cost
-        (uint256 baseCost,) = GatewayUtils.computeGmpGasCost(sig, gmp);
+        (uint256 baseCost, uint256 executionCost) = GatewayUtils.computeGmpGasCost(signature, message);
 
-        // Transaction Parameters
-        CallOptions memory ctx = CallOptions({
+        // Set Transaction Parameters
+        context = CallOptions({
             from: sender,
             to: address(gateway),
             value: 0,
-            // gasLimit: GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit) + baseCost,
-            gasLimit: baseCost + 1_000_000,
-            executionCost: 0,
-            baseCost: 0
+            gasLimit: GasUtils.executionGasNeeded(message.data.length, message.gasLimit).saturatingAdd(baseCost),
+            executionCost: executionCost,
+            baseCost: baseCost
         });
+    }
+    // bdfbbea6
+    // 079264c4b4bfcd7fe3a7b7b92b6c439f3a5b3abcd29189bf7b54d781ff03d722
+    // 51f46b1ff68263bee778aeef6b875d06636012244855e8cb1d445d8472f2fea1
+    // 21039e3d8d9db737ad1d19b9b8e5fbc04e6c8e6e4530df76cf5e5a988e324b96
+    // 0000000000000000000000000000000000000000000000000000000000000080
+    // 000000000000000000000000dba77ed08c6610c2cbabc48216d85aa0f83b3e35
+    // 00000000000000000000000000000000000000000000000000000000000004d2
+    // 0000000000000000000000007ef5c78b60535b879a77ce245070c34e120a5cac
+    // 0000000000000000000000000000000000000000000000000000000000000539
+    // 000000000000000000000000000000000000000000000000000000000000097c
+    // 0000000000000000000000000000000000000000000000000000000000000000
+    // 00000000000000000000000000000000000000000000000000000000000000e0
+    // 000000000000000000000000000000000000000000000000000000000000388a
+    // 000000000000000000000000000000000000000000000000000000000000097c
+    // 0000000000000000000000000000000000000000000000000000000000000000
+    // 0000000000000000000000000000000000000000000000000000000000000000
+    // 0000000000000000000000000000000000000000000000000000000000000000
+    // 0000000000000000000000000000000000000000000000000000000000000000
+    // ... 14336 zeros
+    /**
+     * @dev Compare the estimated gas cost VS the actual gas cost of the `execute` method.
+     */
+
+    function test_baseExecutionCost(uint16 messageSize, uint16 gasLimit) external {
+        vm.assume(gasLimit >= 5000);
+        // vm.assume(messageSize <= (0x6000 - 32));
+        vm.assume(messageSize <= 8160);
+        messageSize += 32;
+        vm.txGasPrice(1);
+        address sender = TestUtils.createTestAccount(100 ether);
+
+        // Build the GMP message
+        GmpMessage memory gmp;
+        Signature memory sig;
+        CallOptions memory ctx;
+        (gmp, sig, ctx) = _buildGmpMessage(sender, gasLimit, gasLimit, messageSize);
+
+        // Increase the gas limit to avoid out-of-gas errors
+        ctx.gasLimit = ctx.gasLimit.saturatingAdd(10_000_000);
 
         // Execute the GMP message
         ctx.execute(sig, gmp);
+        // {
+        // (GmpStatus status, bytes32 result) = ctx.execute(sig, gmp);
+        // if (status != GmpStatus.SUCCESS) {
+        //     bytes memory bla = abi.encodeCall(IExecutor.execute, (sig, gmp));
+        //     emit log_named_bytes("encoded call", bla);
+        //     emit log_named_uint("gmp status", uint256(status));
+        //     emit log_named_uint("gmp result", uint256(result));
+        //     emit log_named_uint("requested size", uint256(messageSize));
+        //     emit log_named_uint("actual size", uint256(gmp.data.length));
+        //     emit log_named_uint("gas limit", uint256(gasLimit));
+        // }
+        // assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "GMP execution failed");
+        // assertEq(result, bytes32(uint256(gasLimit)), "unexpected result");
+        // }
 
         // Calculate the expected base cost
         uint256 dynamicCost =

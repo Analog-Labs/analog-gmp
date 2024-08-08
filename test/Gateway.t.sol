@@ -100,7 +100,7 @@ library GatewayUtils {
         pure
         returns (uint256 baseCost, uint256 executionCost)
     {
-        (, executionCost) = GasUtils.executionGasCost(message.data.length);
+        (, executionCost) = GasUtils.internalGasCost(message.data.length);
         bytes memory encodedCall = abi.encodeCall(IExecutor.execute, (signature, message));
         baseCost = TestUtils.calculateBaseCost(encodedCall);
     }
@@ -137,7 +137,7 @@ contract GatewayBase is Test {
     bytes32 private _srcDomainSeparator;
     bytes32 private _dstDomainSeparator;
 
-    uint256 private constant SUBMIT_GAS_COST = 6095 + 9206;
+    uint256 private constant SUBMIT_GAS_COST = 14925;
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
     uint8 private constant GMP_STATUS_SUCCESS = 1;

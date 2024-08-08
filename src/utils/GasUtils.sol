@@ -7,7 +7,7 @@ import {UFloat9x56, UFloatMath} from "./Float9x56.sol";
 import {BranchlessMath} from "./BranchlessMath.sol";
 
 /**
- * @dev Utilities for branchless operations, useful when a constant gas cost is required.
+ * @dev Utilities for compute the GMP gas price, gas cost and gas needed.
  */
 library GasUtils {
     uint256 internal constant EXECUTION_BASE_COST = 39361 + 6700;
@@ -155,25 +155,25 @@ library GasUtils {
             // Proxy Overhead
             uint256 words = messagePadded + 388; // selector + Signature + GmpMessage
             words = BranchlessMath.min(words, type(uint16).max);
-            executionCost += proxyOverheadGasCost(uint16(words), 64);
+            executionCost = executionCost.saturatingAdd(proxyOverheadGasCost(uint16(words), 64));
 
             // Base Cost calculation
             words = (words + 31) >> 5;
-            executionCost += ((words - 1) / 15) * 1845;
+            executionCost = executionCost.saturatingAdd(((words - 1) / 15) * 1845);
 
             // calldatacopy (3 gas per word)
             words = messagePadded >> 5;
-            executionCost += words * 3;
+            executionCost = executionCost.saturatingAdd(words * 3);
 
             // keccak256 (6 gas per word)
-            executionCost += words * 6;
+            executionCost = executionCost.saturatingAdd(words * 6);
 
             // Memory expansion cost
             words = 0xa4 + (words << 5); // onGmpReceived encoded call size
             words = (words + 31) & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0;
             words += 0x0200; // Memory size
             words = (words + 31) >> 5; // to words
-            executionCost += ((words * words) >> 9) + (words * 3);
+            executionCost = executionCost.saturatingAdd(((words * words) >> 9) + (words * 3));
         }
     }
 
@@ -181,7 +181,7 @@ library GasUtils {
      * @dev Compute the transaction base cost.
      * OBS: This function must be used ONLY inside Gateway.execute method, because it also consider itself gas cost.
      */
-    function executionGasCost(uint256 messageSize) internal pure returns (uint256 baseCost, uint256 executionCost) {
+    function internalGasCost(uint256 messageSize) internal pure returns (uint256 baseCost, uint256 executionCost) {
         // Calculate Gateway.execute dynamic cost
         executionCost = EXECUTION_BASE_COST;
         unchecked {
@@ -215,6 +215,7 @@ library GasUtils {
 
     /**
      * @dev Count the number of non-zero bytes in a byte sequence.
+     * gas cost = 217 + (words * 112) + ((words - 1) * 193)
      */
     function countNonZeros(bytes memory data) internal pure returns (uint256 nonZeros) {
         /// @solidity memory-safe-assembly
@@ -256,6 +257,54 @@ library GasUtils {
 
             // Restore the original length of the data
             mstore(data, size)
+        }
+    }
+
+    /**
+     * @dev Count the number of non-zero bytes in a byte sequence.
+     * gas cost = 224 + (words * 106) + (((words - 1) / 255) * 214)
+     */
+    function countNonZerosCalldata(bytes calldata data) internal pure returns (uint256 nonZeros) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            let offset := data.offset
+            nonZeros := 0
+            for {
+                let ptr := data.offset
+                let end := add(ptr, data.length)
+
+                // range := min(ptr + data.length, ptr + 8160)
+                let range := add(ptr, 8160)
+                range := xor(end, mul(xor(range, end), lt(range, end)))
+            } true {
+                range := add(ptr, 8160)
+                range := xor(end, mul(xor(range, end), lt(range, end)))
+            } {
+                // Normalize and count non-zero bytes in parallel
+                let v := 0
+                for {} lt(ptr, range) { ptr := add(ptr, 32) } {
+                    let r := calldataload(ptr)
+                    r := or(r, shr(4, r))
+                    r := or(r, shr(2, r))
+                    r := or(r, shr(1, r))
+                    r := and(r, 0x0101010101010101010101010101010101010101010101010101010101010101)
+                    v := add(v, r)
+                }
+
+                // Sum bytes in parallel
+                {
+                    let l := and(v, 0x00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff)
+                    v := shr(8, xor(v, l))
+                    v := add(v, l)
+                }
+                v := add(v, shr(128, v))
+                v := add(v, shr(64, v))
+                v := add(v, shr(32, v))
+                v := add(v, shr(16, v))
+                v := and(v, 0xffff)
+                nonZeros := add(nonZeros, v)
+                if iszero(lt(ptr, end)) { break }
+            }
         }
     }
 
