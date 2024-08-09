@@ -52,7 +52,7 @@ library BranchlessMath {
      * @dev If `condition` is true returns `a`, otherwise returns `b`.
      * see `BranchlessMath.ternary`
      */
-    function ternaryB32(bool condition, bytes32 a, bytes32 b) internal pure returns (bytes32 r) {
+    function ternary(bool condition, bytes32 a, bytes32 b) internal pure returns (bytes32 r) {
         assembly {
             r := xor(b, mul(xor(a, b), condition))
         }

@@ -444,7 +444,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Verify and update domain separator if it's not zero
         stored.domainSeparator =
-            BranchlessMath.ternaryB32(info.domainSeparator != bytes32(0), info.domainSeparator, stored.domainSeparator);
+            BranchlessMath.ternary(info.domainSeparator != bytes32(0), info.domainSeparator, stored.domainSeparator);
         require(stored.domainSeparator != bytes32(0), "domain separator cannot be zero");
 
         // Update gas limit if it's not zero
