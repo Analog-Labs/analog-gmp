@@ -7,33 +7,79 @@ import {UFloat9x56, UFloatMath} from "./Float9x56.sol";
 import {BranchlessMath} from "./BranchlessMath.sol";
 
 /**
- * @dev Utilities for branchless operations, useful when a constant gas cost is required.
+ * @dev Utilities for compute the GMP gas price, gas cost and gas needed.
  */
 library GasUtils {
-    uint256 internal constant EXECUTION_BASE_COST = 39361 + 6700;
+    /**
+     * @dev Base cost of the `IExecutor.execute` method.
+     */
+    uint256 internal constant EXECUTION_BASE_COST = 37647 + 6800;
+
+    /**
+     * @dev Base cost of the `IGateway.submitMessage` method.
+     */
+    uint256 internal constant SUBMIT_BASE_COST = 9640 + 6800 + 6500;
 
     using BranchlessMath for uint256;
 
     /**
      * @dev Compute the amount of gas used by the `GatewayProxy`.
-     * @param calldataLen The length of the calldata
-     * @param returnLen The length of the return data
+     * @param calldataLen The length of the calldata in bytes
+     * @param returnLen The length of the return data in bytes
      */
-    function proxyOverheadGasCost(uint16 calldataLen, uint16 returnLen) internal pure returns (uint256) {
+    function proxyOverheadGasCost(uint256 calldataLen, uint256 returnLen) internal pure returns (uint256) {
         unchecked {
+            // Convert the calldata and return data length to words
+            calldataLen = calldataLen.saturatingAdd(31) >> 5;
+            returnLen = returnLen.saturatingAdd(31) >> 5;
+
             // Base cost: OPCODES + COLD READ STORAGE _implementation
             uint256 gasCost = 2257 + 2500;
 
             // CALLDATACOPY
-            gasCost += ((uint256(calldataLen) + 31) >> 5) * 3;
+            gasCost = gasCost.saturatingAdd(calldataLen * 3);
 
             // RETURNDATACOPY
-            gasCost += ((uint256(returnLen) + 31) >> 5) * 3;
+            gasCost = gasCost.saturatingAdd(returnLen * 3);
 
             // MEMORY EXPANSION
             uint256 words = BranchlessMath.max(calldataLen, returnLen);
-            words = (words + 31) >> 5;
+            gasCost = gasCost.saturatingAdd((words.saturatingMul(words) >> 9).saturatingAdd(words * 3));
+            return gasCost;
+        }
+    }
+
+    /**
+     * @dev Compute the gas cost of the `IGateway.submitMessage` method.
+     * @param messageSize The size of the message in bytes.
+     */
+    function submitMessageGasCost(uint16 messageSize) internal pure returns (uint256 gasCost) {
+        unchecked {
+            gasCost = SUBMIT_BASE_COST;
+
+            // Convert message size to calldata size
+            uint256 calldataSize = ((messageSize + 31) & 0xffe0) + 164;
+
+            // Proxy overhead
+            gasCost += proxyOverheadGasCost(uint16(calldataSize), 32);
+
+            // `countNonZeros` gas cost
+            uint256 words = (messageSize + 31) >> 5;
+            gasCost += (words * 106) + (((words + 254) / 255) * 214);
+
+            // CALLDATACOPY
+            gasCost += words * 3;
+
+            // keccak256 (6 gas per word)
+            gasCost += words * 6;
+
+            // emit GmpCreated() gas cost (8 gas per byte)
+            gasCost += words << 8;
+
+            // Memory expansion cost
+            words += 13;
             gasCost += ((words * words) >> 9) + (words * 3);
+
             return gasCost;
         }
     }
@@ -99,7 +145,7 @@ library GasUtils {
 
             // Base cost
             uint256 words = (calldataSize + 31) >> 5;
-            gasNeeded += ((words - 1) / 15) * 1845;
+            gasNeeded += (words * 106) + (((words + 254) / 255) * 214);
 
             // CALLDATACOPY
             words = (messageSize + 31) >> 5;
@@ -138,14 +184,16 @@ library GasUtils {
 
     /**
      * @dev Compute the gas that should be refunded to the executor for the execution.
+     * @param messageSize The size of the message.
+     * @param gasUsed The gas used by the gmp message.
      */
-    function computeExecutionRefund(uint16 messageSize, uint256 gasLimit)
+    function computeExecutionRefund(uint16 messageSize, uint256 gasUsed)
         internal
         pure
         returns (uint256 executionCost)
     {
         // Add the base execution gas cost
-        executionCost = EXECUTION_BASE_COST.saturatingAdd(gasLimit);
+        executionCost = EXECUTION_BASE_COST.saturatingAdd(gasUsed);
 
         // Safety: The operations below can't overflow because the message size can't be greater than 2^16
         unchecked {
@@ -154,67 +202,31 @@ library GasUtils {
 
             // Proxy Overhead
             uint256 words = messagePadded + 388; // selector + Signature + GmpMessage
-            words = BranchlessMath.min(words, type(uint16).max);
-            executionCost += proxyOverheadGasCost(uint16(words), 64);
+            executionCost = executionCost.saturatingAdd(proxyOverheadGasCost(words, 64));
 
             // Base Cost calculation
             words = (words + 31) >> 5;
-            executionCost += ((words - 1) / 15) * 1845;
+            executionCost = executionCost.saturatingAdd((words * 106) + (((words + 254) / 255) * 214));
 
             // calldatacopy (3 gas per word)
             words = messagePadded >> 5;
-            executionCost += words * 3;
+            executionCost = executionCost.saturatingAdd(words * 3);
 
             // keccak256 (6 gas per word)
-            executionCost += words * 6;
+            executionCost = executionCost.saturatingAdd(words * 6);
 
             // Memory expansion cost
             words = 0xa4 + (words << 5); // onGmpReceived encoded call size
             words = (words + 31) & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0;
             words += 0x0200; // Memory size
             words = (words + 31) >> 5; // to words
-            executionCost += ((words * words) >> 9) + (words * 3);
+            executionCost = executionCost.saturatingAdd(((words * words) >> 9) + (words * 3));
         }
-    }
-
-    /**
-     * @dev Compute the transaction base cost.
-     * OBS: This function must be used ONLY inside Gateway.execute method, because it also consider itself gas cost.
-     */
-    function executionGasCost(uint256 messageSize) internal pure returns (uint256 baseCost, uint256 executionCost) {
-        // Calculate Gateway.execute dynamic cost
-        executionCost = EXECUTION_BASE_COST;
-        unchecked {
-            uint256 words = (messageSize + 31) & 0xffe0;
-            words += 388;
-            executionCost += proxyOverheadGasCost(uint16(words), 64);
-
-            // Base Cost calculation
-            words = (words + 31) >> 5;
-            executionCost += ((words - 1) / 15) * 1845;
-
-            // calldatacopy (3 gas per word)
-            words = (messageSize + 31) >> 5;
-            executionCost += words * 3;
-
-            // keccak256 (6 gas per word)
-            executionCost += words * 6;
-
-            // Memory expansion cost
-            words = 0xa4 + (words << 5); // onGmpReceived encoded call size
-            words = (words + 31) & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0;
-            words += 0x0200; // Memory size
-            words = (words + 31) >> 5; // to words
-            executionCost += ((words * words) >> 9) + (words * 3);
-        }
-
-        // Efficient algorithm for counting non-zero calldata bytes in chunks of 480 bytes at time
-        // computation gas cost = 1845 * ceil(msg.data.length / 480) + 61
-        baseCost = calldataGasCost();
     }
 
     /**
      * @dev Count the number of non-zero bytes in a byte sequence.
+     * gas cost = 217 + (words * 112) + ((words - 1) * 193)
      */
     function countNonZeros(bytes memory data) internal pure returns (uint256 nonZeros) {
         /// @solidity memory-safe-assembly
@@ -260,170 +272,56 @@ library GasUtils {
     }
 
     /**
-     * @dev Count non-zeros of a single 32 bytes word.
+     * @dev Count the number of non-zero bytes from calldata.
+     * gas cost = 224 + (words * 106) + (((words - 1) / 255) * 214)
      */
-    function countNonZeros(bytes32 value) internal pure returns (uint256 nonZeros) {
+    function countNonZerosCalldata(bytes calldata data) internal pure returns (uint256 nonZeros) {
         /// @solidity memory-safe-assembly
         assembly {
-            // Normalize and count non-zero bytes in parallel
-            value := or(value, shr(4, value))
-            value := or(value, shr(2, value))
-            value := or(value, shr(1, value))
-            value := and(value, 0x0101010101010101010101010101010101010101010101010101010101010101)
+            nonZeros := 0
+            for {
+                let ptr := data.offset
+                let end := add(ptr, data.length)
+            } lt(ptr, end) {} {
+                // calculate min(ptr + data.length, ptr + 8160)
+                let range := add(ptr, 8160)
+                range := xor(end, mul(xor(range, end), lt(range, end)))
 
-            // Sum bytes in parallel
-            value := add(value, shr(128, value))
-            value := add(value, shr(64, value))
-            value := add(value, shr(32, value))
-            value := add(value, shr(16, value))
-            value := add(value, shr(8, value))
-            nonZeros := and(value, 0xff)
+                // Normalize and count non-zero bytes in parallel
+                let v := 0
+                for {} lt(ptr, range) { ptr := add(ptr, 32) } {
+                    let r := calldataload(ptr)
+                    r := or(r, shr(4, r))
+                    r := or(r, shr(2, r))
+                    r := or(r, shr(1, r))
+                    r := and(r, 0x0101010101010101010101010101010101010101010101010101010101010101)
+                    v := add(v, r)
+                }
+
+                // Sum bytes in parallel
+                {
+                    let l := and(v, 0x00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff)
+                    v := shr(8, xor(v, l))
+                    v := add(v, l)
+                }
+                v := add(v, shr(128, v))
+                v := add(v, shr(64, v))
+                v := add(v, shr(32, v))
+                v := add(v, shr(16, v))
+                v := and(v, 0xffff)
+                nonZeros := add(nonZeros, v)
+            }
         }
     }
 
     /**
      * @dev Compute the transaction base cost.
      */
-    function calldataGasCost() internal pure returns (uint256 baseCost) {
-        // Efficient algorithm for counting non-zero calldata bytes in chunks of 480 bytes at time
-        // computation gas cost = 1845 * ceil(msg.data.length / 480) + 61
-        assembly {
-            baseCost := 0
-            for {
-                let ptr := 0
-                let mask := 0x0101010101010101010101010101010101010101010101010101010101010101
-            } lt(ptr, calldatasize()) { ptr := add(ptr, 32) } {
-                // 1
-                let v := calldataload(ptr)
-                v := or(v, shr(4, v))
-                v := or(v, shr(2, v))
-                v := or(v, shr(1, v))
-                v := and(v, mask)
-                {
-                    // 2
-                    ptr := add(ptr, 32)
-                    let r := calldataload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 3
-                    ptr := add(ptr, 32)
-                    r := calldataload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 4
-                    ptr := add(ptr, 32)
-                    r := calldataload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 5
-                    ptr := add(ptr, 32)
-                    r := calldataload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 6
-                    ptr := add(ptr, 32)
-                    r := calldataload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 7
-                    ptr := add(ptr, 32)
-                    r := calldataload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 8
-                    ptr := add(ptr, 32)
-                    r := calldataload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 9
-                    ptr := add(ptr, 32)
-                    r := calldataload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 10
-                    ptr := add(ptr, 32)
-                    r := calldataload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 11
-                    ptr := add(ptr, 32)
-                    r := calldataload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 12
-                    ptr := add(ptr, 32)
-                    r := calldataload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 13
-                    ptr := add(ptr, 32)
-                    r := calldataload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 14
-                    ptr := add(ptr, 32)
-                    r := calldataload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                    // 15
-                    ptr := add(ptr, 32)
-                    r := calldataload(ptr)
-                    r := or(r, shr(4, r))
-                    r := or(r, shr(2, r))
-                    r := or(r, shr(1, r))
-                    r := and(r, mask)
-                    v := add(v, r)
-                }
-
-                // Count bytes in parallel
-                v := add(v, shr(128, v))
-                v := add(v, shr(64, v))
-                v := add(v, shr(32, v))
-                v := add(v, shr(16, v))
-                v := and(v, 0xffff)
-                v := add(and(v, 0xff), shr(8, v))
-                baseCost := add(baseCost, v)
-            }
-            baseCost := add(21000, add(mul(sub(calldatasize(), baseCost), 4), mul(baseCost, 16)))
+    function calldataBaseCost() internal pure returns (uint256) {
+        unchecked {
+            uint256 nonZeros = countNonZerosCalldata(msg.data);
+            uint256 zeros = msg.data.length - nonZeros;
+            return 21000 + (nonZeros * 16) + (zeros * 4);
         }
     }
 }

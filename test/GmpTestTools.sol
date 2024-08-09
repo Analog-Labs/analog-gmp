@@ -236,7 +236,7 @@ library GmpTestTools {
         bytes32 slot = _deriveMapping(bytes32(0), shard.pubkey.px);
         uint256 shardInfo = uint256(vm.load(gateway, slot));
         uint256 nonce = shardInfo >> 224;
-        nonce = BranchlessMath.select(nonce > 0, nonce, 1);
+        nonce = BranchlessMath.ternary(nonce > 0, nonce, 1);
         shardInfo = (nonce << 224) | (1 << 216) | ((shard.pubkey.py % 2) << 217);
         vm.store(gateway, slot, bytes32(shardInfo));
     }
