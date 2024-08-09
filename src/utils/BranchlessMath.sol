@@ -82,6 +82,16 @@ library BranchlessMath {
      * @dev If `condition` is true returns `a`, otherwise returns `b`.
      * see `BranchlessMath.ternary`
      */
+    function ternaryU32(bool condition, uint32 a, uint32 b) internal pure returns (uint32 r) {
+        assembly {
+            r := xor(b, mul(xor(a, b), condition))
+        }
+    }
+
+    /**
+     * @dev If `condition` is true returns `a`, otherwise returns `b`.
+     * see `BranchlessMath.ternary`
+     */
     function ternaryU8(bool condition, uint8 a, uint8 b) internal pure returns (uint8 r) {
         assembly {
             r := xor(b, mul(xor(a, b), condition))

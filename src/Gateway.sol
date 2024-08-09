@@ -194,7 +194,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Load y parity bit, it must be 27 (even), or 28 (odd)
         // ref: https://ethereum.github.io/yellowpaper/paper.pdf
-        uint8 yParity = BranchlessMath.ternaryU8((status & SHARD_Y_PARITY) > 0, uint8(28), uint8(27));
+        uint8 yParity = BranchlessMath.ternaryU8((status & SHARD_Y_PARITY) > 0, 28, 27);
 
         // Verify Signature
         require(
@@ -253,10 +253,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                 );
 
                 // if is a new shard shard, set its initial nonce to 1
-                shard.nonce = uint32(BranchlessMath.ternary(nonce == 0, 1, nonce));
+                shard.nonce = uint32(BranchlessMath.ternaryU32(nonce == 0, 1, nonce));
 
                 // enable/disable the y-parity flag
-                status = uint8(BranchlessMath.ternary(yParity > 0, status | SHARD_Y_PARITY, status & ~SHARD_Y_PARITY));
+                status = BranchlessMath.ternaryU8(yParity > 0, status | SHARD_Y_PARITY, status & ~SHARD_Y_PARITY);
 
                 // enable SHARD_ACTIVE bitflag
                 status |= SHARD_ACTIVE;
