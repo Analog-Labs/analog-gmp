@@ -36,7 +36,7 @@ contract GasUtilsMock {
         pure
         returns (uint256 baseCost, uint256 nonZeros, uint256 zeros)
     {
-        baseCost = GasUtils.calldataGasCost();
+        baseCost = GasUtils.calldataBaseCost();
         nonZeros = GasUtils.countNonZerosCalldata(msg.data);
         zeros = msg.data.length - nonZeros;
     }
@@ -167,9 +167,9 @@ contract GasUtilsBase is Test {
     }
 
     /**
-     * Test the `GasUtils.calldataGasCost` method.
+     * Test the `GasUtils.calldataBaseCost` method.
      */
-    function test_calldataGasCost() external view {
+    function test_calldataBaseCost() external view {
         // Build and sign GMP message
         GmpMessage memory gmp = GmpMessage({
             source: address(0x1111111111111111111111111111111111111111).toSender(false),

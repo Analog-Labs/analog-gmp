@@ -414,7 +414,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         unchecked {
             // Compute GMP gas used
             uint256 gasUsed = 7214;
-            gasUsed = gasUsed.saturatingAdd(GasUtils.calldataGasCost());
+            gasUsed = gasUsed.saturatingAdd(GasUtils.calldataBaseCost());
             gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
             gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
 

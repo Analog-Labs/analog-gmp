@@ -314,32 +314,10 @@ library GasUtils {
         }
     }
 
-    // /**
-    //  * @dev Count non-zeros of a single 32 bytes word.
-    //  */
-    // function countNonZeros(bytes32 value) internal pure returns (uint256 nonZeros) {
-    //     /// @solidity memory-safe-assembly
-    //     assembly {
-    //         // Normalize and count non-zero bytes in parallel
-    //         value := or(value, shr(4, value))
-    //         value := or(value, shr(2, value))
-    //         value := or(value, shr(1, value))
-    //         value := and(value, 0x0101010101010101010101010101010101010101010101010101010101010101)
-
-    //         // Sum bytes in parallel
-    //         value := add(value, shr(128, value))
-    //         value := add(value, shr(64, value))
-    //         value := add(value, shr(32, value))
-    //         value := add(value, shr(16, value))
-    //         value := add(value, shr(8, value))
-    //         nonZeros := and(value, 0xff)
-    //     }
-    // }
-
     /**
      * @dev Compute the transaction base cost.
      */
-    function calldataGasCost() internal pure returns (uint256) {
+    function calldataBaseCost() internal pure returns (uint256) {
         unchecked {
             uint256 nonZeros = countNonZerosCalldata(msg.data);
             uint256 zeros = msg.data.length - nonZeros;
