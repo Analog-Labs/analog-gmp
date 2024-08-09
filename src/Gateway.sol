@@ -447,9 +447,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             BranchlessMath.ternaryB32(info.domainSeparator != bytes32(0), info.domainSeparator, stored.domainSeparator);
         require(stored.domainSeparator != bytes32(0), "domain separator cannot be zero");
 
-        // Store the message hash to prevent replay attacks
-        _executedMessages[messageHash] = executor;
-
         // Update gas limit if it's not zero
         stored.gasLimit = BranchlessMath.ternaryU64(info.gasLimit > 0, info.gasLimit, stored.gasLimit);
 
