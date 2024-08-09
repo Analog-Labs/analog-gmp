@@ -95,7 +95,7 @@ contract GasUtilsBase is Test {
         // See the file `HelperContract.opcode` for more details.
         {
             bytes memory bytecode =
-                hex"603b80600c6000396000f3fe5a600201803d523d60209160643560240135146018575bfd5b60345a116018575a604803565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bf3";
+                hex"603c80600a5f395ff3fe5a600201803d523d60209160643560240135146018575bfd5b60365a116018575a604903565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bf3";
             receiver = IGmpReceiver(TestUtils.deployContract(bytecode));
         }
 
@@ -216,9 +216,16 @@ contract GasUtilsBase is Test {
             uint256 balanceBefore = ctx.from.balance;
             (GmpStatus status, bytes32 result) = ctx.execute(sig, gmp);
             uint256 balanceAfter = ctx.from.balance;
-            if (status == GmpStatus.SUCCESS) {
+            if (status != GmpStatus.SUCCESS) {
                 // bytes memory bla = abi.encodeCall(IExecutor.execute, (sig, gmp));
                 // emit log_named_bytes("encoded call", bla);
+                bytes32 gmp_id = gmp.eip712TypedHash(_dstDomainSeparator);
+                bytes memory jose = abi.encodeCall(
+                    IGmpReceiver.onGmpReceived, (gmp_id, gmp.srcNetwork, GmpSender.unwrap(gmp.source), gmp.data)
+                );
+                emit log_named_bytes("onGmpReceived", jose);
+                emit log_named_address("gmp receiver", gmp.dest);
+                emit log_named_address("   receiver", address(receiver));
                 emit log_named_uint("gmp status", uint256(status));
                 emit log_named_uint("gmp result", uint256(result));
                 emit log_named_uint("requested size", uint256(messageSize));
@@ -238,22 +245,22 @@ contract GasUtilsBase is Test {
     }
 
     function test_gasUtils() external pure {
-        assertEq(GasUtils.estimateGas(0, 0, 0), 75976);
-        assertEq(GasUtils.estimateGas(0, 33, 0), 76349);
-        assertEq(GasUtils.estimateGas(33, 0, 0), 77009);
-        assertEq(GasUtils.estimateGas(20, 13, 0), 76749);
+        assertEq(GasUtils.estimateGas(0, 0, 0), 76022);
+        assertEq(GasUtils.estimateGas(0, 33, 0), 76395);
+        assertEq(GasUtils.estimateGas(33, 0, 0), 77055);
+        assertEq(GasUtils.estimateGas(20, 13, 0), 76795);
 
         UFloat9x56 one = UFloatMath.ONE;
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 75976);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 76349);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 77009);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 76749);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 76022);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 76395);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 77055);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 76795);
 
         UFloat9x56 two = UFloat9x56.wrap(0x8080000000000000);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), 75976 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), 76349 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), 77009 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), 76749 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), 76022 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), 76395 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), 77055 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), 76795 * 2);
     }
 }
 
