@@ -6,6 +6,7 @@ pragma solidity >=0.8.0;
 import {VmSafe, Vm} from "forge-std/Vm.sol";
 import {Schnorr} from "@frost-evm/Schnorr.sol";
 import {SECP256K1} from "@frost-evm/SECP256K1.sol";
+import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 
 struct VerifyingKey {
     uint256 px;
@@ -21,6 +22,8 @@ struct SigningKey {
  * @dev Utilities for testing purposes
  */
 library TestUtils {
+    using BranchlessMath for uint256;
+
     // Cheat code address, 0x7109709ECfa91a80626fF3989D68f67F5b1DD12D.
     address internal constant VM_ADDRESS = address(uint160(uint256(keccak256("hevm cheat code"))));
 
@@ -196,7 +199,7 @@ library TestUtils {
         private
         returns (uint256 gasUsed, bool success, bytes memory out)
     {
-        require(gasleft() > (gasLimit + 5000), "insufficient gas");
+        require(gasleft() > gasLimit.saturatingAdd(5000), "insufficient gas");
         require(addr.code.length > 0, "Not a contract address");
         /// @solidity memory-safe-assembly
         assembly {
@@ -231,8 +234,8 @@ library TestUtils {
 
         // Decrement sender base cost
         {
-            uint256 txFees = (baseCost + gasLimit) * tx.gasprice;
-            require(sender.balance >= (txFees + value), "account has no sufficient funds");
+            uint256 txFees = baseCost.saturatingAdd(gasLimit).saturatingMul(tx.gasprice);
+            require(sender.balance >= txFees.saturatingAdd(value), "account has no sufficient funds");
             vm.deal(sender, sender.balance - txFees);
         }
 
@@ -241,12 +244,12 @@ library TestUtils {
         {
             (VmSafe.CallerMode callerMode, address msgSender, address txOrigin) =
                 setCallerMode(VmSafe.CallerMode.RecurrentPrank, sender, sender);
-            (executionCost, success, out) = _call(dest, gasLimit - baseCost, value, data);
+            (executionCost, success, out) = _call(dest, gasLimit.saturatingSub(baseCost), value, data);
             setCallerMode(callerMode, msgSender, txOrigin);
         }
 
         // Refund unused gas
-        uint256 refund = (gasLimit - executionCost) * tx.gasprice;
+        uint256 refund = gasLimit.saturatingSub(executionCost).saturatingMul(tx.gasprice);
         if (refund > 0) {
             vm.deal(sender, sender.balance + refund);
         }
