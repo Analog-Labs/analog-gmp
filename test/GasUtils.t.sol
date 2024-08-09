@@ -194,8 +194,7 @@ contract GasUtilsBase is Test {
      */
     function test_baseExecutionCost(uint16 messageSize, uint16 gasLimit) external {
         vm.assume(gasLimit >= 5000);
-        // vm.assume(messageSize <= (0x6000 - 32));
-        vm.assume(messageSize <= 8160);
+        vm.assume(messageSize <= (0x6000 - 32));
         messageSize += 32;
         vm.txGasPrice(1);
         address sender = TestUtils.createTestAccount(100 ether);
@@ -210,31 +209,15 @@ contract GasUtilsBase is Test {
         ctx.gasLimit = ctx.gasLimit.saturatingAdd(10_000_000);
 
         // Execute the GMP message
-        // ctx.execute(sig, gmp);
-
         {
+            bytes32 gmpId = gmp.eip712TypedHash(_dstDomainSeparator);
+            vm.expectEmit(true, true, true, true);
+            emit IExecutor.GmpExecuted(gmpId, gmp.source, gmp.dest, GmpStatus.SUCCESS, bytes32(uint256(gasLimit)));
             uint256 balanceBefore = ctx.from.balance;
             (GmpStatus status, bytes32 result) = ctx.execute(sig, gmp);
-            uint256 balanceAfter = ctx.from.balance;
-            if (status != GmpStatus.SUCCESS) {
-                // bytes memory bla = abi.encodeCall(IExecutor.execute, (sig, gmp));
-                // emit log_named_bytes("encoded call", bla);
-                bytes32 gmp_id = gmp.eip712TypedHash(_dstDomainSeparator);
-                bytes memory jose = abi.encodeCall(
-                    IGmpReceiver.onGmpReceived, (gmp_id, gmp.srcNetwork, GmpSender.unwrap(gmp.source), gmp.data)
-                );
-                emit log_named_bytes("onGmpReceived", jose);
-                emit log_named_address("gmp receiver", gmp.dest);
-                emit log_named_address("   receiver", address(receiver));
-                emit log_named_uint("gmp status", uint256(status));
-                emit log_named_uint("gmp result", uint256(result));
-                emit log_named_uint("requested size", uint256(messageSize));
-                emit log_named_uint("actual size", uint256(gmp.data.length));
-                emit log_named_uint("gas limit", uint256(gasLimit));
-                assertEq(balanceBefore, balanceAfter, "Balance should not change");
-            }
             assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "GMP execution failed");
             assertEq(result, bytes32(uint256(gasLimit)), "unexpected result");
+            assertEq(balanceBefore, ctx.from.balance, "Balance should not change");
         }
 
         // Calculate the expected base cost
