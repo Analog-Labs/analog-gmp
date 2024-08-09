@@ -18,7 +18,7 @@ library GasUtils {
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 9752 + 6800 + 6500;
+    uint256 internal constant SUBMIT_BASE_COST = 9640 + 6800 + 6500;
 
     using BranchlessMath for uint256;
 
@@ -202,8 +202,7 @@ library GasUtils {
 
             // Proxy Overhead
             uint256 words = messagePadded + 388; // selector + Signature + GmpMessage
-            words = BranchlessMath.min(words, type(uint16).max);
-            executionCost = executionCost.saturatingAdd(proxyOverheadGasCost(uint16(words), 64));
+            executionCost = executionCost.saturatingAdd(proxyOverheadGasCost(words, 64));
 
             // Base Cost calculation
             words = (words + 31) >> 5;
