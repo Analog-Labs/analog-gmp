@@ -181,6 +181,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return NETWORK_ID;
     }
 
+    function networkInfo(uint16 id) external view returns (NetworkInfo memory) {
+        return _networkInfo[id];
+    }
+
     /**
      * @dev  Verify if shard exists, if the TSS signature is valid then increment shard's nonce.
      */
