@@ -206,13 +206,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return bytes32(tssKey.xCoord);
     }
 
-    // Converts a `TssKey` into an `KeyInfo` unique identifier
+    // Initialize networks
     function _updateNetworks(Network[] calldata networks) private {
         for (uint256 i = 0; i < networks.length; i++) {
             Network calldata network = networks[i];
-            bytes32 domainSeparator = computeDomainSeparator(network.id, network.gateway);
             NetworkInfo storage info = _networkInfo[network.id];
-            info.domainSeparator = domainSeparator;
+            require(info.domainSeparator == bytes32(0), "network already initialized");
+            require(network.id != NETWORK_ID || network.gateway == address(this), "wrong gateway address");
+            info.domainSeparator = computeDomainSeparator(network.id, network.gateway);
             info.gasLimit = 15_000_000; // Default to 15M gas
             info.relativeGasPrice = UFloatMath.ONE;
             info.baseFee = 0;
@@ -435,15 +436,18 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Verify signature and if the message was already executed
         require(_executedMessages[messageHash] == bytes32(0), "message already executed");
 
-        // Update network info and store the message hash to prevent replay attacks
+        // Update network info
         NetworkInfo storage networkInfo = _networkInfo[data.networkId];
 
         // Verify if the domain separator is not zero
         require((networkInfo.domainSeparator | data.domainSeparator) != bytes32(0), "domain separator cannot be zero");
 
+        // Store the message hash to prevent replay attacks
+        _executedMessages[messageHash] = executor;
+
         // Update domain separator if it's not zero
         if (data.domainSeparator != bytes32(0)) {
-            networkInfo.domainSeparator = messageHash;
+            networkInfo.domainSeparator = data.domainSeparator;
         }
 
         // Update gas limit if it's not zero
@@ -496,7 +500,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         bytes calldata data
     ) external payable returns (bytes32) {
         // Check if the message data is too large
-        require(data.length < MAX_PAYLOAD_SIZE, "msg data too large");
+        require(data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
 
         // Check if the destination network is supported
         NetworkInfo storage info = _networkInfo[destinationNetwork];

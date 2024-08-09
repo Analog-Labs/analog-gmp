@@ -30,6 +30,18 @@ import {
 uint256 constant secret = 0x42;
 uint256 constant nonce = 0x69;
 
+contract GasUtilsMock {
+    function execute(Signature calldata, GmpMessage calldata)
+        external
+        pure
+        returns (uint256 baseCost, uint256 nonZeros, uint256 zeros)
+    {
+        baseCost = GasUtils.calldataGasCost();
+        nonZeros = GasUtils.countNonZerosCalldata(msg.data);
+        zeros = msg.data.length - nonZeros;
+    }
+}
+
 contract GasUtilsBase is Test {
     using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
@@ -38,6 +50,7 @@ contract GasUtilsBase is Test {
     using GatewayUtils for CallOptions;
     using BranchlessMath for uint256;
 
+    GasUtilsMock internal mock;
     Gateway internal gateway;
     Signer internal signer;
 
@@ -55,6 +68,9 @@ contract GasUtilsBase is Test {
         signer = new Signer(secret);
         address deployer = TestUtils.createTestAccount(100 ether);
         vm.startPrank(deployer, deployer);
+
+        // Deploy the GasUtilsMock contract
+        mock = new GasUtilsMock();
 
         // 1 - Deploy the implementation contract
         address proxyAddr = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
@@ -149,29 +165,33 @@ contract GasUtilsBase is Test {
             baseCost: baseCost
         });
     }
-    // bdfbbea6
-    // 079264c4b4bfcd7fe3a7b7b92b6c439f3a5b3abcd29189bf7b54d781ff03d722
-    // 51f46b1ff68263bee778aeef6b875d06636012244855e8cb1d445d8472f2fea1
-    // 21039e3d8d9db737ad1d19b9b8e5fbc04e6c8e6e4530df76cf5e5a988e324b96
-    // 0000000000000000000000000000000000000000000000000000000000000080
-    // 000000000000000000000000dba77ed08c6610c2cbabc48216d85aa0f83b3e35
-    // 00000000000000000000000000000000000000000000000000000000000004d2
-    // 0000000000000000000000007ef5c78b60535b879a77ce245070c34e120a5cac
-    // 0000000000000000000000000000000000000000000000000000000000000539
-    // 000000000000000000000000000000000000000000000000000000000000097c
-    // 0000000000000000000000000000000000000000000000000000000000000000
-    // 00000000000000000000000000000000000000000000000000000000000000e0
-    // 000000000000000000000000000000000000000000000000000000000000388a
-    // 000000000000000000000000000000000000000000000000000000000000097c
-    // 0000000000000000000000000000000000000000000000000000000000000000
-    // 0000000000000000000000000000000000000000000000000000000000000000
-    // 0000000000000000000000000000000000000000000000000000000000000000
-    // 0000000000000000000000000000000000000000000000000000000000000000
-    // ... 14336 zeros
+
+    /**
+     * Test the `GasUtils.calldataGasCost` method.
+     */
+    function test_calldataGasCost() external view {
+        // Build and sign GMP message
+        GmpMessage memory gmp = GmpMessage({
+            source: address(0x1111111111111111111111111111111111111111).toSender(false),
+            srcNetwork: 1234,
+            dest: address(0x2222222222222222222222222222222222222222),
+            destNetwork: 1337,
+            gasLimit: 0,
+            salt: 0,
+            data: hex"00"
+        });
+        Signature memory sig = sign(gmp);
+
+        // Check if `IExecutor.execute` match the expected base cost
+        (uint256 baseCost, uint256 nonZeros, uint256 zeros) = mock.execute(sig, gmp);
+        assertEq(baseCost, 24444, "Wrong calldata gas cost");
+        assertEq(nonZeros, 147, "wrong number of non-zeros");
+        assertEq(zeros, 273, "wrong number of zeros");
+    }
+
     /**
      * @dev Compare the estimated gas cost VS the actual gas cost of the `execute` method.
      */
-
     function test_baseExecutionCost(uint16 messageSize, uint16 gasLimit) external {
         vm.assume(gasLimit >= 5000);
         // vm.assume(messageSize <= (0x6000 - 32));
@@ -190,21 +210,25 @@ contract GasUtilsBase is Test {
         ctx.gasLimit = ctx.gasLimit.saturatingAdd(10_000_000);
 
         // Execute the GMP message
-        ctx.execute(sig, gmp);
-        // {
-        // (GmpStatus status, bytes32 result) = ctx.execute(sig, gmp);
-        // if (status != GmpStatus.SUCCESS) {
-        //     bytes memory bla = abi.encodeCall(IExecutor.execute, (sig, gmp));
-        //     emit log_named_bytes("encoded call", bla);
-        //     emit log_named_uint("gmp status", uint256(status));
-        //     emit log_named_uint("gmp result", uint256(result));
-        //     emit log_named_uint("requested size", uint256(messageSize));
-        //     emit log_named_uint("actual size", uint256(gmp.data.length));
-        //     emit log_named_uint("gas limit", uint256(gasLimit));
-        // }
-        // assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "GMP execution failed");
-        // assertEq(result, bytes32(uint256(gasLimit)), "unexpected result");
-        // }
+        // ctx.execute(sig, gmp);
+
+        {
+            uint256 balanceBefore = ctx.from.balance;
+            (GmpStatus status, bytes32 result) = ctx.execute(sig, gmp);
+            uint256 balanceAfter = ctx.from.balance;
+            if (status == GmpStatus.SUCCESS) {
+                // bytes memory bla = abi.encodeCall(IExecutor.execute, (sig, gmp));
+                // emit log_named_bytes("encoded call", bla);
+                emit log_named_uint("gmp status", uint256(status));
+                emit log_named_uint("gmp result", uint256(result));
+                emit log_named_uint("requested size", uint256(messageSize));
+                emit log_named_uint("actual size", uint256(gmp.data.length));
+                emit log_named_uint("gas limit", uint256(gasLimit));
+                assertEq(balanceBefore, balanceAfter, "Balance should not change");
+            }
+            assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "GMP execution failed");
+            assertEq(result, bytes32(uint256(gasLimit)), "unexpected result");
+        }
 
         // Calculate the expected base cost
         uint256 dynamicCost =
@@ -214,22 +238,22 @@ contract GasUtilsBase is Test {
     }
 
     function test_gasUtils() external pure {
-        assertEq(GasUtils.estimateGas(0, 0, 0), 76208);
-        assertEq(GasUtils.estimateGas(0, 33, 0), 76369);
-        assertEq(GasUtils.estimateGas(33, 0, 0), 77029);
-        assertEq(GasUtils.estimateGas(20, 13, 0), 76769);
+        assertEq(GasUtils.estimateGas(0, 0, 0), 75976);
+        assertEq(GasUtils.estimateGas(0, 33, 0), 76349);
+        assertEq(GasUtils.estimateGas(33, 0, 0), 77009);
+        assertEq(GasUtils.estimateGas(20, 13, 0), 76749);
 
         UFloat9x56 one = UFloatMath.ONE;
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 76208);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 76369);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 77029);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 76769);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 75976);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 76349);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 77009);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 76749);
 
         UFloat9x56 two = UFloat9x56.wrap(0x8080000000000000);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), 76208 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), 76369 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), 77029 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), 76769 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), 75976 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), 76349 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), 77009 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), 76749 * 2);
     }
 }
 
