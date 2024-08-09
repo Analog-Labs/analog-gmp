@@ -77,6 +77,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // GMP message status
     mapping(bytes32 => GmpInfo) _messages;
 
+    // GAP necessary for migration purposes
+    mapping(GmpSender => mapping(uint16 => uint256)) _deprecated_Deposits;
+    mapping(uint16 => bytes32) _deprecated_Networks;
+
     // Hash of the previous GMP message submitted.
     bytes32 public prevMessageHash;
 
@@ -190,7 +194,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Load y parity bit, it must be 27 (even), or 28 (odd)
         // ref: https://ethereum.github.io/yellowpaper/paper.pdf
-        uint8 yParity = uint8(BranchlessMath.select((status & SHARD_Y_PARITY) > 0, 28, 27));
+        uint8 yParity = BranchlessMath.ternaryU8((status & SHARD_Y_PARITY) > 0, uint8(28), uint8(27));
 
         // Verify Signature
         require(
@@ -249,10 +253,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                 );
 
                 // if is a new shard shard, set its initial nonce to 1
-                shard.nonce = uint32(BranchlessMath.select(nonce == 0, 1, nonce));
+                shard.nonce = uint32(BranchlessMath.ternary(nonce == 0, 1, nonce));
 
                 // enable/disable the y-parity flag
-                status = uint8(BranchlessMath.select(yParity > 0, status | SHARD_Y_PARITY, status & ~SHARD_Y_PARITY));
+                status = uint8(BranchlessMath.ternary(yParity > 0, status | SHARD_Y_PARITY, status & ~SHARD_Y_PARITY));
 
                 // enable SHARD_ACTIVE bitflag
                 status |= SHARD_ACTIVE;
@@ -375,7 +379,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         }
 
         // Update GMP status
-        status = GmpStatus(BranchlessMath.select(success, uint256(GmpStatus.SUCCESS), uint256(GmpStatus.REVERT)));
+        status = GmpStatus(BranchlessMath.ternary(success, uint256(GmpStatus.SUCCESS), uint256(GmpStatus.REVERT)));
 
         // Persist gmp execution status on storage
         gmp.status = status;
@@ -428,37 +432,51 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         }
     }
 
-    function _setNetworkInfo(bytes32 executor, bytes32 messageHash, UpdateNetworkInfo calldata data) private {
-        require(data.mortality >= block.number, "message expired");
+    function _setNetworkInfo(bytes32 executor, bytes32 messageHash, UpdateNetworkInfo calldata info) private {
+        require(info.mortality >= block.number, "message expired");
         require(executor != bytes32(0), "executor cannot be zero");
 
         // Verify signature and if the message was already executed
         require(_executedMessages[messageHash] == bytes32(0), "message already executed");
 
         // Update network info
-        NetworkInfo storage networkInfo = _networkInfo[data.networkId];
+        NetworkInfo memory stored = _networkInfo[info.networkId];
 
-        // Verify if the domain separator is not zero
-        require((networkInfo.domainSeparator | data.domainSeparator) != bytes32(0), "domain separator cannot be zero");
+        // Verify and update domain separator if it's not zero
+        stored.domainSeparator =
+            BranchlessMath.ternaryB32(info.domainSeparator != bytes32(0), info.domainSeparator, stored.domainSeparator);
+        require(stored.domainSeparator != bytes32(0), "domain separator cannot be zero");
 
         // Store the message hash to prevent replay attacks
         _executedMessages[messageHash] = executor;
 
-        // Update domain separator if it's not zero
-        if (data.domainSeparator != bytes32(0)) {
-            networkInfo.domainSeparator = data.domainSeparator;
+        // Update gas limit if it's not zero
+        stored.gasLimit = BranchlessMath.ternaryU64(info.gasLimit > 0, info.gasLimit, stored.gasLimit);
+
+        // Update relative gas price and base fee if any of them are greater than zero
+        {
+            bool shouldUpdate = UFloat9x56.unwrap(info.relativeGasPrice) > 0 || info.baseFee > 0;
+            stored.relativeGasPrice = UFloat9x56.wrap(
+                BranchlessMath.ternaryU64(
+                    shouldUpdate, UFloat9x56.unwrap(info.relativeGasPrice), UFloat9x56.unwrap(stored.relativeGasPrice)
+                )
+            );
+            stored.baseFee = BranchlessMath.ternaryU128(shouldUpdate, info.baseFee, stored.baseFee);
         }
 
-        // Update gas limit if it's not zero
-        networkInfo.gasLimit = uint64(BranchlessMath.select(data.gasLimit > 0, data.gasLimit, networkInfo.gasLimit));
-        if (UFloat9x56.unwrap(data.relativeGasPrice) > 0 || data.baseFee > 0) {
-            networkInfo.relativeGasPrice = networkInfo.relativeGasPrice;
-            networkInfo.baseFee = networkInfo.baseFee;
-        }
+        // Save the message hash to prevent replay attacks
         _executedMessages[messageHash] = executor;
 
+        // Update network info
+        _networkInfo[info.networkId] = stored;
+
         emit NetworkUpdated(
-            messageHash, data.networkId, data.domainSeparator, data.relativeGasPrice, data.baseFee, data.gasLimit
+            messageHash,
+            info.networkId,
+            stored.domainSeparator,
+            stored.relativeGasPrice,
+            stored.baseFee,
+            stored.gasLimit
         );
     }
 
@@ -523,7 +541,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         bytes32 prevHash = prevMessageHash;
 
         // if the messageHash is the first message, we use a zero salt
-        uint256 salt = BranchlessMath.select(prevHash == FIRST_MESSAGE_PLACEHOLDER, 0, uint256(prevHash));
+        uint256 salt = BranchlessMath.ternary(prevHash == FIRST_MESSAGE_PLACEHOLDER, 0, uint256(prevHash));
 
         // Create GMP message and update prevMessageHash
         bytes memory payload;
@@ -576,7 +594,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         require(baseFee > 0 || UFloat9x56.unwrap(relativeGasPrice) > 0, "unsupported network");
 
         // if the message data is too large, we use the maximum base fee.
-        baseFee = BranchlessMath.select(messageSize > MAX_PAYLOAD_SIZE, 2 ** 256 - 1, baseFee);
+        baseFee = BranchlessMath.ternary(messageSize > MAX_PAYLOAD_SIZE, 2 ** 256 - 1, baseFee);
 
         // Estimate the cost
         return GasUtils.estimateWeiCost(relativeGasPrice, baseFee, uint16(messageSize), 0, gasLimit);
@@ -594,7 +612,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     function _getAdmin() private view returns (address admin) {
         admin = ERC1967.getAdmin();
         // If the admin slot is empty, then the 0xd4833be6144AF48d4B09E5Ce41f826eEcb7706D6 is the admin
-        admin = BranchlessMath.select(admin == address(0x0), 0xd4833be6144AF48d4B09E5Ce41f826eEcb7706D6, admin);
+        admin = BranchlessMath.ternary(admin == address(0x0), 0xd4833be6144AF48d4B09E5Ce41f826eEcb7706D6, admin);
     }
 
     function setAdmin(address newAdmin) external payable {

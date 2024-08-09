@@ -11,20 +11,20 @@ library BranchlessMath {
      * @dev Returns the smallest of two numbers.
      */
     function min(uint256 x, uint256 y) internal pure returns (uint256) {
-        return select(x < y, x, y);
+        return ternary(x < y, x, y);
     }
 
     /**
      * @dev Returns the largest of two numbers.
      */
     function max(uint256 x, uint256 y) internal pure returns (uint256) {
-        return select(x > y, x, y);
+        return ternary(x > y, x, y);
     }
 
     /**
      * @dev If `condition` is true returns `a`, otherwise returns `b`.
      */
-    function select(bool condition, uint256 a, uint256 b) internal pure returns (uint256) {
+    function ternary(bool condition, uint256 a, uint256 b) internal pure returns (uint256) {
         unchecked {
             // branchless select, works because:
             // b ^ (a ^ b) == a
@@ -40,13 +40,57 @@ library BranchlessMath {
 
     /**
      * @dev If `condition` is true returns `a`, otherwise returns `b`.
+     * see `BranchlessMath.ternary`
      */
-    function select(bool condition, address a, address b) internal pure returns (address) {
-        return address(uint160(select(condition, uint256(uint160(a)), uint256(uint160(b)))));
+    function ternary(bool condition, address a, address b) internal pure returns (address r) {
+        assembly {
+            r := xor(b, mul(xor(a, b), condition))
+        }
+    }
+
+    /**
+     * @dev If `condition` is true returns `a`, otherwise returns `b`.
+     * see `BranchlessMath.ternary`
+     */
+    function ternaryB32(bool condition, bytes32 a, bytes32 b) internal pure returns (bytes32 r) {
+        assembly {
+            r := xor(b, mul(xor(a, b), condition))
+        }
+    }
+
+    /**
+     * @dev If `condition` is true returns `a`, otherwise returns `b`.
+     * see `BranchlessMath.ternary`
+     */
+    function ternaryU128(bool condition, uint128 a, uint128 b) internal pure returns (uint128 r) {
+        assembly {
+            r := xor(b, mul(xor(a, b), condition))
+        }
+    }
+
+    /**
+     * @dev If `condition` is true returns `a`, otherwise returns `b`.
+     * see `BranchlessMath.ternary`
+     */
+    function ternaryU64(bool condition, uint64 a, uint64 b) internal pure returns (uint64 r) {
+        assembly {
+            r := xor(b, mul(xor(a, b), condition))
+        }
+    }
+
+    /**
+     * @dev If `condition` is true returns `a`, otherwise returns `b`.
+     * see `BranchlessMath.ternary`
+     */
+    function ternaryU8(bool condition, uint8 a, uint8 b) internal pure returns (uint8 r) {
+        assembly {
+            r := xor(b, mul(xor(a, b), condition))
+        }
     }
 
     /**
      * @dev If `condition` is true return `value`, otherwise return zero.
+     * see `BranchlessMath.ternary`
      */
     function selectIf(bool condition, uint256 value) internal pure returns (uint256) {
         unchecked {
