@@ -349,7 +349,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         bool success;
         address dest = message.dest;
 
-        // /// @solidity memory-safe-assembly
+        /// @solidity memory-safe-assembly
         assembly {
             // Using low-level assembly because the GMP is considered executed
             // regardless if the call reverts or not.
