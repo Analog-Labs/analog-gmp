@@ -259,7 +259,11 @@ contract GatewayBase is Test {
         assertEq(ctx.baseCost, baseCost, "unexpected base cost");
     }
 
-    function test_gasMeter() external {
+    /**
+     * @dev Test the gas metering for the `execute` function.
+     */
+    function test_gasMeter(uint16 messageSize) external {
+        vm.assume(messageSize < 1000);
         vm.txGasPrice(1);
         address sender = TestUtils.createTestAccount(100 ether);
 
@@ -271,11 +275,8 @@ contract GatewayBase is Test {
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 0,
             salt: 0,
-            data: new bytes(55 * 32)
+            data: new bytes(messageSize)
         });
-        // ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-        // 1111111111111111111111111111111111111111111111111111111111111111
-        // 2222222222222222222222222222222222222222222222222222222222222222
 
         Signature memory sig = sign(gmp);
 
@@ -288,7 +289,6 @@ contract GatewayBase is Test {
             to: address(gateway),
             value: 0,
             gasLimit: GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit) + baseCost - 1,
-            // gasLimit: 100_000,
             executionCost: 0,
             baseCost: 0
         });
@@ -297,7 +297,6 @@ contract GatewayBase is Test {
         bytes32 returned;
 
         // Expect a revert
-        // vm.expectRevert("insufficient gas to execute GMP message");
         vm.expectRevert();
         (status, returned) = ctx.execute(sig, gmp);
 
@@ -311,6 +310,8 @@ contract GatewayBase is Test {
         ctx.gasLimit += 1;
         (status, returned) = ctx.execute(sig, gmp);
 
+        assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "gmp execution failed");
+        assertEq(uint256(returned), gmp.gasLimit, "wrong gmp return value");
         assertEq(ctx.baseCost, baseCost, "ctx.baseCost != baseCost");
         assertEq(ctx.executionCost, executionCost, "ctx.executionCost != executionCost");
         assertEq(gatewayBalance - address(gateway).balance, executionCost + baseCost, "wrong refund amount");
@@ -411,7 +412,7 @@ contract GatewayBase is Test {
         GmpSender sender = TestUtils.createTestAccount(100 ether).toSender(false);
 
         // GMP message gas used
-        uint256 gmpGasUsed = 1000; //2_000;
+        uint256 gmpGasUsed = 2_000;
 
         // Build and sign GMP message
         GmpMessage memory gmp = GmpMessage({
@@ -436,7 +437,7 @@ contract GatewayBase is Test {
                 from: sender.toAddress(),
                 to: address(gateway),
                 value: 0,
-                gasLimit: GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit) + baseCost - 15, //31,
+                gasLimit: GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit) + baseCost,
                 executionCost: 0,
                 baseCost: 0
             });

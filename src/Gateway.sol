@@ -341,7 +341,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             // https://eips.ethereum.org/EIPS/eip-150
             uint256 gasNeeded = gasLimit.saturatingMul(64).saturatingDiv(63);
             // to guarantee it was provided enough gas to execute the GMP message
-            // gasNeeded = gasNeeded.saturatingAdd(6412);
             gasNeeded = gasNeeded.saturatingAdd(10000);
             require(gasleft() >= gasNeeded, "insufficient gas to execute GMP message");
         }
@@ -536,7 +535,12 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             payload = message.data;
         }
 
-        // Emit `GmpCreated` event without copy the data
+        // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
+        // the assembly code below is equivalent to:
+        // ```solidity
+        // emit GmpCreated(prevHash, source, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
+        // return prevHash;
+        // ```
         bytes32 eventSelector = GmpCreated.selector;
         assembly {
             let ptr := sub(payload, 0x80)
@@ -550,11 +554,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             mstore(0, prevHash)
             return(0, 32)
         }
-
-        // emit GmpCreated(
-        //     prevHash, GmpSender.unwrap(source), destinationAddress, destinationNetwork, executionGasLimit, salt, data
-        // );
-        // return prevHash;
     }
 
     /**
