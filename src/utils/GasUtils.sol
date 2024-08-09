@@ -229,7 +229,7 @@ library GasUtils {
      * gas cost = 217 + (words * 112) + ((words - 1) * 193)
      */
     function countNonZeros(bytes memory data) internal pure returns (uint256 nonZeros) {
-        // /// @solidity memory-safe-assembly
+        /// @solidity memory-safe-assembly
         assembly {
             // Efficient algorithm for counting non-zero bytes in parallel
             let size := mload(data)
