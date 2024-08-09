@@ -13,39 +13,46 @@ library GasUtils {
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = 37483 + 6800;
+    uint256 internal constant EXECUTION_BASE_COST = 37647 + 6800;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 9550 + 6800 + 6500;
+    uint256 internal constant SUBMIT_BASE_COST = 9752 + 6800 + 6500;
 
     using BranchlessMath for uint256;
 
     /**
      * @dev Compute the amount of gas used by the `GatewayProxy`.
-     * @param calldataLen The length of the calldata
-     * @param returnLen The length of the return data
+     * @param calldataLen The length of the calldata in bytes
+     * @param returnLen The length of the return data in bytes
      */
-    function proxyOverheadGasCost(uint16 calldataLen, uint16 returnLen) internal pure returns (uint256) {
+    function proxyOverheadGasCost(uint256 calldataLen, uint256 returnLen) internal pure returns (uint256) {
         unchecked {
+            // Convert the calldata and return data length to words
+            calldataLen = calldataLen.saturatingAdd(31) >> 5;
+            returnLen = returnLen.saturatingAdd(31) >> 5;
+
             // Base cost: OPCODES + COLD READ STORAGE _implementation
             uint256 gasCost = 2257 + 2500;
 
             // CALLDATACOPY
-            gasCost += ((uint256(calldataLen) + 31) >> 5) * 3;
+            gasCost = gasCost.saturatingAdd(calldataLen * 3);
 
             // RETURNDATACOPY
-            gasCost += ((uint256(returnLen) + 31) >> 5) * 3;
+            gasCost = gasCost.saturatingAdd(returnLen * 3);
 
             // MEMORY EXPANSION
             uint256 words = BranchlessMath.max(calldataLen, returnLen);
-            words = (words + 31) >> 5;
-            gasCost += ((words * words) >> 9) + (words * 3);
+            gasCost = gasCost.saturatingAdd((words.saturatingMul(words) >> 9).saturatingAdd(words * 3));
             return gasCost;
         }
     }
 
+    /**
+     * @dev Compute the gas cost of the `IGateway.submitMessage` method.
+     * @param messageSize The size of the message in bytes.
+     */
     function submitMessageGasCost(uint16 messageSize) internal pure returns (uint256 gasCost) {
         unchecked {
             gasCost = SUBMIT_BASE_COST;
@@ -216,42 +223,6 @@ library GasUtils {
             words = (words + 31) >> 5; // to words
             executionCost = executionCost.saturatingAdd(((words * words) >> 9) + (words * 3));
         }
-    }
-
-    /**
-     * @dev Compute the transaction base cost.
-     * OBS: This function must be used ONLY inside Gateway.execute method, because it also consider itself gas cost.
-     */
-    function internalGasCost(uint256 messageSize) internal pure returns (uint256 baseCost, uint256 executionCost) {
-        // Calculate Gateway.execute dynamic cost
-        executionCost = EXECUTION_BASE_COST;
-        unchecked {
-            uint256 words = (messageSize + 31) & 0xffe0;
-            words += 388;
-            executionCost += proxyOverheadGasCost(uint16(words), 64);
-
-            // Base Cost calculation
-            words = (words + 31) >> 5;
-            executionCost += (words * 106) + (((words + 254) / 255) * 214);
-
-            // calldatacopy (3 gas per word)
-            words = (messageSize + 31) >> 5;
-            executionCost += words * 3;
-
-            // keccak256 (6 gas per word)
-            executionCost += words * 6;
-
-            // Memory expansion cost
-            words = 0xa4 + (words << 5); // onGmpReceived encoded call size
-            words = (words + 31) & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0;
-            words += 0x0200; // Memory size
-            words = (words + 31) >> 5; // to words
-            executionCost += ((words * words) >> 9) + (words * 3);
-        }
-
-        // Efficient algorithm for counting non-zero calldata bytes in chunks of 480 bytes at time
-        // computation gas cost = 1845 * ceil(msg.data.length / 480) + 61
-        baseCost = countNonZerosCalldata(msg.data);
     }
 
     /**

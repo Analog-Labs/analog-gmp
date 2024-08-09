@@ -228,22 +228,22 @@ contract GasUtilsBase is Test {
     }
 
     function test_gasUtils() external pure {
-        assertEq(GasUtils.estimateGas(0, 0, 0), 76022);
-        assertEq(GasUtils.estimateGas(0, 33, 0), 76395);
-        assertEq(GasUtils.estimateGas(33, 0, 0), 77055);
-        assertEq(GasUtils.estimateGas(20, 13, 0), 76795);
+        assertEq(GasUtils.estimateGas(0, 0, 0), 76186);
+        assertEq(GasUtils.estimateGas(0, 33, 0), 76559);
+        assertEq(GasUtils.estimateGas(33, 0, 0), 77219);
+        assertEq(GasUtils.estimateGas(20, 13, 0), 76959);
 
         UFloat9x56 one = UFloatMath.ONE;
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 76022);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 76395);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 77055);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 76795);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 76186);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 76559);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 77219);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 76959);
 
         UFloat9x56 two = UFloat9x56.wrap(0x8080000000000000);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), 76022 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), 76395 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), 77055 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), 76795 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), 76186 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), 76559 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), 77219 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), 76959 * 2);
     }
 }
 
