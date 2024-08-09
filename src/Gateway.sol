@@ -72,24 +72,24 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     bytes32 internal constant FIRST_MESSAGE_PLACEHOLDER = bytes32(uint256(2 ** 256 - 1));
 
     // Shard data, maps the pubkey coordX (which is already collision resistant) to shard info.
-    mapping(bytes32 => KeyInfo) _shards;
+    mapping(bytes32 => KeyInfo) private _shards;
 
     // GMP message status
-    mapping(bytes32 => GmpInfo) _messages;
+    mapping(bytes32 => GmpInfo) private _messages;
 
     // GAP necessary for migration purposes
-    mapping(GmpSender => mapping(uint16 => uint256)) _deprecated_Deposits;
-    mapping(uint16 => bytes32) _deprecated_Networks;
+    mapping(GmpSender => mapping(uint16 => uint256)) private _deprecated_Deposits;
+    mapping(uint16 => bytes32) private _deprecated_Networks;
 
     // Hash of the previous GMP message submitted.
     bytes32 public prevMessageHash;
 
     // Replay protection mechanism, stores the hash of the executed messages
     // messageHash => shardId
-    mapping(bytes32 => bytes32) _executedMessages;
+    mapping(bytes32 => bytes32) private _executedMessages;
 
     // Network ID => Source network
-    mapping(uint16 => NetworkInfo) _networkInfo;
+    mapping(uint16 => NetworkInfo) private _networkInfo;
 
     /**
      * @dev Shard info stored in the Gateway Contract
