@@ -216,7 +216,7 @@ contract GatewayBase is Test {
     function test_estimateMessageCost() external {
         vm.txGasPrice(1);
         uint256 cost = gateway.estimateMessageCost(DEST_NETWORK_ID, 96, 100000);
-        assertEq(cost, 178479);
+        assertEq(cost, 178501);
     }
 
     function test_checkPayloadSize() external {
@@ -263,7 +263,7 @@ contract GatewayBase is Test {
      * @dev Test the gas metering for the `execute` function.
      */
     function test_gasMeter(uint16 messageSize) external {
-        vm.assume(messageSize < 1000);
+        vm.assume(messageSize <= 0x6000);
         vm.txGasPrice(1);
         address sender = TestUtils.createTestAccount(100 ether);
 
@@ -277,7 +277,6 @@ contract GatewayBase is Test {
             salt: 0,
             data: new bytes(messageSize)
         });
-
         Signature memory sig = sign(gmp);
 
         // Calculate memory expansion cost and base cost
@@ -316,12 +315,19 @@ contract GatewayBase is Test {
         assertEq(ctx.executionCost, executionCost, "ctx.executionCost != executionCost");
         assertEq(gatewayBalance - address(gateway).balance, executionCost + baseCost, "wrong refund amount");
         assertEq(senderBalance, address(sender).balance, "sender balance should not change");
+        assertEq(
+            ctx.gasLimit - baseCost, GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit), "gas needed mismatch"
+        );
 
-        // Submit the transaction
+        // Submit GMP message
         {
+            // Calculate the minimal gmp value minus one
             uint256 nonZeros = GasUtils.countNonZeros(gmp.data);
             uint256 zeros = gmp.data.length - nonZeros;
             ctx.value = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gmp.gasLimit) - 1;
+
+            // Add sufficient gas
+            ctx.gasLimit += gmp.data.length * 8;
         }
 
         // Must revert if fund are insufficient
@@ -336,7 +342,6 @@ contract GatewayBase is Test {
 
         // Must work if the funds are sufficient
         ctx.value += 1;
-        ctx.gasLimit += gmp.data.length * 8;
         ctx.submitMessage(gmp);
 
         assertEq(
@@ -347,7 +352,7 @@ contract GatewayBase is Test {
     }
 
     function test_submitMessageMeter(uint16 messageSize) external {
-        vm.assume(messageSize < 0x6000);
+        vm.assume(messageSize <= 0x6000);
         vm.txGasPrice(1);
         address sender = TestUtils.createTestAccount(1000 ether);
 
@@ -362,17 +367,22 @@ contract GatewayBase is Test {
             data: new bytes(messageSize)
         });
 
-        Signature memory sig = sign(gmp);
-
         // Calculate memory expansion cost and base cost
-        (uint256 baseCost,) = GatewayUtils.computeGmpGasCost(sig, gmp);
+        uint256 baseCost;
+        {
+            bytes memory encoded =
+                abi.encodeCall(IGateway.submitMessage, (gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data));
+            assertEq(encoded.length, ((gmp.data.length + 31) & 0xffe0) + 164, "wrong encoded length");
+            emit log_named_bytes("    calldata", encoded);
+            baseCost = TestUtils.calculateBaseCost(encoded);
+        }
 
         // Transaction Parameters
         CallOptions memory ctx = CallOptions({
             from: sender,
             to: address(gateway),
             value: 0,
-            gasLimit: GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit) + baseCost,
+            gasLimit: GasUtils.submitMessageGasNeeded(uint16(gmp.data.length)) + baseCost,
             executionCost: 0,
             baseCost: 0
         });
@@ -381,23 +391,17 @@ contract GatewayBase is Test {
         {
             uint256 nonZeros = GasUtils.countNonZeros(gmp.data);
             uint256 zeros = gmp.data.length - nonZeros;
-            ctx.value = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gmp.gasLimit) - 1;
+            ctx.value = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gmp.gasLimit);
         }
 
-        // Must revert if fund are insufficient
-        vm.expectRevert("insufficient tx value");
-        ctx.submitMessage(gmp);
-
-        // Must work if the funds are sufficient
-        ctx.value += 1;
-        ctx.gasLimit += gmp.data.length * 8;
+        uint256 snapshot = vm.snapshot();
+        // Must work if the funds and gas limit are sufficient
         bytes32 id = gmp.eip712TypedHash(_dstDomainSeparator);
         vm.expectEmit(true, true, true, true);
         emit IGateway.GmpCreated(
             id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
         );
-        bytes32 returnedId = ctx.submitMessage(gmp);
-        assertEq(returnedId, id, "unexpected GMP id");
+        assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
 
         // Verify the execution cost
         assertEq(
@@ -405,6 +409,12 @@ contract GatewayBase is Test {
             GasUtils.submitMessageGasCost(uint16(gmp.data.length)),
             "unexpected submit message gas cost"
         );
+
+        // Must revert if fund are insufficient
+        vm.revertTo(snapshot);
+        ctx.value -= 1;
+        vm.expectRevert("insufficient tx value");
+        ctx.submitMessage(gmp);
     }
 
     function test_refund() external {

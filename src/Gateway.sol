@@ -12,7 +12,6 @@ import {IGateway} from "./interfaces/IGateway.sol";
 import {IUpgradable} from "./interfaces/IUpgradable.sol";
 import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
-
 import {
     TssKey,
     GmpMessage,
@@ -402,7 +401,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         returns (GmpStatus status, bytes32 result)
     {
         uint256 initialGas = gasleft();
-        initialGas = initialGas.saturatingAdd(431);
+        // Add the solidity selector overhead to the initial gas, this way we guarantee that
+        // the `initialGas` represents the actual gas that was available to this contract.
+        initialGas = initialGas.saturatingAdd(453);
 
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
@@ -422,7 +423,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         unchecked {
             // Compute GMP gas used
             uint256 gasUsed = 7214;
-            gasUsed = gasUsed.saturatingAdd(GasUtils.calldataBaseCost());
+            gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseCost());
             gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
             gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
 
@@ -434,74 +435,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                 pop(call(gas(), caller(), refund, 0, 0, 0, 0))
             }
         }
-    }
-
-    function _setNetworkInfo(bytes32 executor, bytes32 messageHash, UpdateNetworkInfo calldata info) private {
-        require(info.mortality >= block.number, "message expired");
-        require(executor != bytes32(0), "executor cannot be zero");
-
-        // Verify signature and if the message was already executed
-        require(_executedMessages[messageHash] == bytes32(0), "message already executed");
-
-        // Update network info
-        NetworkInfo memory stored = _networkInfo[info.networkId];
-
-        // Verify and update domain separator if it's not zero
-        stored.domainSeparator =
-            BranchlessMath.ternary(info.domainSeparator != bytes32(0), info.domainSeparator, stored.domainSeparator);
-        require(stored.domainSeparator != bytes32(0), "domain separator cannot be zero");
-
-        // Update gas limit if it's not zero
-        stored.gasLimit = BranchlessMath.ternaryU64(info.gasLimit > 0, info.gasLimit, stored.gasLimit);
-
-        // Update relative gas price and base fee if any of them are greater than zero
-        {
-            bool shouldUpdate = UFloat9x56.unwrap(info.relativeGasPrice) > 0 || info.baseFee > 0;
-            stored.relativeGasPrice = UFloat9x56.wrap(
-                BranchlessMath.ternaryU64(
-                    shouldUpdate, UFloat9x56.unwrap(info.relativeGasPrice), UFloat9x56.unwrap(stored.relativeGasPrice)
-                )
-            );
-            stored.baseFee = BranchlessMath.ternaryU128(shouldUpdate, info.baseFee, stored.baseFee);
-        }
-
-        // Save the message hash to prevent replay attacks
-        _executedMessages[messageHash] = executor;
-
-        // Update network info
-        _networkInfo[info.networkId] = stored;
-
-        emit NetworkUpdated(
-            messageHash,
-            info.networkId,
-            stored.domainSeparator,
-            stored.relativeGasPrice,
-            stored.baseFee,
-            stored.gasLimit
-        );
-    }
-
-    /**
-     * @dev set network info using admin account
-     */
-    function setNetworkInfo(UpdateNetworkInfo calldata info) external {
-        require(msg.sender == _getAdmin(), "unauthorized");
-        bytes32 messageHash = info.eip712TypedHash(DOMAIN_SEPARATOR);
-        _setNetworkInfo(bytes32(uint256(uint160(_getAdmin()))), messageHash, info);
-    }
-
-    /**
-     * @dev Update network information
-     * @param signature Schnorr signature
-     * @param info new network info
-     */
-    function setNetworkInfo(Signature calldata signature, UpdateNetworkInfo calldata info) external {
-        // Verify signature and check if the message was already executed
-        bytes32 messageHash = info.eip712TypedHash(DOMAIN_SEPARATOR);
-        _verifySignature(signature, messageHash);
-
-        // Update network info
-        _setNetworkInfo(bytes32(signature.xCoord), messageHash, info);
     }
 
     /**
@@ -575,6 +508,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         }
     }
 
+    /*//////////////////////////////////////////////////////////////
+                        FEE AND PAYMENT LOGIC
+    //////////////////////////////////////////////////////////////*/
+
     /**
      * @notice Estimate the gas cost of execute a GMP message.
      * @dev This function is called on the destination chain before calling the gateway to execute a source contract.
@@ -601,10 +538,102 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return GasUtils.estimateWeiCost(relativeGasPrice, baseFee, uint16(messageSize), 0, gasLimit);
     }
 
+    function _setNetworkInfo(bytes32 executor, bytes32 messageHash, UpdateNetworkInfo calldata info) private {
+        require(info.mortality >= block.number, "message expired");
+        require(executor != bytes32(0), "executor cannot be zero");
+
+        // Verify signature and if the message was already executed
+        require(_executedMessages[messageHash] == bytes32(0), "message already executed");
+
+        // Update network info
+        NetworkInfo memory stored = _networkInfo[info.networkId];
+
+        // Verify and update domain separator if it's not zero
+        stored.domainSeparator =
+            BranchlessMath.ternary(info.domainSeparator != bytes32(0), info.domainSeparator, stored.domainSeparator);
+        require(stored.domainSeparator != bytes32(0), "domain separator cannot be zero");
+
+        // Update gas limit if it's not zero
+        stored.gasLimit = BranchlessMath.ternaryU64(info.gasLimit > 0, info.gasLimit, stored.gasLimit);
+
+        // Update relative gas price and base fee if any of them are greater than zero
+        {
+            bool shouldUpdate = UFloat9x56.unwrap(info.relativeGasPrice) > 0 || info.baseFee > 0;
+            stored.relativeGasPrice = UFloat9x56.wrap(
+                BranchlessMath.ternaryU64(
+                    shouldUpdate, UFloat9x56.unwrap(info.relativeGasPrice), UFloat9x56.unwrap(stored.relativeGasPrice)
+                )
+            );
+            stored.baseFee = BranchlessMath.ternaryU128(shouldUpdate, info.baseFee, stored.baseFee);
+        }
+
+        // Save the message hash to prevent replay attacks
+        _executedMessages[messageHash] = executor;
+
+        // Update network info
+        _networkInfo[info.networkId] = stored;
+
+        emit NetworkUpdated(
+            messageHash,
+            info.networkId,
+            stored.domainSeparator,
+            stored.relativeGasPrice,
+            stored.baseFee,
+            stored.gasLimit
+        );
+    }
+
+    /**
+     * @dev set network info using admin account
+     */
+    function setNetworkInfo(UpdateNetworkInfo calldata info) external {
+        require(msg.sender == _getAdmin(), "unauthorized");
+        bytes32 messageHash = info.eip712TypedHash(DOMAIN_SEPARATOR);
+        _setNetworkInfo(bytes32(uint256(uint160(_getAdmin()))), messageHash, info);
+    }
+
+    /**
+     * @dev Update network information
+     * @param signature Schnorr signature
+     * @param info new network info
+     */
+    function setNetworkInfo(Signature calldata signature, UpdateNetworkInfo calldata info) external {
+        // Verify signature and check if the message was already executed
+        bytes32 messageHash = info.eip712TypedHash(DOMAIN_SEPARATOR);
+        _verifySignature(signature, messageHash);
+
+        // Update network info
+        _setNetworkInfo(bytes32(signature.xCoord), messageHash, info);
+    }
+
     /**
      * Deposit funds to the gateway contract
      */
     function deposit() external payable {}
+
+    /**
+     * Withdraw funds from the gateway contract
+     * @param amount The amount to withdraw
+     * @param recipient The recipient address
+     * @param data The data to send to the recipient (in case it is a contract)
+     */
+    function withdraw(uint256 amount, address recipient, bytes calldata data) external returns (bytes memory output) {
+        require(msg.sender == _getAdmin(), "unauthorized");
+        // Check if the recipient is a contract
+        if (recipient.code.length > 0) {
+            bool success;
+            (success, output) = recipient.call{value: amount, gas: gasleft()}(data);
+            if (!success) {
+                /// @solidity memory-safe-assembly
+                assembly {
+                    revert(add(output, 32), mload(output))
+                }
+            }
+        } else {
+            payable(recipient).transfer(amount);
+            output = "";
+        }
+    }
 
     /*//////////////////////////////////////////////////////////////
                                ADMIN LOGIC

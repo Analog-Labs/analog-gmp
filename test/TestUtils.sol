@@ -229,14 +229,22 @@ library TestUtils {
         internal
         returns (uint256 executionCost, uint256 baseCost, bytes memory out)
     {
+        // Guarantee there's enough gas to execute the call
+        {
+            uint256 gasRequired = (gasLimit * 64) / 63;
+            gasRequired += 50_000;
+            require(gasleft() > gasRequired, "insufficient gas left to execute call");
+        }
+
         // Compute the base tx cost (21k + 4 * zeros + 16 * nonZeros)
         baseCost = calculateBaseCost(data);
 
-        // Decrement sender base cost
+        // Decrement sender base cost and value
         {
-            uint256 txFees = baseCost.saturatingAdd(gasLimit).saturatingMul(tx.gasprice);
+            uint256 txFees = gasLimit.saturatingMul(tx.gasprice);
             require(sender.balance >= txFees.saturatingAdd(value), "account has no sufficient funds");
             vm.deal(sender, sender.balance - txFees);
+            gasLimit = gasLimit.saturatingSub(baseCost);
         }
 
         // Execute
@@ -244,7 +252,7 @@ library TestUtils {
         {
             (VmSafe.CallerMode callerMode, address msgSender, address txOrigin) =
                 setCallerMode(VmSafe.CallerMode.RecurrentPrank, sender, sender);
-            (executionCost, success, out) = _call(dest, gasLimit.saturatingSub(baseCost), value, data);
+            (executionCost, success, out) = _call(dest, gasLimit, value, data);
             setCallerMode(callerMode, msgSender, txOrigin);
         }
 

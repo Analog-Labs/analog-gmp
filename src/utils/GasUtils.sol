@@ -13,12 +13,12 @@ library GasUtils {
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = 37647 + 6800;
+    uint256 internal constant EXECUTION_BASE_COST = 44469;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 9640 + 6800 + 6500;
+    uint256 internal constant SUBMIT_BASE_COST = 23147;
 
     using BranchlessMath for uint256;
 
@@ -33,8 +33,8 @@ library GasUtils {
             calldataLen = calldataLen.saturatingAdd(31) >> 5;
             returnLen = returnLen.saturatingAdd(31) >> 5;
 
-            // Base cost: OPCODES + COLD READ STORAGE _implementation
-            uint256 gasCost = 2257 + 2500;
+            // Base cost: OPCODES + COLD SLOAD + COLD DELEGATECALL
+            uint256 gasCost = 57 + 2100 + 2600;
 
             // CALLDATACOPY
             gasCost = gasCost.saturatingAdd(calldataLen * 3);
@@ -50,18 +50,12 @@ library GasUtils {
     }
 
     /**
-     * @dev Compute the gas cost of the `IGateway.submitMessage` method.
-     * @param messageSize The size of the message in bytes.
+     * @dev Compute the gas cost of the `IGateway.submitMessage` method, without the `GatewayProxy` overhead.
+     * @param messageSize The size of the message in bytes. This is the `gmp.data.length`.
      */
-    function submitMessageGasCost(uint16 messageSize) internal pure returns (uint256 gasCost) {
+    function _submitMessageGasCost(uint16 messageSize) private pure returns (uint256 gasCost) {
         unchecked {
             gasCost = SUBMIT_BASE_COST;
-
-            // Convert message size to calldata size
-            uint256 calldataSize = ((messageSize + 31) & 0xffe0) + 164;
-
-            // Proxy overhead
-            gasCost += proxyOverheadGasCost(uint16(calldataSize), 32);
 
             // `countNonZeros` gas cost
             uint256 words = (messageSize + 31) >> 5;
@@ -81,6 +75,41 @@ library GasUtils {
             gasCost += ((words * words) >> 9) + (words * 3);
 
             return gasCost;
+        }
+    }
+
+    /**
+     * @dev Compute the gas cost of the `IGateway.submitMessage` method including the `GatewayProxy` overhead.
+     * @param messageSize The size of the message in bytes. This is the `gmp.data.length`.
+     */
+    function submitMessageGasCost(uint16 messageSize) internal pure returns (uint256 gasCost) {
+        unchecked {
+            // Compute the gas cost of the `IGateway.submitMessage` method.
+            gasCost = _submitMessageGasCost(messageSize);
+
+            // Convert `gmp.data.length` to `abi.encodeCall(IGateway.submitMessage, (...)).length`.
+            uint256 calldataSize = ((messageSize + 31) & 0xffe0) + 164;
+
+            // Compute the `GatewayProxy` gas overhead.
+            gasCost += proxyOverheadGasCost(uint16(calldataSize), 32);
+
+            return gasCost;
+        }
+    }
+
+    /**
+     * @dev Compute the minimal gas needed to execute the `IGateway.submitMessage` method.
+     * @param messageSize The size of the message in bytes. This is the `gmp.data.length`.
+     */
+    function submitMessageGasNeeded(uint16 messageSize) internal pure returns (uint256 gasNeeded) {
+        unchecked {
+            // Compute the gas cost of the `IGateway.submitMessage` method.
+            gasNeeded = _submitMessageGasCost(messageSize);
+            // gasNeeded = gasNeeded.saturatingSub(2114);
+            // gasNeeded = _inverseOfAllButOne64th();
+            uint256 calldataSize = ((messageSize + 31) & 0xffe0) + 164;
+            gasNeeded = gasNeeded.saturatingAdd(proxyOverheadGasCost(calldataSize, 32));
+            gasNeeded = gasNeeded.saturatingSub(36);
         }
     }
 
@@ -132,53 +161,66 @@ library GasUtils {
         }
     }
 
+    function _executionGasCost(uint256 messageSize, uint256 gasUsed) private pure returns (uint256) {
+        // Add the base execution gas cost
+        uint256 gas = EXECUTION_BASE_COST.saturatingAdd(gasUsed);
+
+        // Safety: The operations below can't overflow because the message size can't be greater than 2^16
+        unchecked {
+            // Add padding to the message size, making it a multiple of 32
+            messageSize = (uint256(messageSize) + 31) & 0xffffe0;
+
+            // selector + Signature + GmpMessage
+            uint256 words = messageSize.saturatingAdd(388 + 31) >> 5;
+
+            // Add `countZeros` gas cost
+            gas = gas.saturatingAdd((words * 106) + (((words + 254) / 255) * 214));
+
+            // calldatacopy (3 gas per word)
+            words = messageSize >> 5;
+            gas = gas.saturatingAdd(words * 3);
+
+            // keccak256 (6 gas per word)
+            gas = gas.saturatingAdd(words * 6);
+
+            // Memory expansion cost
+            words = 0xa4 + (words << 5); // onGmpReceived encoded call size
+            words = (words + 31) & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0;
+            words += 0x0200; // Memory size
+            words = (words + 31) >> 5; // to words
+            gas = gas.saturatingAdd(((words * words) >> 9) + (words * 3));
+            return gas;
+        }
+    }
+
+    /**
+     * @dev Compute the inverse of `N - floor(N / 64)` defined by EIP-150, used to
+     * compute the gas needed for a transaction.
+     */
+    function _inverseOfAllButOne64th(uint256 x) private pure returns (uint256 inverse) {
+        unchecked {
+            // inverse = (x * 64) / 63
+            inverse = x.saturatingShl(6).saturatingDiv(63);
+
+            // Subtract 1 if `inverse` is a multiple of 64 and greater than 0
+            inverse -= BranchlessMath.toUint(inverse > 0 && (inverse % 64) == 0);
+        }
+    }
+
     /**
      * @dev Compute the gas needed for the transaction, this is different from the gas used.
      * `gas needed > gas used` because of EIP-150
      */
     function executionGasNeeded(uint256 messageSize, uint256 gasLimit) internal pure returns (uint256 gasNeeded) {
         unchecked {
-            gasNeeded = EXECUTION_BASE_COST + 2114;
-
-            // Convert message size to calldata size
-            uint256 calldataSize = ((messageSize + 31) & 0xffe0) + 388;
-
-            // Base cost
-            uint256 words = (calldataSize + 31) >> 5;
-            gasNeeded += (words * 106) + (((words + 254) / 255) * 214);
-
-            // CALLDATACOPY
-            words = (messageSize + 31) >> 5;
-            gasNeeded += words * 3;
-
-            // keccak256 (6 gas per word)
-            gasNeeded += words * 6;
-
-            // Memory expansion cost
-            words = 0xa4 + (words << 5); // onGmpReceived encoded call size
-            words = (words + 31) & 0xffe0;
-            words += 0x0200; // Memory size
-            words = (words + 31) >> 5; // to words
-            gasNeeded += ((words * words) >> 9) + (words * 3);
-
-            // Add the gas limit
-            gasNeeded += gasLimit.saturatingMul(64).saturatingDiv(63);
-
-            // Add `all but one 64th`, as the defined by EIP-150
-            gasNeeded = gasNeeded.saturatingMul(64).saturatingDiv(63);
-            gasNeeded += 2600; // DELEGATECALL + COLD CONTRACT ADDRESS
-            gasNeeded += 2121; // OPCODES + COLD SLOAD
-
-            // CALLDATACOPY
-            words = (calldataSize + 31) >> 5;
-            gasNeeded += 3;
-            gasNeeded += words * 3;
-
-            // Memory Expansion
-            gasNeeded += words * 3;
-            gasNeeded += (words * words) >> 9;
-
-            return gasNeeded;
+            gasNeeded = _inverseOfAllButOne64th(gasLimit);
+            gasNeeded = gasNeeded.saturatingAdd(_executionGasCost(messageSize, gasLimit));
+            gasNeeded = gasNeeded.saturatingAdd(2114);
+            gasNeeded = _inverseOfAllButOne64th(gasNeeded);
+            messageSize = (uint256(messageSize).saturatingAdd(31) >> 5) << 5;
+            messageSize = messageSize.saturatingAdd(388);
+            gasNeeded = gasNeeded.saturatingAdd(proxyOverheadGasCost(messageSize, 64));
+            gasNeeded = gasNeeded.saturatingSub(39);
         }
     }
 
@@ -192,40 +234,19 @@ library GasUtils {
         pure
         returns (uint256 executionCost)
     {
-        // Add the base execution gas cost
-        executionCost = EXECUTION_BASE_COST.saturatingAdd(gasUsed);
+        // Add the base `IExecutor.execute` gas cost.
+        executionCost = _executionGasCost(messageSize, gasUsed);
 
-        // Safety: The operations below can't overflow because the message size can't be greater than 2^16
+        // Add `GatewayProxy` gas overhead
         unchecked {
-            // Add padding to the message size, making it a multiple of 32
-            uint256 messagePadded = (uint256(messageSize) + 31) & 0xffffe0;
-
-            // Proxy Overhead
-            uint256 words = messagePadded + 388; // selector + Signature + GmpMessage
-            executionCost = executionCost.saturatingAdd(proxyOverheadGasCost(words, 64));
-
-            // Base Cost calculation
-            words = (words + 31) >> 5;
-            executionCost = executionCost.saturatingAdd((words * 106) + (((words + 254) / 255) * 214));
-
-            // calldatacopy (3 gas per word)
-            words = messagePadded >> 5;
-            executionCost = executionCost.saturatingAdd(words * 3);
-
-            // keccak256 (6 gas per word)
-            executionCost = executionCost.saturatingAdd(words * 6);
-
-            // Memory expansion cost
-            words = 0xa4 + (words << 5); // onGmpReceived encoded call size
-            words = (words + 31) & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0;
-            words += 0x0200; // Memory size
-            words = (words + 31) >> 5; // to words
-            executionCost = executionCost.saturatingAdd(((words * words) >> 9) + (words * 3));
+            // Safety: The operations below can't overflow because the message size can't be greater than 2^16
+            uint256 calldataSize = ((uint256(messageSize) + 31) & 0xffffe0) + 388; // selector + Signature + GmpMessage
+            executionCost = executionCost.saturatingAdd(proxyOverheadGasCost(calldataSize, 64));
         }
     }
 
     /**
-     * @dev Count the number of non-zero bytes in a byte sequence.
+     * @dev Count the number of non-zero bytes in a byte sequence from memory.
      * gas cost = 217 + (words * 112) + ((words - 1) * 193)
      */
     function countNonZeros(bytes memory data) internal pure returns (uint256 nonZeros) {
@@ -273,7 +294,7 @@ library GasUtils {
 
     /**
      * @dev Count the number of non-zero bytes from calldata.
-     * gas cost = 224 + (words * 106) + (((words - 1) / 255) * 214)
+     * gas cost = 224 + (words * 106) + (((words + 254) / 255) * 214)
      */
     function countNonZerosCalldata(bytes calldata data) internal pure returns (uint256 nonZeros) {
         /// @solidity memory-safe-assembly
@@ -317,7 +338,7 @@ library GasUtils {
     /**
      * @dev Compute the transaction base cost.
      */
-    function calldataBaseCost() internal pure returns (uint256) {
+    function txBaseCost() internal pure returns (uint256) {
         unchecked {
             uint256 nonZeros = countNonZerosCalldata(msg.data);
             uint256 zeros = msg.data.length - nonZeros;
