@@ -36,7 +36,7 @@ contract GasUtilsMock {
         pure
         returns (uint256 baseCost, uint256 nonZeros, uint256 zeros)
     {
-        baseCost = GasUtils.calldataBaseCost();
+        baseCost = GasUtils.txBaseCost();
         nonZeros = GasUtils.countNonZerosCalldata(msg.data);
         zeros = msg.data.length - nonZeros;
     }
@@ -167,9 +167,9 @@ contract GasUtilsBase is Test {
     }
 
     /**
-     * Test the `GasUtils.calldataBaseCost` method.
+     * Test the `GasUtils.txBaseCost` method.
      */
-    function test_calldataBaseCost() external view {
+    function test_txBaseCost() external view {
         // Build and sign GMP message
         GmpMessage memory gmp = GmpMessage({
             source: address(0x1111111111111111111111111111111111111111).toSender(false),
@@ -228,22 +228,23 @@ contract GasUtilsBase is Test {
     }
 
     function test_gasUtils() external pure {
-        assertEq(GasUtils.estimateGas(0, 0, 0), 76186);
-        assertEq(GasUtils.estimateGas(0, 33, 0), 76559);
-        assertEq(GasUtils.estimateGas(33, 0, 0), 77219);
-        assertEq(GasUtils.estimateGas(20, 13, 0), 76959);
+        uint256 baseCost = GasUtils.EXECUTION_BASE_COST;
+        assertEq(GasUtils.estimateGas(0, 0, 0), 31739 + baseCost);
+        assertEq(GasUtils.estimateGas(0, 33, 0), 32112 + baseCost);
+        assertEq(GasUtils.estimateGas(33, 0, 0), 32772 + baseCost);
+        assertEq(GasUtils.estimateGas(20, 13, 0), 32512 + baseCost);
 
         UFloat9x56 one = UFloatMath.ONE;
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 76186);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 76559);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 77219);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 76959);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 31739 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 32112 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 32772 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 32512 + baseCost);
 
         UFloat9x56 two = UFloat9x56.wrap(0x8080000000000000);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), 76186 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), 76559 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), 77219 * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), 76959 * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), (31739 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), (32112 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), (32772 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), (32512 + baseCost) * 2);
     }
 }
 

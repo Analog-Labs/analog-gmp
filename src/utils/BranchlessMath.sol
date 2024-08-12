@@ -179,6 +179,19 @@ library BranchlessMath {
     }
 
     /**
+     * @dev Unsigned saturating left shift, bounds to UINT256 MAX instead of overflowing.
+     */
+    function saturatingShl(uint256 x, uint8 shift) internal pure returns (uint256 r) {
+        assembly {
+            // Detect overflow by checking if (x >> (256 - shift)) > 0
+            r := gt(shr(sub(256, shift), x), 0)
+
+            // Bounds to `type(uint256).max` if an overflow happened
+            r := or(shl(shift, x), sub(0, r))
+        }
+    }
+
+    /**
      * @dev Cast a boolean (false or true) to a uint256 (0 or 1) with no jump.
      */
     function toUint(bool b) internal pure returns (uint256 u) {
