@@ -82,7 +82,7 @@ if [ -z "${DRY_RUN}" ]; then
   read -r -p "running in broadcast mode, the transaction will be broadcasted, are you sure you want to continue? [y/n] " response
   case "$response" in
       [yY][eE][sS]|[yY]) 
-          PARAMS+=(--broadcast --verify)
+          PARAMS+=(--broadcast)
           ;;
       *)
         echo "running in dry-mode..."
