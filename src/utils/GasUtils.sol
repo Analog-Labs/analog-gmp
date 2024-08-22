@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Analog's Contracts (last updated v0.1.0) (src/utils/GasUtils.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity >=0.8.20;
 
 import {UFloat9x56, UFloatMath} from "./Float9x56.sol";
 import {BranchlessMath} from "./BranchlessMath.sol";
@@ -18,7 +18,7 @@ library GasUtils {
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 23147;
+    uint256 internal constant SUBMIT_BASE_COST = 23181;
 
     using BranchlessMath for uint256;
 
@@ -165,7 +165,7 @@ library GasUtils {
         // Add the base execution gas cost
         uint256 gas = EXECUTION_BASE_COST.saturatingAdd(gasUsed);
 
-        // Safety: The operations below can't overflow because the message size can't be greater than 2^16
+        // Safety: The operations below can't overflow because the message size can't be greater than 2**16
         unchecked {
             // Add padding to the message size, making it a multiple of 32
             messageSize = (uint256(messageSize) + 31) & 0xffffe0;
@@ -239,7 +239,7 @@ library GasUtils {
 
         // Add `GatewayProxy` gas overhead
         unchecked {
-            // Safety: The operations below can't overflow because the message size can't be greater than 2^16
+            // Safety: The operations below can't overflow because the message size can't be greater than 2**16
             uint256 calldataSize = ((uint256(messageSize) + 31) & 0xffffe0) + 388; // selector + Signature + GmpMessage
             executionCost = executionCost.saturatingAdd(proxyOverheadGasCost(calldataSize, 64));
         }
