@@ -10,7 +10,7 @@ enum Rounding {
     // Rounds towards zero
     Floor,
     // Rounds to the nearest value; if the number falls midway,
-    // it is rounded to the nearest value above.
+    // it is rounded to the value above.
     Nearest,
     // Rounds towards positive infinite
     Ceil
