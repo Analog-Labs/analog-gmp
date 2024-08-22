@@ -337,7 +337,6 @@ library UFloatMath {
                 uint256 exp1 = BranchlessMath.abs(exponent) - exp0;
 
                 // If numerator is less or equal to `2**exp1`, then the denominator has more than 256bit, so return zero.
-                // if (exp1 >= numerator || (exponent == -310 && numerator <= 0x0004000000000000)) {
                 if (exp1 >= numerator) {
                     return (1, 0);
                 }
