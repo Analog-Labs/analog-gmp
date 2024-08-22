@@ -155,7 +155,7 @@ contract UFloatMathTest is Test {
         unchecked {
             uint256 value = uint256(mantissa) << uint256(exponent);
             UFloat9x56 float = UFloatMath.fromUint(value);
-            assertEq(float.toUint(), value);
+            assertEq(float.truncate(), value);
         }
     }
 

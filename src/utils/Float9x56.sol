@@ -169,9 +169,10 @@ library UFloatMath {
     }
 
     /**
-     * @dev Compare if `UFloat9x56` is equal to another integer, considering only the mantissa bits.
+     * @dev Returns the integer part. This means that non-integer numbers are always truncated towards zero
+     * This function always returns the precise result.
      */
-    function toUint(UFloat9x56 value) internal pure returns (uint256) {
+    function truncate(UFloat9x56 value) internal pure returns (uint256) {
         uint256 mantissa;
         int256 exponent;
         (mantissa, exponent) = decode(value);
