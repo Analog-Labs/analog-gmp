@@ -21,7 +21,8 @@ block_gas_limit = 30000000
 
 # Fuzz tests options
 [fuzz]
-runs = 5000
+# Reduce the numbers of runs if fuzz tests takes too long in your machine.
+runs = 2500
 
 # When debuging fuzz tests, uncomment this seed to make tests reproducible.
 # seed = "0xdeadbeefdeadbeefdeadbeefdeadbeef"

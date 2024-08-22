@@ -206,20 +206,16 @@ contract UFloatMathTest is Test {
      * @dev Convert `UFloat9x56` to a rational number, returns the numerator and denominator, respectively.
      * Obs: Values above 2**-256 are represented precisely, values below are approximated or round down to zero.
      */
-    function test_toRational(uint56 mantissa, uint16 exponent) external view {
+    function test_toRational(uint56 mantissa, uint16 exponent) external pure {
         // Make sure the exponent is within 9 bit bounds.
         exponent %= 2 ** 9;
 
         // Doesn't allow exponent == 0, once subnormal numbers cannot be converted to rational precisely.
         vm.assume(exponent > 0);
         unchecked {
-            console.log(mantissa);
-            console.log(exponent);
             UFloat9x56 float =
                 UFloat9x56.wrap(uint64(mantissa) | uint64(exponent) << uint64(UFloatMath.MANTISSA_DIGITS - 1));
             (uint256 numerator, uint256 denominator) = float.toRational();
-            console.log(numerator);
-            console.log(denominator);
             uint256 numbits = numerator.log2();
             uint256 denbits = denominator.log2();
 
