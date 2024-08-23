@@ -18,3 +18,11 @@ gas_limit = 30000000
 gas_price = 1
 block_base_fee_per_gas = 0
 block_gas_limit = 30000000
+
+# Fuzz tests options
+[fuzz]
+# Reduce the numbers of runs if fuzz tests takes too long in your machine.
+runs = 2500
+
+# When debuging fuzz tests, uncomment this seed to make tests reproducible.
+# seed = "0xdeadbeefdeadbeefdeadbeefdeadbeef"
