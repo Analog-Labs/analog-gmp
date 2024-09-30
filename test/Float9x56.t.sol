@@ -7,13 +7,25 @@ import {Test, console} from "forge-std/Test.sol";
 import {BranchlessMath, Rounding} from "../src/utils/BranchlessMath.sol";
 import {UFloat9x56, UFloatMath} from "../src/utils/Float9x56.sol";
 
+contract UFloatMathMock {
+    function encode(uint256 mantissa, int256 exponent) external pure returns (UFloat9x56) {
+        return UFloatMath.encode(mantissa, exponent);
+    }
+}
+
 contract UFloatMathTest is Test {
     using UFloatMath for UFloat9x56;
     using BranchlessMath for uint256;
 
+    UFloatMathMock mock;
+
     // Fuzz test fixtures for mantissa, see:
     // - https://book.getfoundry.sh/forge/fuzz-testing#fuzz-test-fixtures
     uint56[] public fixtureMantissa = [0, 1, uint56(UFloatMath.MANTISSA_MIN), uint56(UFloatMath.MANTISSA_MAX)];
+
+    constructor() {
+        mock = new UFloatMathMock();
+    }
 
     /**
      * @dev multiply an UFloat9x56 by an uint256 in constant gas.
@@ -148,6 +160,43 @@ contract UFloatMathTest is Test {
     }
 
     /**
+     * @dev Test encoding `mantissa` and `exponent` into `UFloat9x56`
+     */
+    function test_encode() external {
+        // Encode zero
+        assertEq(UFloatMath.encode(0, 0), UFloatMath.ZERO);
+        assertEq(UFloatMath.encode(0, -311), UFloatMath.ZERO);
+        assertEq(UFloatMath.encode(0, -310), UFloatMath.ZERO);
+        assertEq(UFloatMath.encode(0, 200), UFloatMath.ZERO);
+
+        // Normal numbers
+        assertEq(UFloatMath.encode(0x80000000000000, -55), UFloatMath.ONE);
+        assertEq(UFloatMath.encode(UFloatMath.MANTISSA_MAX, 200), UFloatMath.MAX);
+        assertEq(UFloatMath.encode(0xaaaaaaaaaaaaab, -57), UFloatMath.fromRational(1, 3));
+        assertEq(UFloatMath.encode(0xeb79a2a3f35ba7, -29), UFloatMath.fromRational(123456789123456789, 1000000000));
+        assertEq(UFloatMath.encode(UFloatMath.MANTISSA_MIN, -310), UFloat9x56.wrap(0x0080000000000000));
+
+        // Subnormal numbers
+        assertEq(UFloatMath.encode(0x00000000000000, -311), UFloat9x56.wrap(0x0000000000000000));
+        assertEq(UFloatMath.encode(0x00000000000001, -310), UFloat9x56.wrap(0x0000000000000001));
+        assertEq(UFloatMath.encode(0x7fffffffffffff, -310), UFloat9x56.wrap(0x007fffffffffffff));
+
+        // Revert if the exponent is out of bounds
+        vm.expectRevert("UFloat9x56: exponent out of bounds");
+        mock.encode(0, -312);
+        vm.expectRevert("UFloat9x56: exponent out of bounds");
+        mock.encode(0, 201);
+
+        // Revert if the mantissa is invalid
+        vm.expectRevert("UFloat9x56: invalid mantissa");
+        mock.encode(1, 0);
+        vm.expectRevert("UFloat9x56: invalid mantissa");
+        mock.encode(UFloatMath.MANTISSA_MAX + 1, 200);
+        vm.expectRevert("UFloat9x56: invalid mantissa");
+        mock.encode(UFloatMath.MANTISSA_MIN - 1, -309);
+    }
+
+    /**
      * @dev Fuzz test converting between `uint256` and `UFloat9x56`.
      * The conversion must be exact given x is 56 bit long.
      */
@@ -172,15 +221,91 @@ contract UFloatMathTest is Test {
     }
 
     /**
+     * @dev Compare two `UFloat`.
+     */
+    function assertEq(UFloat9x56 left, UFloat9x56 right) internal pure {
+        assertEq(UFloat9x56.unwrap(left), UFloat9x56.unwrap(right));
+    }
+
+    function assertEq(UFloat9x56 left, UFloat9x56 right, string memory message) internal pure {
+        assertEq(UFloat9x56.unwrap(left), UFloat9x56.unwrap(right), message);
+    }
+
+    /**
+     * @dev Computes `num * 2**exp / den` with the given rounding direction.
+     */
+    function muldiv(uint256 num, int256 exp, uint256 den, Rounding rounding) internal pure returns (uint256) {
+        uint256 numzeros = num.leadingZeros();
+        uint256 denzeros = den.leadingZeros();
+        assertLe(exp, int256(denzeros));
+        assertGe(exp, -int256(numzeros + 255));
+
+        if (exp < -255) {
+            num <<= uint256(-exp) - 255;
+            exp = 255;
+        } else if (exp <= 0) {
+            exp = -exp;
+        } else {
+            den <<= uint256(exp);
+            exp = 0;
+        }
+
+        return BranchlessMath.mulDiv(num, 1 << uint256(exp), den, rounding);
+    }
+
+    /**
+     * @dev When `numerator` and `denominator` are exact, the conversion must be exact.
+     */
+    function checkfromRationalRouding(uint256 num, uint256 den, UFloat9x56 expected) internal pure {
+        (uint256 mantissa, int256 exponent) = expected.decode();
+        assertGt(mantissa + BranchlessMath.toUint(expected.eq(UFloatMath.ZERO)), 0, "mantissa is zero");
+        uint256 value = muldiv(num, exponent, den, Rounding.Floor);
+        assertEq(mantissa, value, "Rounding.Floor failed");
+
+        bool roundUp = muldiv(num, exponent, den, Rounding.Nearest) > value && expected.lt(UFloatMath.MAX);
+        expected = UFloat9x56.wrap(uint64(UFloat9x56.unwrap(expected) + BranchlessMath.toUint(roundUp)));
+        (mantissa, exponent) = expected.decode();
+        value = muldiv(num, exponent, den, Rounding.Nearest);
+        assertEq(mantissa, value, "Rounding.Nearest failed");
+
+        roundUp = muldiv(num, exponent, den, Rounding.Ceil) > value && expected.lt(UFloatMath.MAX);
+        expected = UFloat9x56.wrap(uint64(UFloat9x56.unwrap(expected) + BranchlessMath.toUint(roundUp)));
+        (mantissa, exponent) = expected.decode();
+        value = muldiv(num, exponent, den, Rounding.Ceil);
+        assertEq(mantissa, value, "Rounding.Ceil failed");
+    }
+
+    /**
      * @dev Converts numerator / denominator to `UFloat9x56`, following the selected rounding direction.
      */
-    function test_fromRational(uint248 numerator, uint248 denominator) external pure {
+    function test_fromRational() external pure {
+        // Normal numbers
+        checkfromRationalRouding(0, 1, UFloatMath.ZERO);
+        checkfromRationalRouding(0, 2, UFloatMath.ZERO);
+        checkfromRationalRouding(0, type(uint256).max, UFloatMath.ZERO);
+        checkfromRationalRouding(1, 1, UFloatMath.ONE);
+        checkfromRationalRouding(2, 2, UFloatMath.ONE);
+        checkfromRationalRouding(UFloatMath.MANTISSA_MAX, UFloatMath.MANTISSA_MAX, UFloatMath.ONE);
+        checkfromRationalRouding(type(uint256).max, type(uint256).max, UFloatMath.ONE);
+        checkfromRationalRouding(0x2ffffffffffffff, 3, UFloat9x56.wrap(0x9bffffffffffffff));
+
+        // Test rounding
+        assertEq(UFloatMath.fromRational(0x2ffffffffffffff, 3, Rounding.Floor), UFloat9x56.wrap(0x9bffffffffffffff));
+        assertEq(UFloatMath.fromRational(0x2ffffffffffffff, 3, Rounding.Nearest), UFloat9x56.wrap(0x9c00000000000000));
+        assertEq(UFloatMath.fromRational(0x2ffffffffffffff, 3, Rounding.Ceil), UFloat9x56.wrap(0x9c00000000000000));
+    }
+
+    /**
+     * @dev Converts numerator / denominator to `UFloat9x56`, following the selected rounding direction.
+     */
+    function test_fuzzFromRational(uint248 numerator, uint248 denominator) external pure {
         vm.assume(denominator > 0 && numerator > 0);
         uint256 numbits = BranchlessMath.log2(numerator);
         uint256 denbits = BranchlessMath.log2(denominator);
         vm.assume(numbits.absDiff(denbits) <= 200);
         unchecked {
             UFloat9x56 float = UFloatMath.fromRational(numerator, denominator, Rounding.Floor);
+            checkfromRationalRouding(numerator, denominator, float);
             uint256 integer = uint256(numerator) / uint256(denominator);
             assertTrue(float.eq(integer), "float is not equal to integer");
 

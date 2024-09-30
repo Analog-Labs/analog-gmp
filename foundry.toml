@@ -26,3 +26,9 @@ runs = 2500
 
 # When debuging fuzz tests, uncomment this seed to make tests reproducible.
 # seed = "0xdeadbeefdeadbeefdeadbeefdeadbeef"
+
+# RPC endpoints
+[rpc_endpoints]
+sepolia = "https://ethereum-sepolia-rpc.publicnode.com"
+shibuya = "https://evm.shibuya.astar.network"
+amoy = "https://rpc-amoy.polygon.technology"

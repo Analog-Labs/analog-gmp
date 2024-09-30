@@ -61,6 +61,16 @@ struct CallOptions {
     uint256 baseCost;
 }
 
+contract ParseCall {
+    function execute(Signature calldata signature, GmpMessage calldata message)
+        external
+        pure
+        returns (Signature memory sig, GmpMessage memory gmp)
+    {
+        return (signature, message);
+    }
+}
+
 library GatewayUtils {
     function execute(CallOptions memory ctx, Signature memory signature, GmpMessage memory message)
         internal
@@ -181,6 +191,92 @@ contract GatewayBase is Test {
                 hex"603c80600a5f395ff3fe5a600201803d523d60209160643560240135146018575bfd5b60365a116018575a604903565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bf3";
             receiver = IGmpReceiver(TestUtils.deployContract(bytecode));
         }
+    }
+
+    function test_jose() external {
+        // TssKey[] memory shards = new TssKey[](1);
+        // // shards[0] = TssKey({yParity: 1, xCoord: 0x4f475ae68e3f41e2357ae70d5e682b209b5ddc8bf1867020665383a3279e5c56});
+        // shards[0] = TssKey({yParity: 0, xCoord: 0x92f7a73cb66244cecce2be61714de3e16f07552261db819c912f64086b5d452e});
+        // bytes memory data = abi.encodeCall(Gateway.sudoRemoveShards, (shards));
+        // console.logBytes(data);
+
+        // Build and sign GMP message
+        // address sender = TestUtils.createTestAccount(10 ether);
+        // GmpMessage memory gmp = GmpMessage({
+        //     source: sender.toSender(false),
+        //     srcNetwork: SRC_NETWORK_ID,
+        //     dest: address(bytes20(keccak256("dummy_address"))),
+        //     destNetwork: DEST_NETWORK_ID,
+        //     gasLimit: 0,
+        //     salt: 0,
+        //     data: hex"deadbeef"
+        // });
+        // Signature memory sig = sign(gmp);
+        // bytes memory data = abi.encodeCall(Gateway.execute, (sig, gmp));
+        // console.logBytes(data);
+
+        bytes memory txData =
+            hex"bdfbbea64f475ae68e3f41e2357ae70d5e682b209b5ddc8bf1867020665383a3279e5c565f0989669c1aadbc077735a4b1fe35393ef49446a55023745468acddcb9c0df237c3f5a3983ed86bc6cff1c8259d0d0f0731a27c36e0d76db0fbcb58b82e42400000000000000000000000000000000000000000000000000000000000000080000000000000000000000001585bf6223f90a0852595b4a2bbfb33c4fe4fda90000000000000000000000000000000000000000000000000000000000000000500000000000000000000000013f46181b6d840c18f968757b6b3aeb798c98d32000000000000000000000000000000000000000000000000000000000000000700000000000000000000000000000000000000000000000000000000000186a0fb324bf098943b1f04b7a394392e1ed7a4e5b5ac57a625ef9019a0e1b4c4b6a200000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001";
+        txData =
+            hex"bdfbbea6f61541773a756d2a16eb91570d9b0f892bc113db02eb9e9268a5002f8498973b38c3c5d0f276f36e64705f627d2eeca781a9f44b11bcf5488c9ed1a5778233766565964e61b87c739b36abd8d0f74d5f17eff5158c4b0f8d9df02b1ee85cd69e0000000000000000000000000000000000000000000000000000000000000080000000000000000000000001e907ef1cf0a5eb4e23d8ae0a3b1075475566dee300000000000000000000000000000000000000000000000000000000000000050000000000000000000000000890e5d8771f575eb7f4ef083401dd6682e5d1c9000000000000000000000000000000000000000000000000000000000000000700000000000000000000000000000000000000000000000000000000000493e04aa80e2c774ebfb3419d0e8b35ada8cceae8b5c8f4f48913c0a775392f4fb4c600000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001";
+        ParseCall parser = new ParseCall();
+        bool success;
+        bytes memory result;
+        (success, result) = address(parser).call(txData);
+        assembly {
+            if iszero(success) { revert(add(result, 0x20), mload(result)) }
+        }
+        GmpMessage memory gmp;
+        Signature memory sig;
+        (sig, gmp) = abi.decode(result, (Signature, GmpMessage));
+        bytes32 messageId;
+        {
+            bytes32 domainSeparator =
+                GatewayUtils.computeDomainSeparator(gmp.destNetwork, 0x000000007f56768dE3133034FA730a909003a165);
+            messageId = gmp.eip712TypedHash(domainSeparator);
+        }
+
+        string memory obj1 = "gmp.source";
+        {
+            bool isContract = (uint256(GmpSender.unwrap(gmp.source)) >> 160) > 0;
+            vm.serializeAddress(obj1, "address", gmp.source.toAddress());
+            obj1 = vm.serializeBool(obj1, "is_contract", isContract);
+        }
+
+        string memory obj2 = "gmp";
+        vm.serializeBytes32(obj2, "id", messageId);
+        vm.serializeString(obj2, "source", obj1);
+        vm.serializeUint(obj2, "srcNetwork", gmp.srcNetwork);
+        vm.serializeAddress(obj2, "dest", gmp.dest);
+        vm.serializeUint(obj2, "dstNetwork", gmp.destNetwork);
+        vm.serializeUint(obj2, "gasLimit", gmp.gasLimit);
+        vm.serializeBytes32(obj2, "salt", bytes32(gmp.salt));
+        obj2 = vm.serializeBytes(obj2, "data", gmp.data);
+
+        obj1 = "signature";
+        vm.serializeBytes32(obj1, "xCoord", bytes32(sig.xCoord));
+        vm.serializeBytes32(obj1, "e", bytes32(sig.e));
+        obj1 = vm.serializeBytes32(obj1, "s", bytes32(sig.s));
+
+        string memory obj3 = "final";
+        vm.serializeString(obj3, "signature", obj1);
+        obj3 = vm.serializeString(obj3, "message", obj2);
+
+        emit log_named_string("gmp", obj3);
+
+        emit log_named_bytes32("sig.x", bytes32(sig.xCoord));
+        emit log_named_bytes32("sig.e", bytes32(sig.e));
+        emit log_named_bytes32("sig.s", bytes32(sig.s));
+
+        emit log_named_bytes32("gmp.id", messageId);
+        emit log_named_address("gmp.source.address", gmp.source.toAddress());
+        emit log_named_uint("gmp.source.contract", uint256(GmpSender.unwrap(gmp.source)) >> 160);
+        emit log_named_uint("gmp.srcNetwork", gmp.srcNetwork);
+        emit log_named_address("gmp.dest", gmp.dest);
+        emit log_named_uint("gmp.dstNetwork", gmp.destNetwork);
+        emit log_named_uint("gmp.gasLimit", gmp.gasLimit);
+        emit log_named_bytes32("gmp.salt", bytes32(gmp.salt));
+        emit log_named_bytes("gmp.data", gmp.data);
     }
 
     function sign(GmpMessage memory gmp) internal view returns (Signature memory) {
@@ -452,6 +548,13 @@ contract GatewayBase is Test {
                 baseCost: 0
             });
             (GmpStatus status, bytes32 returned) = ctx.execute(sig, gmp);
+            {
+                VmSafe.Gas memory gas = vm.lastCallGas();
+                // Verify the gas cost
+                // assertEq(uint256(gas.gasTotalUsed) - executionCost, uint256(gas.gasRemaining), "unexpected gas used");
+                assertEq(gas.gasTotalUsed, executionCost + 2000, "unexpected gas used");
+                // assertEq(ctx.executionCost, executionCost + gmp.gasLimit, "unexpected execution cost");
+            }
 
             // Verify the GMP message status
             assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "Unexpected GMP status");
