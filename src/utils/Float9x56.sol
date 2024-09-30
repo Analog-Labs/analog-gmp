@@ -6,9 +6,26 @@ pragma solidity >=0.8.0;
 import {BranchlessMath, Rounding} from "./BranchlessMath.sol";
 
 /**
- * @dev Unsigned Float with 9 bit exponent and 56 bit fraction.
- * The values are represented by the formula `2**(e - 311) * fraction`, where `e` is the 9bit
- * exponent and `fraction` is the 56bit fraction, where the msb is alway set when `e > 0`.
+ * @dev Unsigned Float with 9-bit exponent and 56-bit significand precision (55 explicitly stored).
+ *
+ * UFloat9x56 values are described by `2**exponent * (1 + fraction)`, where the `exponent` is a signed
+ * integer between -255 and 255, and the `fraction` is the next 55 binary digits, which translates to
+ * 15~17 decimal digits. Zero and values below 2**-255 have a special encoding format.
+ *
+ * # Exponent Encoding
+ * The exponent is encoded using offset-binary representation, with the zero offset being 256, example:
+ * - 2**-255 is encoded as -255 + 256 == 1.  (smallest exponent for normal numbers)
+ * - 2**0    is encoded as    0 + 256 == 256 (zero offset)
+ * - 2**6    is encoded as    6 + 256 == 262
+ * - 2**255  is encoded as  255 + 256 == 511 (highest exponent)
+ *
+ * # Subnormal Numbers
+ * The smallest possible exponent -256 have a special meaning, it represents subnormal numbers, where the
+ * exponent is -255 and the +1 is removed, this is useful to represent zero and values below 2**-255.
+ *
+ * Assume `e` is an 9-bit encoded exponent between 0~511:
+ * - When `e > 0`,  the number is described by: 2**(e - 256) * (1 + fraction)
+ * - When `e == 0`, the number is described by: 2**-255 * fraction
  */
 type UFloat9x56 is uint64;
 
@@ -43,12 +60,12 @@ library UFloatMath {
     /**
      * @dev Maximum value the mantissa can assume.
      */
-    uint256 internal constant MANTISSA_MAX = uint64(2 ** MANTISSA_DIGITS - 1);
+    uint256 internal constant MANTISSA_MAX = (2 ** MANTISSA_DIGITS) - 1;
 
     /**
      * @dev Minimum value the mantissa can assume, lower than this value is considered a subnormal number.
      */
-    uint256 internal constant MANTISSA_MIN = uint64(2 ** (MANTISSA_DIGITS - 1));
+    uint256 internal constant MANTISSA_MIN = 1 << (MANTISSA_DIGITS - 1);
 
     /**
      * @dev The maximum value that can be represented by `UFloat9x56`.
@@ -58,7 +75,13 @@ library UFloatMath {
     /**
      * @dev Mask to extract the mantissa from raw `UFloat9x56`.
      */
-    uint256 private constant MANTISSA_MASK = uint64(MANTISSA_MAX >> 1);
+    uint256 private constant MANTISSA_MASK = MANTISSA_MAX >> 1;
+
+    /**
+     * @dev Bit offset used to extract the exponent from raw `UFloat9x56`.
+     * This value also represents the number of signficand bits explicitly stored.
+     */
+    uint256 private constant EXPONENT_OFFSET = MANTISSA_DIGITS - 1;
 
     /**
      * @dev Position of the carry bit when converting uint256 to `UFloat9x56`.
@@ -136,36 +159,121 @@ library UFloatMath {
      * The original number can be recovered by `mantissa * 2 ** exponent`.
      * Returns (0, -311) if the value is zero.
      */
-    function decode(UFloat9x56 value) internal pure returns (uint64 mantissa, int16 exponent) {
-        // Extract the exponent
-        exponent = int16(int64(UFloat9x56.unwrap(value) >> uint64(MANTISSA_DIGITS - 1)));
+    function decode(UFloat9x56 value) internal pure returns (uint56, int16) {
+        unchecked {
+            // Extract the exponent
+            int256 exponent = int256(uint256(UFloat9x56.unwrap(value)) >> EXPONENT_OFFSET);
 
-        // Extract the mantissa
-        mantissa = UFloat9x56.unwrap(value) & uint64(MANTISSA_MASK);
+            // Extract the mantissa
+            uint256 mantissa = uint56(UFloat9x56.unwrap(value) & MANTISSA_MASK);
 
-        // If the value is subnormal, then the exponent is -310 and mantissa msb is not set.
-        bool isSubnormal = exponent == 0;
-        mantissa |= uint64(BranchlessMath.toUint(!isSubnormal) << (MANTISSA_DIGITS - 1));
-        exponent += int16(int256(BranchlessMath.toUint(isSubnormal && mantissa > 0)));
+            // If the value is subnormal, then the exponent is -310 and mantissa msb is not set.
+            bool isSubnormal = exponent == 0;
+            mantissa |= BranchlessMath.toUint(!isSubnormal) << EXPONENT_OFFSET;
+            exponent += BranchlessMath.toInt(isSubnormal && mantissa > 0);
 
-        // Exponent bias + mantissa shift
-        exponent -= 256 + int16(uint16(MANTISSA_DIGITS - 1));
+            // Exponent bias + mantissa shift
+            exponent -= 256 + int256(EXPONENT_OFFSET);
+
+            return (uint56(mantissa), int16(exponent));
+        }
+    }
+
+    /**
+     * @dev Encode the provided `mantissa` and `exponent` into `UFloat9x56`, this method assumes the
+     * mantissa msb is set when the number is normal, and unset when the number is subnormal.
+     */
+    function encode(uint256 mantissa, int256 exponent) internal pure returns (UFloat9x56) {
+        unchecked {
+            // Minimum exponent is -310 when the mantissa is greater than zero.
+            int256 minExponent = -311 + BranchlessMath.toInt(mantissa > 0);
+            require(exponent >= minExponent && exponent <= 200, "UFloat9x56: exponent out of bounds");
+
+            // If the mantissa is zero, then the exponent must be -311.
+            exponent = BranchlessMath.ternary(mantissa == 0, -311, exponent);
+
+            // For subnormal numbers the mantissa msb is not set.
+            bool isSubnormal = mantissa < MANTISSA_MIN && exponent == minExponent;
+            require(
+                isSubnormal || (mantissa >= MANTISSA_MIN && mantissa <= MANTISSA_MAX), "UFloat9x56: invalid mantissa"
+            );
+            isSubnormal = isSubnormal && mantissa > 0;
+
+            // Remove mantissa most significant bit.
+            mantissa &= MANTISSA_MASK;
+
+            // Encode the exponent as an 9-bit unsigned integer.
+            exponent += 311 - BranchlessMath.toInt(isSubnormal);
+
+            // Shift the exponent to the correct position
+            exponent <<= EXPONENT_OFFSET;
+
+            // Encode the exponent and mantissa into `UFloat9x56`
+            return UFloat9x56.wrap(uint64(mantissa) | uint64(uint256(exponent)));
+        }
+    }
+
+    /**
+     * @dev Compare if `UFloat9x56` is equal to another integer, considering only the mantissa bits.
+     */
+    function _integerMask(UFloat9x56 x) private pure returns (uint256, uint256) {
+        (uint256 mantissa, int256 exponent) = decode(x);
+        unchecked {
+            // Shift y if the exponent is negative
+            mantissa >>= BranchlessMath.abs(exponent) * BranchlessMath.toUint(exponent < 0);
+            uint256 shift = uint256(exponent) * BranchlessMath.toUint(exponent > 0);
+            return (type(uint256).max << shift, mantissa << shift);
+        }
     }
 
     /**
      * @dev Compare if `UFloat9x56` is equal to another integer, considering only the mantissa bits.
      */
     function eq(UFloat9x56 x, uint256 y) internal pure returns (bool r) {
-        uint256 mantissa;
-        int256 exponent;
-        (mantissa, exponent) = decode(x);
-        unchecked {
-            // Shift y if the exponent is negative
-            uint256 shift = BranchlessMath.abs(exponent) * BranchlessMath.toUint(exponent < 0 && mantissa > 0);
-            mantissa >>= shift;
-            shift = uint256(exponent) * BranchlessMath.toUint(exponent > 0);
-            return (y & (type(uint256).max << shift)) == (mantissa << shift);
-        }
+        (uint256 mask, uint256 integer) = _integerMask(x);
+        return (y & mask) == integer;
+    }
+
+    /**
+     * @dev Compare if `UFloat9x56` is equal to another integer, considering only the mantissa bits.
+     */
+    function eq(UFloat9x56 a, UFloat9x56 b) internal pure returns (bool) {
+        return UFloat9x56.unwrap(a) == UFloat9x56.unwrap(b);
+    }
+
+    /**
+     * @dev Compare if `UFloat9x56` is equal to another integer, considering only the mantissa bits.
+     */
+    function gt(UFloat9x56 a, UFloat9x56 b) internal pure returns (bool) {
+        return UFloat9x56.unwrap(a) > UFloat9x56.unwrap(b);
+    }
+
+    /**
+     * @dev Compare if `UFloat9x56` is equal to another integer, considering only the mantissa bits.
+     */
+    function gt(UFloat9x56 x, uint256 y) internal pure returns (bool r) {
+        return truncate(x) > y;
+    }
+
+    /**
+     * @dev Compare if `UFloat9x56` is equal to another integer, considering only the mantissa bits.
+     */
+    function ge(UFloat9x56 a, UFloat9x56 b) internal pure returns (bool) {
+        return UFloat9x56.unwrap(a) >= UFloat9x56.unwrap(b);
+    }
+
+    /**
+     * @dev Compare if `UFloat9x56` is equal to another integer, considering only the mantissa bits.
+     */
+    function lt(UFloat9x56 a, UFloat9x56 b) internal pure returns (bool) {
+        return UFloat9x56.unwrap(a) < UFloat9x56.unwrap(b);
+    }
+
+    /**
+     * @dev Compare if `UFloat9x56` is equal to another integer, considering only the mantissa bits.
+     */
+    function le(UFloat9x56 a, UFloat9x56 b) internal pure returns (bool) {
+        return UFloat9x56.unwrap(a) <= UFloat9x56.unwrap(b);
     }
 
     /**
@@ -173,16 +281,8 @@ library UFloatMath {
      * This function always returns the precise result.
      */
     function truncate(UFloat9x56 value) internal pure returns (uint256) {
-        uint256 mantissa;
-        int256 exponent;
-        (mantissa, exponent) = decode(value);
-        unchecked {
-            uint256 shift = BranchlessMath.abs(exponent) * BranchlessMath.toUint(exponent < 0 && mantissa > 0);
-            mantissa >>= shift;
-            shift = uint256(exponent) * BranchlessMath.toUint(exponent > 0);
-            mantissa <<= shift;
-            return mantissa;
-        }
+        (uint256 mantissa, int256 exponent) = decode(value);
+        return mantissa.mul2pow(exponent);
     }
 
     /**
@@ -227,8 +327,8 @@ library UFloatMath {
             exponent *= BranchlessMath.toUint(value > 0);
 
             // Encode mantissa and exponent into `UFloat9x56`
-            mantissa &= MANTISSA_MAX >> 1;
-            exponent <<= MANTISSA_DIGITS - 1;
+            mantissa &= MANTISSA_MASK;
+            exponent <<= EXPONENT_OFFSET;
             return UFloat9x56.wrap(uint64(mantissa) | uint64(exponent));
         }
     }
@@ -272,7 +372,7 @@ library UFloatMath {
             // Compute (numerator * 2**exponent) / denominator
             uint256 mantissa = BranchlessMath.mulDiv(numerator, 1 << shift, denominator, rounding);
 
-            // Adjust mantissa and expoennt when it exceeds 56 bits, this is only possible when
+            // Adjust mantissa and exponent when it exceeds 56 bits, this is only possible when
             // all mantissa bits are set and the value is rounded up, as described below.
             // ```solidity
             // UFloatMath.fromRational(0x2ffffffffffffff, 3, Rounding.Floor) == (2**0 * 0xffffffffffffff)
@@ -287,10 +387,10 @@ library UFloatMath {
 
             // Adjust exponent to fit in 9 bits
             exponent += 311 - int256(BranchlessMath.toUint(isSubnormal));
-            exponent <<= MANTISSA_DIGITS - 1;
+            exponent <<= EXPONENT_OFFSET;
 
             // Remove mantissa most significant bit
-            mantissa &= MANTISSA_MAX >> 1;
+            mantissa &= MANTISSA_MASK;
 
             return UFloat9x56.wrap(uint64(mantissa) | uint64(uint256(exponent)));
         }
@@ -324,7 +424,7 @@ library UFloatMath {
                 denominator = 1;
             } else if (exponent > -256) {
                 // The exponent is negative, so we shift the denominator and keep the numerator.
-                // Calculates: mantissa / 2**exponent
+                // Calculates: mantissa / 2**-exponent
                 denominator = 1 << uint256(-exponent);
             } else {
                 // Is not possible to represent such tiny values accurately given the denominator has more than 256 bit,
@@ -338,11 +438,11 @@ library UFloatMath {
 
                 // If numerator is less or equal to `2**exp1`, then the denominator has more than 256bit, so return zero.
                 if (exp1 >= numerator) {
-                    return (1, 0);
+                    return (0, 1);
                 }
 
                 // Compute full 512 bit multiplication and division as (2**exp0 * 2**exp1) / mantissa.
-                denominator = BranchlessMath.mulDiv(1 << exp0, 1 << exp1, numerator, Rounding.Floor);
+                denominator = BranchlessMath.mulDiv(1 << exp0, 1 << exp1, numerator, Rounding.Nearest);
 
                 // Handle the case where the denominator is round towards zero.
                 numerator = BranchlessMath.toUint(denominator > 0);

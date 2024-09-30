@@ -241,12 +241,29 @@ library BranchlessMath {
     }
 
     /**
+     * @dev Computes the absolute difference between x and y.
+     */
+    function absDiff(int256 x, int256 y) internal pure returns (uint256) {
+        return abs(x - y);
+    }
+
+    /**
      * @dev Cast a boolean (false or true) to a uint256 (0 or 1) with no jump.
      */
     function toUint(bool b) internal pure returns (uint256 u) {
         /// @solidity memory-safe-assembly
         assembly {
             u := iszero(iszero(b))
+        }
+    }
+
+    /**
+     * @dev Cast a boolean (false or true) to a int256 (0 or 1) with no jump.
+     */
+    function toInt(bool b) internal pure returns (int256 i) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            i := iszero(iszero(b))
         }
     }
 
@@ -270,6 +287,13 @@ library BranchlessMath {
             r := byte(and(div(80, mod(x, 255)), 31), 0x0706050000040000010003000000000000000000020000000000000000000000)
             r := add(byte(31, div(0xf8f0e8e0d8d0c8c0b8b0a8a09890888078706860585048403830282018100800, shr(r, x))), r)
         }
+    }
+
+    /**
+     * @dev Count the consecutive zero bits (trailing) on the right.
+     */
+    function leadingZeros(uint256 x) internal pure returns (uint256 r) {
+        return 255 - log2(x) + toUint(x == 0);
     }
 
     /**
@@ -302,6 +326,34 @@ library BranchlessMath {
     }
 
     /**
+     * @dev Computes `x * 2**exponent`, essentially shifting the value to the left when
+     * `exp` is positive, or shift to the right when `exp` is negative.
+     */
+    function mul2pow(uint256 x, int256 exponent) internal pure returns (uint256) {
+        unchecked {
+            // Rationale:
+            // - When the exponent is negative, then `x << exp` is zero.
+            // - When the exponent is positive, then `x >> -exp` is zero.
+            // Then we can use the `or` operation to get the correct result.
+            // result = (x << exp) | (x >> -exp)
+            return (x << uint256(exponent)) | (x >> uint256(-exponent));
+        }
+    }
+
+    /**
+     * @dev Computes `x * 2**exponent`, bounds to `2 ** 256 - 1` instead overflowing.
+     */
+    function saturatingMul2pow(uint256 x, int256 exponent) internal pure returns (uint256 result) {
+        unchecked {
+            result = mul2pow(x, exponent);
+            // An overflow happens when exponent is positive and (x << exp) >> exp != x.
+            bool success = (result >> uint256(exponent)) == (x * toUint(exponent > 0));
+            // Bounds to `type(uint256).max` if `success` is false.
+            return result | (toUint(success) - 1);
+        }
+    }
+
+    /**
      * @notice Calculates x * y / denominator with full precision, following the selected rounding direction.
      * Throws if result overflows a uint256 or denominator == 0.
      *
@@ -328,7 +380,11 @@ library BranchlessMath {
                 let mm := mulmod(x, y, not(0))
                 prod1 := sub(sub(mm, prod0), lt(mm, prod0))
 
+                // Only round up if the final result is less than 2²⁵⁶.
+                remainder := mul(remainder, lt(prod1, denominator))
+
                 // Add 256 bit remainder to 512 bit number.
+                // Cannot overflow once (2²⁵⁶ - 1)² + 2²⁵⁶ - 1 < 2⁵¹².
                 mm := add(prod0, remainder)
                 prod1 := add(prod1, lt(mm, prod0))
                 prod0 := mm

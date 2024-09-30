@@ -452,6 +452,11 @@ contract GatewayBase is Test {
                 baseCost: 0
             });
             (GmpStatus status, bytes32 returned) = ctx.execute(sig, gmp);
+            {
+                // Verify the gas cost
+                VmSafe.Gas memory gas = vm.lastCallGas();
+                assertEq(gas.gasTotalUsed, executionCost + 2000, "unexpected gas used");
+            }
 
             // Verify the GMP message status
             assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "Unexpected GMP status");
