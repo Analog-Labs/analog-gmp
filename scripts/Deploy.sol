@@ -21,7 +21,8 @@ import {
     PrimitiveUtils
 } from "../src/Primitives.sol";
 
-contract MigrateGateway is Script {
+contract Deploy is Script {
+    address  
     bytes32 internal constant PROXY_CODEHASH = 0x54afeb06256bce71659256132ac18f1515de3011aaec4fbd6fc7b0c00c7263d8;
 
     /**
