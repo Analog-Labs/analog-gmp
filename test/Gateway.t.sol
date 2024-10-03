@@ -230,25 +230,25 @@ contract GatewayBase is Test {
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
     }
 
-    // function test_Receiver() external {
-    //     vm.startPrank(proxyAdmin.addr, proxyAdmin.addr);
-    //     bytes memory testEncodedCall = abi.encodeCall(
-    //         IGmpReceiver.onGmpReceived,
-    //         (
-    //             0x0000000000000000000000000000000000000000000000000000000000000000,
-    //             1,
-    //             0x0000000000000000000000000000000000000000000000000000000000000000,
-    //             abi.encode(uint256(1234))
-    //         )
-    //     );
-    //     // Calling the receiver contract directly to make the address warm
-    //     address sender = TestUtils.createTestAccount(10 ether);
-    //     (uint256 gasUsed,, bytes memory output) =
-    //         TestUtils.executeCall(sender, address(receiver), 23_318, 0, testEncodedCall);
-    //     assertEq(gasUsed, 1234);
-    //     assertEq(output.length, 32);
-    //     vm.stopPrank();
-    // }
+    function test_Receiver() external {
+        vm.startPrank(proxyAdmin.addr, proxyAdmin.addr);
+        bytes memory testEncodedCall = abi.encodeCall(
+            IGmpReceiver.onGmpReceived,
+            (
+                0x0000000000000000000000000000000000000000000000000000000000000000,
+                1,
+                0x0000000000000000000000000000000000000000000000000000000000000000,
+                abi.encode(uint256(1234))
+            )
+        );
+        // Calling the receiver contract directly to make the address warm
+        address sender = TestUtils.createTestAccount(10 ether);
+        (uint256 gasUsed,, bytes memory output) =
+            TestUtils.executeCall(sender, address(receiver), 23_318, 0, testEncodedCall);
+        assertEq(gasUsed, 1234);
+        assertEq(output.length, 32);
+        vm.stopPrank();
+    }
 
     function test_estimateMessageCost() external {
         vm.txGasPrice(1);

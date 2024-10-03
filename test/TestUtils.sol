@@ -183,16 +183,7 @@ library TestUtils {
     function createTestAccount(uint256 initialBalance) internal returns (address account) {
         // Generate a new account address from the calldata
         // This will generate a unique deterministic address for each test case
-        vm.randomUint();
-        uint256 privateKey;
-        if (msg.data.length > 0) {
-            privateKey = uint256(keccak256(msg.data));
-        } else {
-            privateKey = vm.randomUint();
-        }
-        privateKey %= Schnorr.Q;
-        VmSafe.Wallet memory wallet = vm.createWallet(privateKey);
-        account = wallet.addr;
+        account = address(uint160(uint256(keccak256(msg.data))));
         vm.deal(account, initialBalance);
     }
 
