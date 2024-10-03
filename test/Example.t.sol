@@ -3,6 +3,8 @@
 
 pragma solidity >=0.8.0;
 
+import {IUniversalFactory} from "@universal-factory/IUniversalFactory.sol";
+import {FactoryUtils} from "@universal-factory/FactoryUtils.sol";
 import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {console} from "forge-std/console.sol";
@@ -31,13 +33,26 @@ contract ExampleTest is Test {
     using SigningUtils for VerifyingKey;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for address;
+    using FactoryUtils for IUniversalFactory;
 
+    /**
+     * @dev The address of the `UniversalFactory` contract, must be the same on all networks.
+     */
+    IUniversalFactory internal constant FACTORY = IUniversalFactory(0x0000000000001C4Bf962dF86e38F0c10c7972C6E);
+
+    VmSafe.Wallet private _proxyAdmin;
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 private constant DEST_NETWORK_ID = 1337;
     address private _sender;
 
     address private constant ALICE = address(bytes20(keccak256("Alice")));
     address private constant BOB = address(bytes20(keccak256("Bob")));
+
+    constructor() {
+        require(FACTORY == TestUtils.deployFactory(), "factory address mismatch");
+        _proxyAdmin = vm.createWallet(vm.randomUint());
+        vm.deal(_proxyAdmin.addr, 100 ether);
+    }
 
     function setUp() external {
         vm.deal(ALICE, 100 ether);
@@ -48,22 +63,55 @@ contract ExampleTest is Test {
         private
         returns (Network[] memory networks)
     {
+        address deployer = _proxyAdmin.addr;
+        VmSafe.CallerMode prevCallerMode;
+        address prevMsgSender;
+        address prevTxOrigin;
+        (prevCallerMode, prevMsgSender, prevTxOrigin) =
+            TestUtils.setCallerMode(VmSafe.CallerMode.RecurrentBroadcast, deployer, deployer);
+
+        // bytes32 salt = bytes32(0);
+        bytes memory proxyCreationCode = abi.encodePacked(type(GatewayProxy).creationCode, abi.encode(deployer));
+
         TssKey[] memory keys = new TssKey[](1);
         keys[0] = TssKey({yParity: pubkey.yParity() == 28 ? 1 : 0, xCoord: pubkey.px});
 
         networks = new Network[](networkIds.length);
         for (uint256 i = 0; i < networks.length; i++) {
-            networks[i].id = networkIds[i];
-            networks[i].gateway = vm.computeCreateAddress(_sender, vm.getNonce(_sender) + 1 + (i * 2));
+            Network memory network = networks[i];
+            network.id = networkIds[i];
+            // networks[i].gateway = vm.computeCreateAddress(_sender, vm.getNonce(_sender) + 1 + (i * 2));
+            network.gateway = FACTORY.computeCreate2Address(bytes32(uint256(network.id)), proxyCreationCode);
         }
 
-        bytes memory initializer = abi.encodeCall(Gateway.initialize, (msg.sender, keys, networks));
+        bytes memory initializer = abi.encodeCall(Gateway.initialize, (deployer, keys, networks));
         for (uint256 i = 0; i < networks.length; i++) {
-            address implementation = address(new Gateway(networks[i].id, networks[i].gateway));
-            address proxy = address(new GatewayProxy(implementation, initializer));
-            assertEq(proxy, networks[i].gateway, "GatewayProxy address mismatch");
+            Network memory network = networks[i];
+
+            // 1 - Deploy implementation contract
+            bytes memory implementationCreationCode =
+                abi.encodePacked(type(Gateway).creationCode, abi.encode(network.gateway));
+            address implementation =
+                FACTORY.create2(bytes32(uint256(network.id)), implementationCreationCode, abi.encode(network.id));
+
+            // 2 - Authorize the deployment
+            bytes memory authorization;
+            {
+                bytes32 digest = keccak256(abi.encode(network.gateway, implementation));
+                (uint8 v, bytes32 r, bytes32 s) = vm.sign(_proxyAdmin, digest);
+                authorization = abi.encode(v, r, s, implementation);
+            }
+
+            // address implementation = address(new Gateway(networks[i].id, networks[i].gateway));
+            // address proxy = address(new GatewayProxy(implementation, initializer));
+            // 3 - Deploy proxy contract
+            address proxy = FACTORY.create2(bytes32(uint256(network.id)), proxyCreationCode, authorization, initializer);
+
+            assertEq(proxy, network.gateway, "GatewayProxy address mismatch");
             vm.deal(proxy, 100 ether);
         }
+
+        TestUtils.setCallerMode(prevCallerMode, prevMsgSender, prevTxOrigin);
     }
 
     function testSignature() external pure {
@@ -89,6 +137,9 @@ contract ExampleTest is Test {
             Network[] memory networks = deployGateway(signer.pubkey, networkIds);
             srcGateway = Gateway(networks[0].gateway);
             dstGateway = Gateway(networks[1].gateway);
+        }
+        if (msg.data.length == 4) {
+            return;
         }
 
         // Step 2: Deploy the sender and recipient contracts

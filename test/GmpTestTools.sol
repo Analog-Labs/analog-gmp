@@ -11,6 +11,7 @@ import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {GmpMessage, TssKey, Network, Signature, GmpSender, PrimitiveUtils} from "../src/Primitives.sol";
+import {IUniversalFactory} from "@universal-factory/IUniversalFactory.sol";
 
 library GmpTestTools {
     /**
@@ -100,6 +101,9 @@ library GmpTestTools {
     }
 
     function setupNetwork(uint16 networkId, address gateway, bytes32 secret, Network[] memory networks) internal {
+        // Deploy `Universal Factory` contract
+        IUniversalFactory factory = TestUtils.deployFactory();
+
         SigningKey memory signer = TestUtils.signerFromEntropy(secret);
         TssKey[] memory keys = new TssKey[](1);
         keys[0] = TssKey({yParity: uint8(signer.pubkey.py % 2), xCoord: signer.pubkey.px});
@@ -108,7 +112,18 @@ library GmpTestTools {
         bool exists = gateway.code.length > 0;
 
         // Deploy the gateway proxy
-        address implementation = address(new Gateway(networkId, gateway));
+        bytes memory implementationCreationCode = abi.encodePacked(type(Gateway).creationCode, abi.encode(gateway));
+        bytes memory initializer = abi.encodeCall(Gateway.initialize, (msg.sender, keys, networks));
+
+        // address implementation = address(new Gateway(networkId, gateway));
+        address implementation;
+        bytes32 salt = bytes32(0);
+        if (exists) {
+            implementation = factory.create2(salt, implementationCreationCode, "", initializer);
+        } else {
+            implementation = factory.create2(salt, implementationCreationCode, abi.encode(networkId), initializer);
+        }
+
         vm.etch(gateway, _PROXY_BYTECODE);
         vm.store(gateway, _IMPLEMENTATION_SLOT, bytes32(uint256(uint160(implementation))));
 
@@ -122,15 +137,15 @@ library GmpTestTools {
             }
         }
 
-        // Change caller mode because only the gateway can initialize itself
-        (VmSafe.CallerMode callerMode, address msgSender, address txOrigin) =
-            TestUtils.setCallerMode(VmSafe.CallerMode.Prank, gateway, gateway);
+        // // Change caller mode because only the gateway can initialize itself
+        // (VmSafe.CallerMode callerMode, address msgSender, address txOrigin) =
+        //     TestUtils.setCallerMode(VmSafe.CallerMode.Prank, gateway, gateway);
 
-        // Initialize the gateway
-        Gateway(gateway).initialize(msgSender, keys, networks);
+        // // Initialize the gateway
+        // Gateway(gateway).initialize(msgSender, keys, networks);
 
-        // Restore previous caller mode
-        TestUtils.setCallerMode(callerMode, msgSender, txOrigin);
+        // // Restore previous caller mode
+        // TestUtils.setCallerMode(callerMode, msgSender, txOrigin);
     }
 
     function deal(address account, uint256 newBalance) internal {

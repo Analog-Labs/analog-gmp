@@ -26,6 +26,8 @@ import {
     PrimitiveUtils,
     GmpSender
 } from "../src/Primitives.sol";
+import {IUniversalFactory} from "@universal-factory/IUniversalFactory.sol";
+import {FactoryUtils} from "@universal-factory/FactoryUtils.sol";
 
 uint256 constant secret = 0x42;
 uint256 constant nonce = 0x69;
@@ -49,7 +51,16 @@ contract GasUtilsBase is Test {
     using PrimitiveUtils for address;
     using GatewayUtils for CallOptions;
     using BranchlessMath for uint256;
+    using FactoryUtils for IUniversalFactory;
 
+    /**
+     * @dev The address of the `UniversalFactory` contract, must be the same on all networks.
+     */
+    IUniversalFactory internal constant FACTORY = IUniversalFactory(0x0000000000001C4Bf962dF86e38F0c10c7972C6E);
+    uint16 private constant SRC_NETWORK_ID = 1234;
+    uint16 internal constant DEST_NETWORK_ID = 1337;
+
+    VmSafe.Wallet internal proxyAdmin;
     GasUtilsMock internal mock;
     Gateway internal gateway;
     Signer internal signer;
@@ -61,22 +72,34 @@ contract GasUtilsBase is Test {
     bytes32 private _srcDomainSeparator;
     bytes32 private _dstDomainSeparator;
 
-    uint16 private constant SRC_NETWORK_ID = 1234;
-    uint16 internal constant DEST_NETWORK_ID = 1337;
-
     constructor() {
+        require(FACTORY == TestUtils.deployFactory(), "factory address mismatch");
+        proxyAdmin = vm.createWallet(vm.randomUint());
+        bytes32 salt = bytes32(0);
+
         signer = new Signer(secret);
-        address deployer = TestUtils.createTestAccount(100 ether);
+        address deployer = proxyAdmin.addr;
         vm.startPrank(deployer, deployer);
 
         // Deploy the GasUtilsMock contract
         mock = new GasUtilsMock();
 
         // 1 - Deploy the implementation contract
-        address proxyAddr = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
-        Gateway implementation = new Gateway(DEST_NETWORK_ID, proxyAddr);
+        bytes memory proxyCreationCode = abi.encodePacked(type(GatewayProxy).creationCode, abi.encode(deployer));
+        address proxyAddr = FACTORY.computeCreate2Address(salt, proxyCreationCode);
+        bytes memory implementationCreationCode = abi.encodePacked(type(Gateway).creationCode, abi.encode(proxyAddr));
+        Gateway implementation = Gateway(FACTORY.create2(salt, implementationCreationCode, abi.encode(DEST_NETWORK_ID)));
 
-        // 2 - Deploy the Proxy Contract
+        // 2 - ProxyAdmin must approve the implementation contract before deploying the Proxy.
+        // This allows anyone to deploy the Proxy.
+        bytes memory authorization;
+        {
+            bytes32 digest = keccak256(abi.encode(proxyAddr, address(implementation)));
+            (uint8 v, bytes32 r, bytes32 s) = vm.sign(proxyAdmin, digest);
+            authorization = abi.encode(v, r, s, address(implementation));
+        }
+
+        // 3 - Deploy the Proxy Contract
         TssKey[] memory keys = new TssKey[](1);
         keys[0] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()}); // Shard key
         Network[] memory networks = new Network[](2);
@@ -84,8 +107,10 @@ contract GasUtilsBase is Test {
         networks[0].gateway = proxyAddr; // sepolia proxy address
         networks[1].id = DEST_NETWORK_ID; // shibuya network id
         networks[1].gateway = proxyAddr; // shibuya proxy address
-        bytes memory initializer = abi.encodeCall(Gateway.initialize, (msg.sender, keys, networks));
-        gateway = Gateway(address(new GatewayProxy(address(implementation), initializer)));
+
+        // Initializer, used to initialize the Gateway contract
+        bytes memory initializer = abi.encodeCall(Gateway.initialize, (deployer, keys, networks));
+        gateway = Gateway(FACTORY.create2(salt, proxyCreationCode, authorization, initializer));
         vm.deal(address(gateway), 100 ether);
 
         _srcDomainSeparator = GatewayUtils.computeDomainSeparator(SRC_NETWORK_ID, address(gateway));
@@ -97,6 +122,7 @@ contract GasUtilsBase is Test {
             bytes memory bytecode =
                 hex"603c80600a5f395ff3fe5a600201803d523d60209160643560240135146018575bfd5b60365a116018575a604903565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bf3";
             receiver = IGmpReceiver(TestUtils.deployContract(bytecode));
+            // receiver = IGmpReceiver(FACTORY.create3(0, bytecode));
         }
 
         vm.stopPrank();

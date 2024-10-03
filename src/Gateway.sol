@@ -23,18 +23,51 @@ import {
     GmpSender,
     PrimitiveUtils
 } from "./Primitives.sol";
+import {NetworkID} from "./NetworkID.sol";
+import {Context, CreateKind, IUniversalFactory} from "@universal-factory/IUniversalFactory.sol";
+// import {console} from "forge-std/console.sol";
 
 abstract contract GatewayEIP712 {
+    /**
+     * @dev The address of the `UniversalFactory` contract, must be the same on all networks.
+     */
+    IUniversalFactory internal constant FACTORY = IUniversalFactory(0x0000000000001C4Bf962dF86e38F0c10c7972C6E);
+
     // EIP-712: Typed structured data hashing and signing
     // https://eips.ethereum.org/EIPS/eip-712
     uint16 internal immutable NETWORK_ID;
     address internal immutable PROXY_ADDRESS;
     bytes32 public immutable DOMAIN_SEPARATOR;
 
-    constructor(uint16 networkId, address gateway) {
+    constructor(address proxy) {
+        // console.log("        proxy:", proxy);
+        // console.log("address(this):", address(this));
+        require(proxy != address(this), "implementation and proxy cannot be at the same address");
+        Context memory ctx = FACTORY.context();
+        // console.log("sucesso 01");
+        require(ctx.contractAddress == address(this), "must be deployed using universal factory");
+        // console.log("sucesso 02");
+
+        // Check if the proxy was already deployed
+        uint16 networkId;
+        if (proxy.code.length == 0) {
+            // console.log("proxy doesn't exists");
+            // console.logBytes(ctx.data);
+            // If the proxy doesn't exist, it means this is a new deployment, so the network id
+            // must be passed as a parameter.
+            networkId = abi.decode(ctx.data, (uint16));
+        } else {
+            // console.log("proxy exists");
+            // console.logBytes(ctx.data);
+            // If the proxy already exists, we can get the network id from the proxy itself.
+            networkId = Gateway(proxy).networkId();
+            require(ctx.data.length == 0, "Gateway already exists, ctx.data must be empty");
+        }
+        // console.log("networkId:", networkId);
+
         NETWORK_ID = networkId;
-        PROXY_ADDRESS = gateway;
-        DOMAIN_SEPARATOR = computeDomainSeparator(networkId, gateway);
+        PROXY_ADDRESS = proxy;
+        DOMAIN_SEPARATOR = computeDomainSeparator(networkId, proxy);
     }
 
     // Computes the EIP-712 domain separador
@@ -145,11 +178,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint64 gasLimit
     );
 
-    constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
+    constructor(address proxy) payable GatewayEIP712(proxy) {}
 
     // EIP-712 typed hash
     function initialize(address admin, TssKey[] memory keys, Network[] calldata networks) external {
-        require(PROXY_ADDRESS == address(this), "only proxy can be initialize");
+        require(PROXY_ADDRESS == address(this), "only the proxy can be initialize");
         require(prevMessageHash == 0, "already initialized");
         ERC1967.setAdmin(admin);
 

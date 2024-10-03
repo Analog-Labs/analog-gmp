@@ -7,6 +7,8 @@ import {VmSafe, Vm} from "forge-std/Vm.sol";
 import {Schnorr} from "@frost-evm/Schnorr.sol";
 import {SECP256K1} from "@frost-evm/SECP256K1.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
+import {IUniversalFactory} from "@universal-factory/IUniversalFactory.sol";
+import {FactoryUtils} from "@universal-factory/FactoryUtils.sol";
 
 struct VerifyingKey {
     uint256 px;
@@ -23,11 +25,54 @@ struct SigningKey {
  */
 library TestUtils {
     using BranchlessMath for uint256;
+    using FactoryUtils for IUniversalFactory;
 
     // Cheat code address, 0x7109709ECfa91a80626fF3989D68f67F5b1DD12D.
     address internal constant VM_ADDRESS = address(uint160(uint256(keccak256("hevm cheat code"))));
 
     Vm internal constant vm = Vm(VM_ADDRESS);
+
+    /**
+     * @dev The address of the `UniversalFactory` contract, must be the same on all networks.
+     */
+    address internal constant FACTORY_DEPLOYER = 0x908064dE91a32edaC91393FEc3308E6624b85941;
+
+    /**
+     * @dev The codehash of the `UniversalFactory` contract, must be the same on all networks.
+     */
+    bytes32 internal constant FACTORY_CODEHASH = 0x0dac89b851eaa2369ef725788f1aa9e2094bc7819f5951e3eeaa28420f202b50;
+
+    /**
+     * @dev The address of the `UniversalFactory` contract, must be the same on all networks.
+     */
+    IUniversalFactory internal constant FACTORY = IUniversalFactory(0x0000000000001C4Bf962dF86e38F0c10c7972C6E);
+
+    function deployFactory() internal returns (IUniversalFactory) {
+        // Check if the factory is already deployed
+        if (address(FACTORY).code.length > 0) {
+            bytes32 codehash;
+            address addr = address(FACTORY);
+            assembly {
+                codehash := extcodehash(addr)
+            }
+            require(codehash == FACTORY_CODEHASH, "Invalid factory codehash");
+            return FACTORY;
+        }
+
+        uint256 nonce = vm.getNonce(FACTORY_DEPLOYER);
+        require(nonce == 0, "Factory deployer account has already been used");
+
+        bytes memory creationCode = vm.getCode("./lib/universal-factory/abi/UniversalFactory.json");
+        vm.deal(FACTORY_DEPLOYER, 100 ether);
+        vm.prank(FACTORY_DEPLOYER, FACTORY_DEPLOYER);
+        address factory;
+        assembly {
+            factory := create(0, add(creationCode, 32), mload(creationCode))
+        }
+        require(factory == address(FACTORY), "Factory address mismatch");
+        require(keccak256(factory.code) == FACTORY_CODEHASH, "Factory codehash mismatch");
+        return FACTORY;
+    }
 
     /**
      * @dev Deploys a contract with the given bytecode
@@ -138,7 +183,16 @@ library TestUtils {
     function createTestAccount(uint256 initialBalance) internal returns (address account) {
         // Generate a new account address from the calldata
         // This will generate a unique deterministic address for each test case
-        account = address(uint160(uint256(keccak256(msg.data))));
+        vm.randomUint();
+        uint256 privateKey;
+        if (msg.data.length > 0) {
+            privateKey = uint256(keccak256(msg.data));
+        } else {
+            privateKey = vm.randomUint();
+        }
+        privateKey %= Schnorr.Q;
+        VmSafe.Wallet memory wallet = vm.createWallet(privateKey);
+        account = wallet.addr;
         vm.deal(account, initialBalance);
     }
 
