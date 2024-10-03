@@ -113,15 +113,14 @@ library GmpTestTools {
 
         // Deploy the gateway proxy
         bytes memory implementationCreationCode = abi.encodePacked(type(Gateway).creationCode, abi.encode(gateway));
-        bytes memory initializer = abi.encodeCall(Gateway.initialize, (msg.sender, keys, networks));
 
         // address implementation = address(new Gateway(networkId, gateway));
         address implementation;
         bytes32 salt = bytes32(0);
         if (exists) {
-            implementation = factory.create2(salt, implementationCreationCode, "", initializer);
+            implementation = factory.create2(salt, implementationCreationCode, "");
         } else {
-            implementation = factory.create2(salt, implementationCreationCode, abi.encode(networkId), initializer);
+            implementation = factory.create2(salt, implementationCreationCode, abi.encode(networkId));
         }
 
         vm.etch(gateway, _PROXY_BYTECODE);
@@ -137,15 +136,15 @@ library GmpTestTools {
             }
         }
 
-        // // Change caller mode because only the gateway can initialize itself
-        // (VmSafe.CallerMode callerMode, address msgSender, address txOrigin) =
-        //     TestUtils.setCallerMode(VmSafe.CallerMode.Prank, gateway, gateway);
+        // Change caller mode because only the gateway can initialize itself
+        (VmSafe.CallerMode callerMode, address msgSender, address txOrigin) =
+            TestUtils.setCallerMode(VmSafe.CallerMode.Prank, gateway, gateway);
 
-        // // Initialize the gateway
-        // Gateway(gateway).initialize(msgSender, keys, networks);
+        // Initialize the gateway
+        Gateway(gateway).initialize(msgSender, keys, networks);
 
-        // // Restore previous caller mode
-        // TestUtils.setCallerMode(callerMode, msgSender, txOrigin);
+        // Restore previous caller mode
+        TestUtils.setCallerMode(callerMode, msgSender, txOrigin);
     }
 
     function deal(address account, uint256 newBalance) internal {
