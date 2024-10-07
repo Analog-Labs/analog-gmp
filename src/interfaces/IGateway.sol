@@ -3,7 +3,7 @@
 
 pragma solidity >=0.8.0;
 
-import {GmpSender} from "../Primitives.sol";
+import {GmpMessage, GmpSender} from "../Primitives.sol";
 
 /**
  * @dev Required interface of an Gateway compliant contract
@@ -11,22 +11,10 @@ import {GmpSender} from "../Primitives.sol";
 interface IGateway {
     /**
      * @dev New GMP submitted by calling the `submitMessage` method.
-     * @param id EIP-712 hash of the `GmpPayload`, which is it's unique identifier
-     * @param source sender account, with an extra flag indicating if it is a contract or an EOA
-     * @param destinationAddress the target address on the destination chain.
-     * @param destinationNetwork the target chain where the contract call will be made.
-     * @param executionGasLimit the gas limit available for the contract call
-     * @param salt salt is equal to the previous message id (EIP-712 hash).
-     * @param data message data with no specified format
      */
-    event GmpCreated(
+    event MessageReceived(
         bytes32 indexed id,
-        bytes32 indexed source,
-        address indexed destinationAddress,
-        uint16 destinationNetwork,
-        uint256 executionGasLimit,
-        uint256 salt,
-        bytes data
+        GmpMessage msg
     );
 
     function networkId() external view returns (uint16);
@@ -53,7 +41,7 @@ interface IGateway {
     function submitMessage(
         address destinationAddress,
         uint16 destinationNetwork,
-        uint256 executionGasLimit,
+        uint128 executionGasLimit,
         bytes calldata data
     ) external payable returns (bytes32);
 }
