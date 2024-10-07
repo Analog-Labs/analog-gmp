@@ -46,10 +46,13 @@ contract Gateway is IGateway, GatewayEIP712 {
     uint256 internal constant MAX_PAYLOAD_SIZE = 0x6000;
 
     // Shard data, maps the pubkey coordX (which is already collision resistant) to shard info.
-    mapping(uint256 => TssKey) private _shards;
+    TssKey[] private _shards;
 
-    // Network ID => Source network
-    mapping(uint16 => Route) private _routes;
+    mapping(uint256 => uint) private _shard_idx;
+
+    Route[] private _routes;
+
+    mapping(uint16 => uint) private _route_idx;
 
     // GMP message status
     mapping(bytes32 => GmpInfo) private _messages;
@@ -136,29 +139,71 @@ contract Gateway is IGateway, GatewayEIP712 {
     event UnregisterShard(TssKey key);
 
     function _registerShard(TssKey memory key) private {
-        _shards[key.xCoord] = key;
+        uint idx = _shard_idx[key.xCoord];
+        TssKey storage stored = _shards[idx];
+        if (stored.xCoord == key.xCoord) {
+            return;
+        }
+        idx = _shards.length;
+        _shards.push(key);
+        _shard_idx[key.xCoord] = idx;
         emit RegisterShard(key);
     }
 
     // Revoke TSS keys
     function _unregisterShard(TssKey memory key) private {
-        delete _shards[key.xCoord];
+        uint idx = _shard_idx[key.xCoord];
+        TssKey storage stored = _shards[idx];
+        if (stored.xCoord != key.xCoord) {
+            return;
+        }
+        delete _shard_idx[key.xCoord];
+        TssKey memory last = _shards[_shards.length - 1];
+        _shards.pop();
+        if (idx < _shards.length) {
+            _shards[idx] = last;
+            _shard_idx[last.xCoord] = idx;
+        }
         emit UnregisterShard(key);
     }
 
     function shards() external view returns (TssKey[] memory) {
-        // TODO: return _shards
+        TssKey[] memory ret = new TssKey[](_shards.length);
+        for (uint i = 0; i < _shards.length; i++) {
+            ret[i] = _shards[i];
+        }
+        return ret;
     }
 
     function setShards(TssKey[] memory keys) external payable {
         require(msg.sender == this.admin(), "unauthorized");
-        // TODO: set _shards
+        for (uint i = 0; i < _shards.length; i++) {
+            TssKey storage shard_key = _shards[i];
+            bool registered = false;
+            for (uint j = 0; j < keys.length; j++) {
+                TssKey memory key = keys[j];
+                if (shard_key.xCoord == key.xCoord) {
+                    registered = true;
+                    break;
+                }
+            }
+            if (!registered) {
+                _unregisterShard(shard_key);
+            }
+        }
+        for (uint i = 0; i < keys.length; i++) {
+            _registerShard(keys[i]);
+        }
     }
 
     // routes
 
     function routes() external view returns (Route[] memory) {
-        // TODO: return _routes
+        Route[] memory ret = new Route[](_routes.length);
+        for (uint i = 0; i < _routes.length; i++) {
+            ret[i] = _routes[i];
+        }
+        return ret;
     }
 
     /**
@@ -167,8 +212,16 @@ contract Gateway is IGateway, GatewayEIP712 {
     function setRoute(Route calldata r) external {
         require(msg.sender == this.admin(), "unauthorized");
 
-        Route memory stored = _routes[r.networkId];
+        uint idx = _route_idx[r.networkId];
+        Route memory stored = _routes[idx];
+        if (stored.networkId != r.networkId) {
+            idx = _routes.length;
+            _route_idx[r.networkId] = idx;
+            _routes.push(r);
+            return;
+        }
 
+        stored.networkId = r.networkId;
         stored.gateway = bytes32(BranchlessMath.ternary(uint256(r.gateway) != 0, uint256(r.gateway), uint256(r.gateway)));
         stored.gasLimit = BranchlessMath.ternaryU64(r.gasLimit != 0, r.gasLimit, stored.gasLimit);
         stored.baseFee = BranchlessMath.ternaryU128(r.baseFee != 0, r.baseFee, stored.baseFee);
