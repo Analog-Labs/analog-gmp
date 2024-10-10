@@ -4,7 +4,7 @@
 pragma solidity >=0.8.0;
 
 import {Schnorr} from "@frost-evm/Schnorr.sol";
-import {BranchlessMath} from "./utils/BranchlessMath.sol";
+import {BranchlessMath, Rounding} from "./utils/BranchlessMath.sol";
 import {GasUtils} from "./utils/GasUtils.sol";
 import {ERC1967} from "./utils/ERC1967.sol";
 import {UFloat9x56, UFloatMath} from "./utils/Float9x56.sol";
@@ -155,7 +155,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     /**
      * @dev Network info stored in the Gateway Contract
-     * @param id Message unique id.
      * @param networkId Network identifier.
      * @param domainSeparator Domain EIP-712 - Replay Protection Mechanism.
      * @param relativeGasPrice Gas price of destination chain, in terms of the source chain token.
@@ -163,7 +162,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      * @param gasLimit The maximum amount of gas we allow on this particular network.
      */
     event NetworkUpdated(
-        bytes32 indexed id,
         uint16 indexed networkId,
         bytes32 indexed domainSeparator,
         UFloat9x56 relativeGasPrice,
@@ -429,7 +427,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint256 initialGas = gasleft();
         // Add the solidity selector overhead to the initial gas, this way we guarantee that
         // the `initialGas` represents the actual gas that was available to this contract.
-        initialGas = initialGas.saturatingAdd(453 + 12);
+        initialGas = initialGas.saturatingAdd(526);
 
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
@@ -566,6 +564,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             for (uint256 i = 0; i < messages.length; i++) {
                 _executeGmp(messages[i]);
             }
+        } else if (message.command == Command.SetRoute) {
+            UpdateNetworkInfo[] memory routes = abi.decode(message.params, (UpdateNetworkInfo[]));
+            for (uint256 i = 0; i < routes.length; i++) {
+                _setRoute(routes[i]);
+            }
         }
 
         // Refund
@@ -689,12 +692,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return GasUtils.estimateWeiCost(relativeGasPrice, baseFee, uint16(messageSize), 0, gasLimit);
     }
 
-    function _setNetworkInfo(bytes32 executor, bytes32 messageHash, UpdateNetworkInfo calldata info) private {
+    function _setRoute(UpdateNetworkInfo memory info) private {
         require(info.mortality >= block.number, "message expired");
-        require(executor != bytes32(0), "executor cannot be zero");
-
-        // Verify signature and if the message was already executed
-        require(_executedMessages[messageHash] == bytes32(0), "message already executed");
 
         // Update network info
         NetworkInfo memory stored = _networkInfo[info.networkId];
@@ -709,28 +708,64 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Update relative gas price and base fee if any of them are greater than zero
         {
-            bool shouldUpdate = UFloat9x56.unwrap(info.relativeGasPrice) > 0 || info.baseFee > 0;
+            UFloat9x56 relativeGasPrice = UFloatMath.fromRational(
+                info.relativeGasPriceNumerator,
+                info.relativeGasPriceDenominator | BranchlessMath.toUint(info.relativeGasPriceDenominator == 0),
+                Rounding.Ceil
+            );
+            bool shouldUpdate = info.relativeGasPriceDenominator > 0 || info.baseFee > 0;
             stored.relativeGasPrice = UFloat9x56.wrap(
                 BranchlessMath.ternaryU64(
-                    shouldUpdate, UFloat9x56.unwrap(info.relativeGasPrice), UFloat9x56.unwrap(stored.relativeGasPrice)
+                    shouldUpdate, UFloat9x56.unwrap(relativeGasPrice), UFloat9x56.unwrap(stored.relativeGasPrice)
                 )
             );
             stored.baseFee = BranchlessMath.ternaryU128(shouldUpdate, info.baseFee, stored.baseFee);
         }
 
-        // Save the message hash to prevent replay attacks
-        _executedMessages[messageHash] = executor;
+        // Update network info
+        _networkInfo[info.networkId] = stored;
+
+        emit NetworkUpdated(
+            info.networkId, stored.domainSeparator, stored.relativeGasPrice, stored.baseFee, stored.gasLimit
+        );
+    }
+
+    function _setNetworkInfo(bytes32 executor, UpdateNetworkInfo calldata info) private {
+        require(info.mortality >= block.number, "message expired");
+        require(executor != bytes32(0), "executor cannot be zero");
+
+        // Update network info
+        NetworkInfo memory stored = _networkInfo[info.networkId];
+
+        // Verify and update domain separator if it's not zero
+        stored.domainSeparator =
+            BranchlessMath.ternary(info.domainSeparator != bytes32(0), info.domainSeparator, stored.domainSeparator);
+        require(stored.domainSeparator != bytes32(0), "domain separator cannot be zero");
+
+        // Update gas limit if it's not zero
+        stored.gasLimit = BranchlessMath.ternaryU64(info.gasLimit > 0, info.gasLimit, stored.gasLimit);
+
+        // Update relative gas price and base fee if any of them are greater than zero
+        {
+            UFloat9x56 relativeGasPrice = UFloatMath.fromRational(
+                info.relativeGasPriceNumerator,
+                info.relativeGasPriceDenominator | BranchlessMath.toUint(info.relativeGasPriceDenominator == 0),
+                Rounding.Ceil
+            );
+            bool shouldUpdate = info.relativeGasPriceDenominator > 0 || info.baseFee > 0;
+            stored.relativeGasPrice = UFloat9x56.wrap(
+                BranchlessMath.ternaryU64(
+                    shouldUpdate, UFloat9x56.unwrap(relativeGasPrice), UFloat9x56.unwrap(stored.relativeGasPrice)
+                )
+            );
+            stored.baseFee = BranchlessMath.ternaryU128(shouldUpdate, info.baseFee, stored.baseFee);
+        }
 
         // Update network info
         _networkInfo[info.networkId] = stored;
 
         emit NetworkUpdated(
-            messageHash,
-            info.networkId,
-            stored.domainSeparator,
-            stored.relativeGasPrice,
-            stored.baseFee,
-            stored.gasLimit
+            info.networkId, stored.domainSeparator, stored.relativeGasPrice, stored.baseFee, stored.gasLimit
         );
     }
 
@@ -739,8 +774,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     function setNetworkInfo(UpdateNetworkInfo calldata info) external {
         require(msg.sender == _getAdmin(), "unauthorized");
-        bytes32 messageHash = info.eip712TypedHash(DOMAIN_SEPARATOR);
-        _setNetworkInfo(bytes32(uint256(uint160(_getAdmin()))), messageHash, info);
+        _setNetworkInfo(bytes32(uint256(uint160(_getAdmin()))), info);
     }
 
     /**
@@ -751,23 +785,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         require(msg.sender == _getAdmin(), "unauthorized");
         for (uint256 i = 0; i < networks.length; i++) {
             UpdateNetworkInfo calldata info = networks[i];
-            bytes32 messageHash = info.eip712TypedHash(DOMAIN_SEPARATOR);
-            _setNetworkInfo(bytes32(uint256(uint160(_getAdmin()))), messageHash, info);
+            _setNetworkInfo(bytes32(uint256(uint160(_getAdmin()))), info);
         }
-    }
-
-    /**
-     * @dev Update network information
-     * @param signature Schnorr signature
-     * @param info new network info
-     */
-    function setNetworkInfo(Signature calldata signature, UpdateNetworkInfo calldata info) external {
-        // Verify signature and check if the message was already executed
-        bytes32 messageHash = info.eip712TypedHash(DOMAIN_SEPARATOR);
-        _verifySignature(signature, messageHash);
-
-        // Update network info
-        _setNetworkInfo(bytes32(signature.xCoord), messageHash, info);
     }
 
     /**

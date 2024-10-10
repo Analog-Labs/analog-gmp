@@ -50,8 +50,8 @@ interface IExecutor {
     error Unauthorized();
 
     /**
-     * Execute GMP message
-     * @param message Inbound message from a Timechain.
+     * Execute any Inbound messages from a Timechain.
+     * @param message timechain message.
      */
     function submitV1(InboundMessage calldata message) external payable;
 
@@ -61,16 +61,4 @@ interface IExecutor {
      * @param message Shard's keys to register and revoke
      */
     function updateKeys(Signature memory signature, UpdateKeysMessage memory message) external;
-
-    /**
-     * Update or insert a new network info
-     * @param signature Schnorr signature
-     * @param info Network info
-     */
-    function setNetworkInfo(Signature memory signature, UpdateNetworkInfo memory info) external;
-
-    /**
-     * Deposit funds to the gateway contract
-     */
-    function deposit() external payable;
 }

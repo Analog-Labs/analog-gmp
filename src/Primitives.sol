@@ -78,7 +78,8 @@ struct UpdateNetworkInfo {
     uint16 networkId;
     bytes32 domainSeparator;
     uint64 gasLimit;
-    UFloat9x56 relativeGasPrice;
+    uint256 relativeGasPriceNumerator;
+    uint256 relativeGasPriceDenominator;
     uint128 baseFee;
     uint64 mortality;
 }
@@ -204,30 +205,6 @@ library PrimitiveUtils {
                 eip712hash(message.register)
             )
         );
-    }
-
-    // computes the hash of the fully encoded EIP-712 message for the domain, which can be used to recover the signer
-    function eip712hash(UpdateNetworkInfo calldata message) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                keccak256(
-                    "UpdateNetworkInfo(uint16 networkId,bytes32 domainSeparator,uint64 gasLimit,UFloat9x56 relativeGasPrice,uint128 baseFee)"
-                ),
-                message.networkId,
-                message.domainSeparator,
-                message.gasLimit,
-                message.relativeGasPrice,
-                message.baseFee
-            )
-        );
-    }
-
-    function eip712TypedHash(UpdateNetworkInfo calldata message, bytes32 domainSeparator)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return _computeTypedHash(domainSeparator, eip712hash(message));
     }
 
     function eip712TypedHash(UpdateKeysMessage memory message, bytes32 domainSeparator)
