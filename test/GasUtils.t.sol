@@ -57,6 +57,7 @@ contract GasUtilsBase is Test {
      * @dev The address of the `UniversalFactory` contract, must be the same on all networks.
      */
     IUniversalFactory internal constant FACTORY = IUniversalFactory(0x0000000000001C4Bf962dF86e38F0c10c7972C6E);
+    uint256 internal constant PROXY_ADMIN_KEY = uint256(keccak256("proxy.admin.key"));
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
 
@@ -74,7 +75,7 @@ contract GasUtilsBase is Test {
 
     constructor() {
         require(FACTORY == TestUtils.deployFactory(), "factory address mismatch");
-        proxyAdmin = vm.createWallet(vm.randomUint());
+        proxyAdmin = vm.createWallet(PROXY_ADMIN_KEY);
         bytes32 salt = bytes32(0);
 
         signer = new Signer(secret);
@@ -122,7 +123,6 @@ contract GasUtilsBase is Test {
             bytes memory bytecode =
                 hex"603c80600a5f395ff3fe5a600201803d523d60209160643560240135146018575bfd5b60365a116018575a604903565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bf3";
             receiver = IGmpReceiver(TestUtils.deployContract(bytecode));
-            // receiver = IGmpReceiver(FACTORY.create3(0, bytecode));
         }
 
         vm.stopPrank();

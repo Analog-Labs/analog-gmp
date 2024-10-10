@@ -104,6 +104,52 @@ enum GmpStatus {
     PENDING
 }
 
+// /**
+//  * @dev GmpMessage, this is what the timechain creates as task payload
+//  * @param foreign Pubkey/Address of who send the GMP message
+//  * @param foreignNetwork Source chain identifier (for ethereum networks it is the EIP-155 chain id)
+//  * @param local Destination/Recipient contract address
+//  * @param gasLimit Destination chain identifier (it's the EIP-155 chain_id for ethereum networks)
+//  * @param gasCost gas limit of the GMP call
+//  * @param nonce Message salt, useful for sending two messages with same content
+//  * @param data message data with no specified format
+//  */
+// struct GmpMessage {
+//     bytes32 foreign;
+//     uint16 foreignNetwork;
+//     address local;
+//     uint128 gasLimit;
+//     uint64 nonce;
+//     bytes data;
+// }
+
+/**
+ * @dev Messages from Timechain take the form of these commands.
+ */
+enum Command {
+    ExecuteMessages,
+    SetShards,
+    SetRoute
+}
+
+/**
+ * @dev Inbound message from a Timechain
+ * @param revoke Shard's keys to revoke
+ * @param register Shard's keys to register
+ */
+struct InboundMessage {
+    /// @dev The signature of the message
+    Signature signature;
+    /// @dev The maximum gas allowed for message dispatch
+    uint64 maxDispatchGas;
+    /// @dev The maximum fee per gas
+    uint256 maxFeePerGas;
+    /// @dev The command to execute
+    Command command;
+    /// @dev The Parameters for the command
+    bytes params;
+}
+
 /**
  * @dev EIP-712 utility functions for primitives
  */
