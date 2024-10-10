@@ -572,6 +572,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         } else if (message.command == Command.SetShards) {
             TssKey[] memory shards = abi.decode(message.params, (TssKey[]));
             _registerKeys(shards);
+        } else {
+            revert("unknown command");
         }
 
         // Refund
