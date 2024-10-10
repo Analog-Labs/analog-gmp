@@ -80,7 +80,6 @@ contract ExampleTest is Test {
         for (uint256 i = 0; i < networks.length; i++) {
             Network memory network = networks[i];
             network.id = networkIds[i];
-            // networks[i].gateway = vm.computeCreateAddress(_sender, vm.getNonce(_sender) + 1 + (i * 2));
             network.gateway = FACTORY.computeCreate2Address(bytes32(uint256(network.id)), proxyCreationCode);
         }
 
