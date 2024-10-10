@@ -265,7 +265,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                 uint32 nonce = shard.nonce;
 
                 // Check if the shard is not active
-                require((status & SHARD_ACTIVE) == 0, "already active, cannot register again");
+                // require((status & SHARD_ACTIVE) == 0, "already active, cannot register again");
 
                 // Check y-parity
                 uint8 yParity = newKey.yParity;
@@ -569,12 +569,15 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             for (uint256 i = 0; i < routes.length; i++) {
                 _setRoute(routes[i]);
             }
+        } else if (message.command == Command.SetShards) {
+            TssKey[] memory shards = abi.decode(message.params, (TssKey[]));
+            _registerKeys(shards);
         }
 
         // Refund
         unchecked {
             // Compute the total gas used
-            uint256 gasUsed = 7214;
+            uint256 gasUsed = 7214; // gas overhead
             gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseCost());
             gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
             gasUsed = gasUsed.saturatingAdd(startGas - gasleft());
