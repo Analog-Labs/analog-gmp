@@ -54,11 +54,4 @@ interface IExecutor {
      * @param message timechain message.
      */
     function submitV1(InboundMessage calldata message) external payable;
-
-    /**
-     * Update TSS key set
-     * @param signature Schnorr signature
-     * @param message Shard's keys to register and revoke
-     */
-    function updateKeys(Signature memory signature, UpdateKeysMessage memory message) external;
 }
