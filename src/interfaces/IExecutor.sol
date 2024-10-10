@@ -6,6 +6,7 @@ pragma solidity >=0.8.0;
 import {
     Signature,
     GmpMessage,
+    InboundMessage,
     TssKey,
     GmpStatus,
     GmpStatus,
@@ -50,12 +51,9 @@ interface IExecutor {
 
     /**
      * Execute GMP message
-     * @param signature Schnorr signature
-     * @param message GMP message
+     * @param message Inbound message from a Timechain.
      */
-    function execute(Signature calldata signature, GmpMessage calldata message)
-        external
-        returns (GmpStatus status, bytes32 result);
+    function submitV1(InboundMessage calldata message) external payable;
 
     /**
      * Update TSS key set

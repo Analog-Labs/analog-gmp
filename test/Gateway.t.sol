@@ -67,7 +67,7 @@ library GatewayUtils {
         internal
         returns (GmpStatus status, bytes32 result)
     {
-        bytes memory encodedCall = abi.encodeCall(IExecutor.execute, (signature, message));
+        bytes memory encodedCall = abi.encodeCall(Gateway.execute, (signature, message));
         (uint256 executionCost, uint256 baseCost, bytes memory output) =
             TestUtils.executeCall(ctx.from, ctx.to, ctx.gasLimit, ctx.value, encodedCall);
 
@@ -102,7 +102,7 @@ library GatewayUtils {
         returns (uint256 baseCost, uint256 executionCost)
     {
         executionCost = GasUtils.computeExecutionRefund(uint16(message.data.length), 0);
-        bytes memory encodedCall = abi.encodeCall(IExecutor.execute, (signature, message));
+        bytes memory encodedCall = abi.encodeCall(Gateway.execute, (signature, message));
         baseCost = TestUtils.calculateBaseCost(encodedCall);
     }
 
