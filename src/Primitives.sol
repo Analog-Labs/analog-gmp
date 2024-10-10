@@ -78,7 +78,8 @@ struct UpdateNetworkInfo {
     uint16 networkId;
     bytes32 domainSeparator;
     uint64 gasLimit;
-    UFloat9x56 relativeGasPrice;
+    uint256 relativeGasPriceNumerator;
+    uint256 relativeGasPriceDenominator;
     uint128 baseFee;
     uint64 mortality;
 }
@@ -102,6 +103,54 @@ enum GmpStatus {
     REVERT,
     INSUFFICIENT_FUNDS,
     PENDING
+}
+
+// /**
+//  * @dev GmpMessage, this is what the timechain creates as task payload
+//  * @param foreign Pubkey/Address of who send the GMP message
+//  * @param foreignNetwork Source chain identifier (for ethereum networks it is the EIP-155 chain id)
+//  * @param local Destination/Recipient contract address
+//  * @param gasLimit Destination chain identifier (it's the EIP-155 chain_id for ethereum networks)
+//  * @param gasCost gas limit of the GMP call
+//  * @param nonce Message salt, useful for sending two messages with same content
+//  * @param data message data with no specified format
+//  */
+// struct GmpMessage {
+//     bytes32 foreign;
+//     uint16 foreignNetwork;
+//     address local;
+//     uint128 gasLimit;
+//     uint64 nonce;
+//     bytes data;
+// }
+
+/**
+ * @dev Messages from Timechain take the form of these commands.
+ */
+enum Command {
+    GMP,
+    SetShards,
+    SetRoute
+}
+
+/**
+ * @dev Inbound message from a Timechain
+ * @param revoke Shard's keys to revoke
+ * @param register Shard's keys to register
+ */
+struct InboundMessage {
+    /// @dev The signature of the message
+    Signature signature;
+    /// @dev The channel nonce
+    uint64 nonce;
+    /// @dev The maximum gas allowed for message dispatch
+    uint64 maxDispatchGas;
+    /// @dev The maximum fee per gas
+    uint256 maxFeePerGas;
+    /// @dev The command to execute
+    Command command;
+    /// @dev The Parameters for the command
+    bytes params;
 }
 
 /**
@@ -156,30 +205,6 @@ library PrimitiveUtils {
                 eip712hash(message.register)
             )
         );
-    }
-
-    // computes the hash of the fully encoded EIP-712 message for the domain, which can be used to recover the signer
-    function eip712hash(UpdateNetworkInfo calldata message) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                keccak256(
-                    "UpdateNetworkInfo(uint16 networkId,bytes32 domainSeparator,uint64 gasLimit,UFloat9x56 relativeGasPrice,uint128 baseFee)"
-                ),
-                message.networkId,
-                message.domainSeparator,
-                message.gasLimit,
-                message.relativeGasPrice,
-                message.baseFee
-            )
-        );
-    }
-
-    function eip712TypedHash(UpdateNetworkInfo calldata message, bytes32 domainSeparator)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return _computeTypedHash(domainSeparator, eip712hash(message));
     }
 
     function eip712TypedHash(UpdateKeysMessage memory message, bytes32 domainSeparator)

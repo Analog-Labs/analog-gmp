@@ -90,4 +90,4 @@ if [ -z "${DRY_RUN}" ]; then
   esac
 fi
 
-forge script ./scripts/Migrate.sol "${PARAMS[@]}"
+forge script ./scripts/UpgradeGateway.sol "${PARAMS[@]}"

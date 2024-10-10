@@ -6,6 +6,7 @@ pragma solidity >=0.8.0;
 import {
     Signature,
     GmpMessage,
+    InboundMessage,
     TssKey,
     GmpStatus,
     GmpStatus,
@@ -39,30 +40,18 @@ interface IExecutor {
     event KeySetChanged(bytes32 indexed id, TssKey[] revoked, TssKey[] registered);
 
     /**
-     * Execute GMP message
-     * @param signature Schnorr signature
-     * @param message GMP message
+     * @dev Emitted when there's not enough gas to execute an Inbound Message
      */
-    function execute(Signature calldata signature, GmpMessage calldata message)
-        external
-        returns (GmpStatus status, bytes32 result);
+    error NotEnoughGas();
 
     /**
-     * Update TSS key set
-     * @param signature Schnorr signature
-     * @param message Shard's keys to register and revoke
+     * @dev The `msg.sender` is not authorized to call this method.
      */
-    function updateKeys(Signature memory signature, UpdateKeysMessage memory message) external;
+    error Unauthorized();
 
     /**
-     * Update or insert a new network info
-     * @param signature Schnorr signature
-     * @param info Network info
+     * Execute any Inbound messages from a Timechain.
+     * @param message timechain message.
      */
-    function setNetworkInfo(Signature memory signature, UpdateNetworkInfo memory info) external;
-
-    /**
-     * Deposit funds to the gateway contract
-     */
-    function deposit() external payable;
+    function submitV1(InboundMessage calldata message) external payable;
 }

@@ -4,7 +4,7 @@
 pragma solidity >=0.8.0;
 
 import {Schnorr} from "@frost-evm/Schnorr.sol";
-import {BranchlessMath} from "./utils/BranchlessMath.sol";
+import {BranchlessMath, Rounding} from "./utils/BranchlessMath.sol";
 import {GasUtils} from "./utils/GasUtils.sol";
 import {ERC1967} from "./utils/ERC1967.sol";
 import {UFloat9x56, UFloatMath} from "./utils/Float9x56.sol";
@@ -21,20 +21,46 @@ import {
     Network,
     GmpStatus,
     GmpSender,
-    PrimitiveUtils
+    PrimitiveUtils,
+    InboundMessage,
+    Command
 } from "./Primitives.sol";
+import {NetworkID} from "./NetworkID.sol";
+import {Context, CreateKind, IUniversalFactory} from "@universal-factory/IUniversalFactory.sol";
+// import {console} from "forge-std/console.sol";
 
 abstract contract GatewayEIP712 {
+    /**
+     * @dev The address of the `UniversalFactory` contract, must be the same on all networks.
+     */
+    IUniversalFactory internal constant FACTORY = IUniversalFactory(0x0000000000001C4Bf962dF86e38F0c10c7972C6E);
+
     // EIP-712: Typed structured data hashing and signing
     // https://eips.ethereum.org/EIPS/eip-712
     uint16 internal immutable NETWORK_ID;
     address internal immutable PROXY_ADDRESS;
     bytes32 public immutable DOMAIN_SEPARATOR;
 
-    constructor(uint16 networkId, address gateway) {
+    constructor(address proxy) {
+        require(proxy != address(this), "implementation and proxy cannot be at the same address");
+        Context memory ctx = FACTORY.context();
+        require(ctx.contractAddress == address(this), "must be deployed using universal factory");
+
+        // Check if the proxy was already deployed
+        uint16 networkId;
+        if (proxy.code.length == 0) {
+            // If the proxy doesn't exist, it means this is a new deployment, so the network id
+            // must be passed as a parameter.
+            networkId = abi.decode(ctx.data, (uint16));
+        } else {
+            // If the proxy already exists, we can get the network id from the proxy itself.
+            networkId = Gateway(proxy).networkId();
+            require(ctx.data.length == 0, "Gateway already exists, ctx.data must be empty");
+        }
+
         NETWORK_ID = networkId;
-        PROXY_ADDRESS = gateway;
-        DOMAIN_SEPARATOR = computeDomainSeparator(networkId, gateway);
+        PROXY_ADDRESS = proxy;
+        DOMAIN_SEPARATOR = computeDomainSeparator(networkId, proxy);
     }
 
     // Computes the EIP-712 domain separador
@@ -129,7 +155,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     /**
      * @dev Network info stored in the Gateway Contract
-     * @param id Message unique id.
      * @param networkId Network identifier.
      * @param domainSeparator Domain EIP-712 - Replay Protection Mechanism.
      * @param relativeGasPrice Gas price of destination chain, in terms of the source chain token.
@@ -137,7 +162,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      * @param gasLimit The maximum amount of gas we allow on this particular network.
      */
     event NetworkUpdated(
-        bytes32 indexed id,
         uint16 indexed networkId,
         bytes32 indexed domainSeparator,
         UFloat9x56 relativeGasPrice,
@@ -145,11 +169,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint64 gasLimit
     );
 
-    constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
+    constructor(address proxy) payable GatewayEIP712(proxy) {}
 
     // EIP-712 typed hash
     function initialize(address admin, TssKey[] memory keys, Network[] calldata networks) external {
-        require(PROXY_ADDRESS == address(this), "only proxy can be initialize");
+        require(PROXY_ADDRESS == address(this), "only the proxy can be initialize");
         require(prevMessageHash == 0, "already initialized");
         ERC1967.setAdmin(admin);
 
@@ -241,7 +265,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                 uint32 nonce = shard.nonce;
 
                 // Check if the shard is not active
-                require((status & SHARD_ACTIVE) == 0, "already active, cannot register again");
+                // require((status & SHARD_ACTIVE) == 0, "already active, cannot register again");
 
                 // Check y-parity
                 uint8 yParity = newKey.yParity;
@@ -403,7 +427,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint256 initialGas = gasleft();
         // Add the solidity selector overhead to the initial gas, this way we guarantee that
         // the `initialGas` represents the actual gas that was available to this contract.
-        initialGas = initialGas.saturatingAdd(453);
+        initialGas = initialGas.saturatingAdd(526);
 
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
@@ -429,6 +453,141 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
             // Compute refund amount
             uint256 refund = BranchlessMath.min(gasUsed.saturatingMul(tx.gasprice), address(this).balance);
+
+            /// @solidity memory-safe-assembly
+            assembly {
+                pop(call(gas(), caller(), refund, 0, 0, 0, 0))
+            }
+        }
+    }
+
+    /**
+     * Execute GMP message
+     * @param message GMP message
+     */
+    function _executeGmp(GmpMessage memory message) private {
+        if (msg.sender != address(this)) {
+            revert IExecutor.Unauthorized();
+        }
+
+        // Theoretically we could remove the destination network field
+        // and fill it up with the network id of the contract, then the signature will fail.
+        require(message.destNetwork == NETWORK_ID, "invalid gmp network");
+
+        // Check if the message data is too large
+        require(message.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
+
+        // Verify the signature
+        bytes32 messageHash = message.eip712TypedHash(DOMAIN_SEPARATOR);
+
+        // Verify if this GMP message was already executed
+        GmpInfo storage gmp = _messages[messageHash];
+        require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
+
+        // Update status to `pending` to prevent reentrancy attacks.
+        gmp.status = GmpStatus.PENDING;
+        gmp.blockNumber = uint64(block.number);
+
+        bytes memory data = abi.encodeCall(
+            IGmpReceiver.onGmpReceived,
+            (messageHash, message.srcNetwork, GmpSender.unwrap(message.source), message.data)
+        );
+
+        // Cap the GMP gas limit to 50% of the block gas limit
+        // OBS: we assume the remaining 50% is enough for the Gateway execution, which is a safe assumption
+        // once most EVM blockchains have gas limits above 10M and don't need more than 60k gas for the Gateway execution.
+        uint256 gasLimit = BranchlessMath.min(message.gasLimit, block.gaslimit >> 1);
+        unchecked {
+            // Add `all but one 64th` to the gas needed, as the defined by EIP-150
+            // https://eips.ethereum.org/EIPS/eip-150
+            uint256 gasNeeded = gasLimit.saturatingMul(64).saturatingDiv(63);
+            // to guarantee it was provided enough gas to execute the GMP message
+            gasNeeded = gasNeeded.saturatingAdd(10000);
+            require(gasleft() >= gasNeeded, "insufficient gas to execute GMP message");
+        }
+
+        // Execute GMP call
+        bool success;
+        bytes32 result;
+        address dest = message.dest;
+        /// @solidity memory-safe-assembly
+        assembly {
+            // Using low-level assembly because the GMP is considered executed
+            // regardless if the call reverts or not.
+            let ptr := add(data, 32)
+            let size := mload(data)
+            mstore(data, 0)
+
+            // returns 1 if the call succeed, and 0 if it reverted
+            success :=
+                call(
+                    gasLimit, // call gas limit defined in the GMP message or 50% of the block gas limit
+                    dest, // dest address
+                    0, // value in wei to transfer (always zero for GMP)
+                    ptr, // input memory pointer
+                    size, // input size
+                    data, // output memory pointer
+                    32 // output size (fixed 32 bytes)
+                )
+
+            // Get Result, reuse data to keep a predictable memory expansion
+            result := mload(data)
+            mstore(data, size)
+        }
+
+        // Update GMP status
+        GmpStatus status =
+            GmpStatus(BranchlessMath.ternary(success, uint256(GmpStatus.SUCCESS), uint256(GmpStatus.REVERT)));
+
+        // Persist gmp execution status on storage
+        gmp.status = status;
+
+        // Emit event
+        emit GmpExecuted(messageHash, message.source, message.dest, status, result);
+    }
+
+    /**
+     * @dev Submit a message from Timechain for verification and dispatch.
+     */
+    function submitV1(InboundMessage calldata message) external payable {
+        uint256 startGas = gasleft();
+
+        // Make sure relayers provide enough gas so that inner message dispatch
+        // does not run out of gas.
+        if (gasleft() < message.maxDispatchGas) {
+            revert IExecutor.NotEnoughGas();
+        }
+
+        // Dispatch message to a handler
+        if (message.command == Command.GMP) {
+            GmpMessage[] memory messages = abi.decode(message.params, (GmpMessage[]));
+            for (uint256 i = 0; i < messages.length; i++) {
+                _executeGmp(messages[i]);
+            }
+        } else if (message.command == Command.SetRoute) {
+            UpdateNetworkInfo[] memory routes = abi.decode(message.params, (UpdateNetworkInfo[]));
+            for (uint256 i = 0; i < routes.length; i++) {
+                _setRoute(routes[i]);
+            }
+        } else if (message.command == Command.SetShards) {
+            TssKey[] memory shards = abi.decode(message.params, (TssKey[]));
+            _registerKeys(shards);
+        } else {
+            revert("unknown command");
+        }
+
+        // Refund
+        unchecked {
+            // Compute the total gas used
+            uint256 gasUsed = 7214; // gas overhead
+            gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseCost());
+            gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
+            gasUsed = gasUsed.saturatingAdd(startGas - gasleft());
+
+            // Gas price is capped to protect against huge spikes in `tx.gasprice`
+            uint256 gasPrice = BranchlessMath.min(tx.gasprice, message.maxFeePerGas);
+            // Compute refund amount
+            uint256 refund = BranchlessMath.min(gasUsed.saturatingMul(gasPrice), address(this).balance);
 
             /// @solidity memory-safe-assembly
             assembly {
@@ -538,12 +697,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return GasUtils.estimateWeiCost(relativeGasPrice, baseFee, uint16(messageSize), 0, gasLimit);
     }
 
-    function _setNetworkInfo(bytes32 executor, bytes32 messageHash, UpdateNetworkInfo calldata info) private {
+    function _setRoute(UpdateNetworkInfo memory info) private {
         require(info.mortality >= block.number, "message expired");
-        require(executor != bytes32(0), "executor cannot be zero");
-
-        // Verify signature and if the message was already executed
-        require(_executedMessages[messageHash] == bytes32(0), "message already executed");
 
         // Update network info
         NetworkInfo memory stored = _networkInfo[info.networkId];
@@ -558,28 +713,64 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Update relative gas price and base fee if any of them are greater than zero
         {
-            bool shouldUpdate = UFloat9x56.unwrap(info.relativeGasPrice) > 0 || info.baseFee > 0;
+            UFloat9x56 relativeGasPrice = UFloatMath.fromRational(
+                info.relativeGasPriceNumerator,
+                info.relativeGasPriceDenominator | BranchlessMath.toUint(info.relativeGasPriceDenominator == 0),
+                Rounding.Ceil
+            );
+            bool shouldUpdate = info.relativeGasPriceDenominator > 0 || info.baseFee > 0;
             stored.relativeGasPrice = UFloat9x56.wrap(
                 BranchlessMath.ternaryU64(
-                    shouldUpdate, UFloat9x56.unwrap(info.relativeGasPrice), UFloat9x56.unwrap(stored.relativeGasPrice)
+                    shouldUpdate, UFloat9x56.unwrap(relativeGasPrice), UFloat9x56.unwrap(stored.relativeGasPrice)
                 )
             );
             stored.baseFee = BranchlessMath.ternaryU128(shouldUpdate, info.baseFee, stored.baseFee);
         }
 
-        // Save the message hash to prevent replay attacks
-        _executedMessages[messageHash] = executor;
+        // Update network info
+        _networkInfo[info.networkId] = stored;
+
+        emit NetworkUpdated(
+            info.networkId, stored.domainSeparator, stored.relativeGasPrice, stored.baseFee, stored.gasLimit
+        );
+    }
+
+    function _setNetworkInfo(bytes32 executor, UpdateNetworkInfo calldata info) private {
+        require(info.mortality >= block.number, "message expired");
+        require(executor != bytes32(0), "executor cannot be zero");
+
+        // Update network info
+        NetworkInfo memory stored = _networkInfo[info.networkId];
+
+        // Verify and update domain separator if it's not zero
+        stored.domainSeparator =
+            BranchlessMath.ternary(info.domainSeparator != bytes32(0), info.domainSeparator, stored.domainSeparator);
+        require(stored.domainSeparator != bytes32(0), "domain separator cannot be zero");
+
+        // Update gas limit if it's not zero
+        stored.gasLimit = BranchlessMath.ternaryU64(info.gasLimit > 0, info.gasLimit, stored.gasLimit);
+
+        // Update relative gas price and base fee if any of them are greater than zero
+        {
+            UFloat9x56 relativeGasPrice = UFloatMath.fromRational(
+                info.relativeGasPriceNumerator,
+                info.relativeGasPriceDenominator | BranchlessMath.toUint(info.relativeGasPriceDenominator == 0),
+                Rounding.Ceil
+            );
+            bool shouldUpdate = info.relativeGasPriceDenominator > 0 || info.baseFee > 0;
+            stored.relativeGasPrice = UFloat9x56.wrap(
+                BranchlessMath.ternaryU64(
+                    shouldUpdate, UFloat9x56.unwrap(relativeGasPrice), UFloat9x56.unwrap(stored.relativeGasPrice)
+                )
+            );
+            stored.baseFee = BranchlessMath.ternaryU128(shouldUpdate, info.baseFee, stored.baseFee);
+        }
 
         // Update network info
         _networkInfo[info.networkId] = stored;
 
         emit NetworkUpdated(
-            messageHash,
-            info.networkId,
-            stored.domainSeparator,
-            stored.relativeGasPrice,
-            stored.baseFee,
-            stored.gasLimit
+            info.networkId, stored.domainSeparator, stored.relativeGasPrice, stored.baseFee, stored.gasLimit
         );
     }
 
@@ -588,8 +779,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     function setNetworkInfo(UpdateNetworkInfo calldata info) external {
         require(msg.sender == _getAdmin(), "unauthorized");
-        bytes32 messageHash = info.eip712TypedHash(DOMAIN_SEPARATOR);
-        _setNetworkInfo(bytes32(uint256(uint160(_getAdmin()))), messageHash, info);
+        _setNetworkInfo(bytes32(uint256(uint160(_getAdmin()))), info);
     }
 
     /**
@@ -600,23 +790,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         require(msg.sender == _getAdmin(), "unauthorized");
         for (uint256 i = 0; i < networks.length; i++) {
             UpdateNetworkInfo calldata info = networks[i];
-            bytes32 messageHash = info.eip712TypedHash(DOMAIN_SEPARATOR);
-            _setNetworkInfo(bytes32(uint256(uint160(_getAdmin()))), messageHash, info);
+            _setNetworkInfo(bytes32(uint256(uint160(_getAdmin()))), info);
         }
-    }
-
-    /**
-     * @dev Update network information
-     * @param signature Schnorr signature
-     * @param info new network info
-     */
-    function setNetworkInfo(Signature calldata signature, UpdateNetworkInfo calldata info) external {
-        // Verify signature and check if the message was already executed
-        bytes32 messageHash = info.eip712TypedHash(DOMAIN_SEPARATOR);
-        _verifySignature(signature, messageHash);
-
-        // Update network info
-        _setNetworkInfo(bytes32(signature.xCoord), messageHash, info);
     }
 
     /**

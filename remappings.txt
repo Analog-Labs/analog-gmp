@@ -4,3 +4,4 @@ forge-std/=lib/forge-std/src/
 ds-test/=lib/solmate/lib/ds-test/src/
 @analog-gmp/=src/
 @analog-gmp-testing/=test/
+@universal-factory/=lib/universal-factory/src/
