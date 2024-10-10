@@ -159,25 +159,4 @@ library DeploymentAuthorization {
         CallbackOptions options = callbackOptions(settings.options);
         return (options, settings.initializerSelector);
     }
-
-    // function encode(Settings memory settings) internal pure returns (bytes memory) {
-    //     DeploymentOptions options = settings.options;
-    //     uint256 size = 0;
-    //     unchecked {
-    //         // Address 160-bits
-    //         size += 160 * BranchlessMath.toUint(checkAddress(options));
-
-    //         // Codehash 256-bits
-    //         size += 256 * BranchlessMath.toUint(checkCodehash(options));
-
-    //         // ChainID 64-bits
-    //         size += 64 * BranchlessMath.toUint(checkChainID(options));
-
-    //         // Mortality 16-bits
-    //         size += 16 * BranchlessMath.toUint(checkMortality(options));
-
-    //         // Balance 256-bits
-    //         size += 256 * BranchlessMath.toUint(checkBalance(options));
-    //     }
-    // }
 }
