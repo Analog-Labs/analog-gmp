@@ -39,6 +39,16 @@ interface IExecutor {
     event KeySetChanged(bytes32 indexed id, TssKey[] revoked, TssKey[] registered);
 
     /**
+     * @dev Emitted when there's not enough gas to execute an Inbound Message
+     */
+    error NotEnoughGas();
+
+    /**
+     * @dev The `msg.sender` is not authorized to call this method.
+     */
+    error Unauthorized();
+
+    /**
      * Execute GMP message
      * @param signature Schnorr signature
      * @param message GMP message

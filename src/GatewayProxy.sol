@@ -45,51 +45,6 @@ contract GatewayProxy {
         // Set the ERC1967 implementation.
         ERC1967.setImplementation(implementation);
 
-        // Verify the chain id.
-        // require(authorization.chainId == block.chainid);
-
-        // {
-        //     // Verify the signature
-        //     bytes32 domainSeparator = computeDomainSeparator(block.chainid, address(this));
-        //     bytes32 authHash = eip712hash(domainSeparator, authorization);
-        //     authHash = keccak256(abi.encodePacked("\x19\x01", domainSeparator, authHash));
-        //     require(admin == ecrecover(authHash, v, r, s));
-        // }
-
-        // // Check wether the initializer callback is required or not.
-        // if (authorization.hasInitializer) {
-        //     require(ctx.hasCallback && ctx.callbackSelector == authorization.initializerSelector);
-        // }
-
-        // // Check the initial balance, if it's not `type(uint256).max`.
-        // if (authorization.initialBalance != type(uint256).max) {
-        //     require(msg.value == authorization.initialBalance);
-        // }
-
-        // // (optional) Check the implementation contract code hash
-        // if (authorization.implementationCodeHash != bytes32(0)) {
-        //     address implementation = authorization.implementation;
-        //     bytes32 codehash;
-        //     assembly {
-        //         codehash := extcodehash(implementation)
-        //     }
-        //     require(codehash == authorization.implementationCodeHash);
-        // }
-
-        // // This signature is valid only after `ancientBlockNumber`.
-        // require(block.number >= authorization.ancientBlockNumber);
-
-        // // Check the ancient block hash if the gap is less than 256 blocks and
-        // // the ancient block hash is not empty.
-        // uint256 diff = block.number - authorization.ancientBlockNumber;
-        // require(
-        //     authorization.ancientBlockHash == bytes32(0) || diff > 255
-        //         || authorization.ancientBlockHash == blockhash(authorization.ancientBlockNumber)
-        // );
-
-        // Check the mortality of this transaction.
-        // require(authorization.mortality == 0 || diff < authorization.mortality);
-
         // Copy Proxy bytecode to memory
         bytes memory bytecode = PROXY_BYTECODE;
 
@@ -99,17 +54,4 @@ contract GatewayProxy {
             return(add(bytecode, 32), mload(bytecode))
         }
     }
-
-    // Computes the EIP-712 domain separador
-    // function computeDomainSeparator(uint256 chainid, address addr) private pure returns (bytes32) {
-    //     return keccak256(
-    //         abi.encode(
-    //             keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-    //             keccak256("Analog Gateway Proxy Contract"),
-    //             keccak256("1.0.0"),
-    //             chainid,
-    //             addr
-    //         )
-    //     );
-    // }
 }

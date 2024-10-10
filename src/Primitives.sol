@@ -127,7 +127,7 @@ enum GmpStatus {
  * @dev Messages from Timechain take the form of these commands.
  */
 enum Command {
-    ExecuteMessages,
+    GMP,
     SetShards,
     SetRoute
 }
@@ -140,6 +140,8 @@ enum Command {
 struct InboundMessage {
     /// @dev The signature of the message
     Signature signature;
+    /// @dev The channel nonce
+    uint64 nonce;
     /// @dev The maximum gas allowed for message dispatch
     uint64 maxDispatchGas;
     /// @dev The maximum fee per gas

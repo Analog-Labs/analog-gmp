@@ -253,7 +253,7 @@ contract GatewayBase is Test {
     function test_estimateMessageCost() external {
         vm.txGasPrice(1);
         uint256 cost = gateway.estimateMessageCost(DEST_NETWORK_ID, 96, 100000);
-        assertEq(cost, 178501);
+        assertEq(cost, 134032 + GasUtils.EXECUTION_BASE_COST);
     }
 
     function test_checkPayloadSize() external {
