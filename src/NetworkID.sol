@@ -16,6 +16,7 @@ library NetworkIDHelpers {
     NetworkID internal constant SEPOLIA = NetworkID.wrap(5);
     NetworkID internal constant ASTAR_LOCAL_DEV = NetworkID.wrap(6);
     NetworkID internal constant SHIBUYA = NetworkID.wrap(7);
+    NetworkID internal constant POLYGON_AMOY = NetworkID.wrap(8);
     NetworkID internal constant BINANCE_SMART_CHAIN_TESTNET = NetworkID.wrap(9);
     NetworkID internal constant ARBITRUM_SEPOLIA = NetworkID.wrap(10);
 
@@ -43,6 +44,8 @@ library NetworkIDHelpers {
         chainid = BranchlessMath.ternary(id == asUint(ASTAR_LOCAL_DEV), 592, chainid);
         // Shibuya
         chainid = BranchlessMath.ternary(id == asUint(SHIBUYA), 81, chainid);
+        // Polygon Amoy
+        chainid = BranchlessMath.ternary(id == asUint(POLYGON_AMOY), 80002, chainid);
         // Binance Smart Chain
         chainid = BranchlessMath.ternary(id == asUint(BINANCE_SMART_CHAIN_TESTNET), 97, chainid);
         // Arbitrum Sepolia
@@ -75,6 +78,8 @@ library NetworkIDHelpers {
         networkId = BranchlessMath.ternary(chainid == 592, asUint(ASTAR_LOCAL_DEV), networkId);
         // Shibuya
         networkId = BranchlessMath.ternary(chainid == 81, asUint(SHIBUYA), networkId);
+        // Polygon Amoy
+        networkId = BranchlessMath.ternary(chainid == 80002, asUint(POLYGON_AMOY), networkId);
         // Binance Smart Chain
         networkId = BranchlessMath.ternary(chainid == 97, asUint(BINANCE_SMART_CHAIN_TESTNET), networkId);
         // Arbitrum Sepolia
