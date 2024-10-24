@@ -32,3 +32,5 @@ runs = 2500
 sepolia = "https://ethereum-sepolia-rpc.publicnode.com"
 shibuya = "https://evm.shibuya.astar.network"
 amoy = "https://rpc-amoy.polygon.technology"
+arbitrum_sepolia = "https://arbitrum-sepolia.gateway.tenderly.co"
+bnb_testnet = "https://bsc-testnet-rpc.publicnode.com"
