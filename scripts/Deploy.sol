@@ -3,6 +3,7 @@
 
 pragma solidity ^0.8.0;
 
+import {IUniversalFactory} from "@universal-factory/IUniversalFactory.sol";
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
@@ -33,7 +34,17 @@ contract MigrateGateway is Script {
      */
     uint256 internal constant MINIMAL_DEPLOYER_BALANCE = 0.5 ether;
 
-    address internal constant PROXY_CODEHASH = 0x0000000000001C4Bf962dF86e38F0c10c7972C6E
+    /**
+     * @dev Universal Factory used to deploy the implementation contract
+     * see https://github.com/Analog-Labs/universal-factory/tree/main for mode details.
+     */
+    IUniversalFactory internal constant FACTORY = IUniversalFactory(0x0000000000001C4Bf962dF86e38F0c10c7972C6E);
+
+    /**
+     * @dev Bytecode hash of the Universal Factory, used to verify if the contract is deployed.
+     */
+    bytes32 internal constant FACTORY_CODEHASH = 0x0dac89b851eaa2369ef725788f1aa9e2094bc7819f5951e3eeaa28420f202b50;
+    
 
     /**
      * Information about the current state of the migration
@@ -72,20 +83,26 @@ contract MigrateGateway is Script {
         private
         view
         returns (UpdateNetworkInfo memory info, bool hasProxy)
-    {
-        // Verify if the provided proxy address is valid
-        {
-            if (proxyAddress.code.length > 0) {
-                bytes32 codehash;
-                assembly {
-                    codehash := extcodehash(proxyAddress)
-                }
-                require(codehash == PROXY_CODEHASH, "UpgradeGateway: invalid proxy codehash");
-            } else {
-                console.log("PROXY NOT DEPLOYED");
-            }
-        }
+    {   
+        //////////////////////////////////////////////////
+        // Verify if the proxy is deployed and is valid //
+        //////////////////////////////////////////////////
         hasProxy = proxyAddress.code.length > 0;
+        if (hasProxy) {
+            require(proxyAddress.codehash == PROXY_CODEHASH, "invalid proxy codehash");
+        } else {
+            console.log("PROXY NOT DEPLOYED");
+        }
+
+        ////////////////////////////////////////////////
+        // Verify if the UNIVERSAL FACORY is deployed //
+        ////////////////////////////////////////////////
+        require(address(FACTORY).code.length > 0, "universal factory not deployed");
+        require(address(FACTORY).codehash == FACTORY_CODEHASH, "invalid universal factory codehash");
+
+        /////////////////////////
+        // Retrieve Chain Info //
+        /////////////////////////
 
         // Allocate the network information
         info = UpdateNetworkInfo({
@@ -285,7 +302,12 @@ contract MigrateGateway is Script {
                 // Switch the network
                 vm.selectFork(forks[i]);
 
-                
+                // Deploy the implementation contract
+                bytes memory initCode = abi.concat(
+                    type(Gateway).creationCode,
+                    abi.encode(Gateway, (uint16, address))
+                );
+                FACTORY.create2();
             }
 
 
