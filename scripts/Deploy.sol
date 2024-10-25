@@ -213,7 +213,7 @@ contract MigrateGateway is Script {
             forks[i] = vm.createSelectFork(entry[1]);
             bool hasProxy;
             NetworkID networkId;
-            (networks[i], networkId, hasProxy) = _getNetworkInfo(proxyAddress, 0xB41440FF80e1083350c91B21DE1061e0920A75AD);
+            (networks[i], networkId, hasProxy) = _getNetworkInfo(proxyAddress, ADMIN_ACCOUNT);
             needsProxy |= BranchlessMath.toUint(!hasProxy) << i;
             console.log("");
         }
