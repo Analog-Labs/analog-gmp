@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Analog's Contracts (last updated v0.1.0) (scripts/Upgrade.sol)
+// Analog's Contracts (last updated v0.1.0) (scripts/Deploy.sol)
 
 pragma solidity ^0.8.0;
 
@@ -179,9 +179,7 @@ contract MigrateGateway is Script {
         require(block.number > 1_000_000, "block number is low, is this a local testnet?");
 
         // Update network information
-        if (hasProxy) {
-            info.domainSeparator = _computeDomainSeparator(info.networkId, proxyAddress);
-        }
+        info.domainSeparator = _computeDomainSeparator(info.networkId, proxyAddress);
         info.gasLimit = uint64(block.gaslimit >> 1);
         info.relativeGasPrice = UFloatMath.ONE;
         info.baseFee = 0;
