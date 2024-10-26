@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Analog's Contracts (last updated v0.1.0) (scripts/Upgrade.sol)
+// Analog's Contracts (last updated v0.1.0) (scripts/NetworkID.sol)
 
 pragma solidity ^0.8.0;
 
