@@ -90,6 +90,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Network ID => Source network
     mapping(uint16 => NetworkInfo) private _networkInfo;
 
+    // Shard keys
+    bytes32[] private _shardKeys;
+
     /**
      * @dev Shard info stored in the Gateway Contract
      * OBS: the order of the attributes matters! ethereum storage is 256bit aligned, try to keep
