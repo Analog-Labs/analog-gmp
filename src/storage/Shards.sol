@@ -63,21 +63,11 @@ library ShardStore {
     error ShardAlreadyRegistered(ShardID id);
     error ShardNotExists(ShardID id);
 
-    function _getMainStorage() internal pure returns (MainStorage storage $) {
+    function getMainStorage() internal pure returns (MainStorage storage $) {
         assembly {
             $.slot := _EIP7201_NAMESPACE
         }
     }
-
-    // /**
-    //  * @dev Derive an ERC-7201 slot from a string (namespace).
-    //  */
-    // function erc7201Slot(string memory namespace) internal pure returns (bytes32 slot) {
-    //     assembly ("memory-safe") {
-    //         mstore(0x00, sub(keccak256(add(namespace, 0x20), mload(namespace)), 1))
-    //         slot := and(keccak256(0x00, 0x20), not(0xff))
-    //     }
-    // }
 
     function asPtr(KeyInfo storage keyInfo) internal pure returns (StoragePtr ptr) {
         assembly {
@@ -160,6 +150,19 @@ library ShardStore {
     function at(MainStorage storage store, uint256 index) internal view returns (KeyInfo storage) {
         StoragePtr ptr = store.shards.at(index);
         require(ptr.isNull() == false, "ShardStore: index out of bounds");
+        return _getKeyInfo(ptr);
+    }
+
+    /**
+     * @dev Returns the value associated with `key`. O(1).
+     *
+     * Requirements:
+     *
+     * - `key` must be in the map.
+     */
+    function get(MainStorage storage store, bytes32 key) internal view returns (KeyInfo storage) {
+        StoragePtr ptr = store.shards.get(key);
+        require(ptr.isNull() == false, "ShardStore: key not found");
         return _getKeyInfo(ptr);
     }
 

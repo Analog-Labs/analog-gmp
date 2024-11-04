@@ -8,6 +8,7 @@ import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {GasUtils} from "./utils/GasUtils.sol";
 import {ERC1967} from "./utils/ERC1967.sol";
 import {UFloat9x56, UFloatMath} from "./utils/Float9x56.sol";
+import {ShardStore} from "./storage/Shards.sol";
 import {IGateway} from "./interfaces/IGateway.sol";
 import {IUpgradable} from "./interfaces/IUpgradable.sol";
 import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
@@ -58,6 +59,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     using PrimitiveUtils for address;
     using BranchlessMath for uint256;
     using UFloatMath for UFloat9x56;
+    using ShardStore for ShardStore.MainStorage;
 
     uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
     uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
@@ -175,8 +177,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return _messages[id];
     }
 
-    function keyInfo(bytes32 id) external view returns (KeyInfo memory) {
-        return _shards[id];
+    function keyInfo(bytes32 id) external view returns (ShardStore.KeyInfo memory) {
+        ShardStore.MainStorage storage store = ShardStore.getMainStorage();
+        return store.get(id);
     }
 
     function networkId() external view returns (uint16) {
