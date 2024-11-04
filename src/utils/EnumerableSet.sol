@@ -30,12 +30,14 @@ library EnumerableSet {
      *
      * Returns -1 if the value is not in the set.
      */
-    function indexOf(Map storage map, StoragePtr value) internal view returns (int256 index) {
+    function indexOf(Map storage map, StoragePtr ptr) internal view returns (int256 index) {
         assembly ("memory-safe") {
-            index := not(sload(sub(value, 1)))
+            index := not(sload(sub(ptr, 1)))
+            // index := or(index, sub(lt(index, len), 1))
             mstore(0x00, map.slot)
-            let len := sload(keccak256(0x00, 0x20))
-            index := or(index, sub(0, lt(index, len)))
+            mstore(0x00, sload(add(keccak256(0x00, 0x20), index)))
+            mstore(0x20, add(map.slot, 1))
+            index := or(index, sub(and(eq(ptr, keccak256(0x00, 0x40)), lt(index, sload(map.slot))), 1))
         }
     }
 

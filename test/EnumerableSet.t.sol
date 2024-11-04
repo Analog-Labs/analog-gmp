@@ -168,27 +168,38 @@ contract EnumerableSetTest is Test {
     /**
      * Test if `Map.add` and `Map.at` work as expected.
      */
-    function test_fuzz() external {
-        // bytes32 key, uint256 value
-        bytes32 key = bytes32(0);
-        uint256 value = 256;
+    function test_fuzz(bytes32 key, uint256 value) external {
         assertEq(map.length(), 0, "Map should be empty");
 
+        // Map.length works
         Pointer.Uint256Slot storage store;
         store = map.add(key).getUint256Slot();
+        assertFalse(store.asPtr().isNull(), "invalid pointer");
         store.value = value;
+
+        // Map.length works
         assertEq(map.length(), 1, "unexpected map length");
 
+        // Map.get works
         store = map.get(key).getUint256Slot();
         assertEq(store.value, value, "unexpected value when retrieving by key");
 
+        // Map.indexOf works
         int256 index = map.indexOf(store.asPtr());
         assertEq(index, 0, "unexpected index");
 
+        // Map.at works
         store = map.at(0).getUint256Slot();
         assertEq(store.value, value, "unexpected value when retrieving by index");
 
+        // Map.contains works
         StoragePtr ptr = map.get(key);
         assertTrue(map.contains(ptr), "the key should be in the map");
+
+        // Map.contains returns false for invalid pointers
+        ptr = (ptr.asUint() + 1).asPtr();
+        assertFalse(map.contains(ptr), "invalid pointer");
+        ptr = (ptr.asUint() - 2).asPtr();
+        assertFalse(map.contains(ptr), "invalid pointer");
     }
 }
