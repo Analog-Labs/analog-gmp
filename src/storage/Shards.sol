@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 
 import {TssKey} from "../Primitives.sol";
 import {EnumerableSet, Pointer} from "../utils/EnumerableSet.sol";
+import {BranchlessMath} from "../utils/BranchlessMath.sol";
 import {StoragePtr} from "../utils/Pointer.sol";
 
 /**
@@ -19,6 +20,9 @@ library ShardStore {
      * keccak256(abi.encode(uint256(keccak256("analog.one.gateway.shards")) - 1)) & ~bytes32(uint256(0xff));
      */
     bytes32 internal constant _EIP7201_NAMESPACE = 0x582bcdebbeef4fb96dde802cfe96e9942657f4bedb5cfe94e8786bb683eb1f00;
+
+    uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
+    uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
 
     /**
      * @dev Shard ID, this is the xCoord of the TssKey
@@ -44,7 +48,7 @@ library ShardStore {
      */
     struct KeyInfo {
         uint216 _gap;
-        ShardStatus status;
+        uint8 status;
         uint32 nonce;
     }
 
@@ -62,6 +66,7 @@ library ShardStore {
 
     error ShardAlreadyRegistered(ShardID id);
     error ShardNotExists(ShardID id);
+    error IndexOutOfBounds(uint256 index);
 
     function getMainStorage() internal pure returns (MainStorage storage $) {
         assembly {
@@ -101,15 +106,15 @@ library ShardStore {
      * Returns true if the value was added to the set, that is if it was not
      * already present.
      */
-    function add(MainStorage storage store, TssKey memory shard) internal returns (bool) {
-        StoragePtr ptr = store.shards.add(bytes32(shard.xCoord));
+    function set(MainStorage storage store, ShardID xCoord, KeyInfo memory shard) internal returns (bool) {
+        StoragePtr ptr = store.shards.add(ShardID.unwrap(xCoord));
         if (ptr.isNull()) {
             return false;
         }
         KeyInfo storage keyInfo = _getKeyInfo(ptr);
-        keyInfo._gap = 0;
-        keyInfo.status = ShardStatus.Active;
-        keyInfo.nonce = 1;
+        keyInfo._gap = shard._gap;
+        keyInfo.status = shard.status;
+        keyInfo.nonce = shard.nonce;
         return true;
     }
 
@@ -126,14 +131,14 @@ library ShardStore {
         }
         KeyInfo storage keyInfo = _getKeyInfo(ptr);
         keyInfo._gap = 0;
-        keyInfo.status = ShardStatus.Revoked;
+        keyInfo.status &= ~SHARD_ACTIVE;
         return true;
     }
 
     /**
      * @dev Returns the number of values on the set. O(1).
      */
-    function _length(MainStorage storage store) private view returns (uint256) {
+    function length(MainStorage storage store) internal view returns (uint256) {
         return store.shards.length();
     }
 
@@ -149,7 +154,9 @@ library ShardStore {
      */
     function at(MainStorage storage store, uint256 index) internal view returns (KeyInfo storage) {
         StoragePtr ptr = store.shards.at(index);
-        require(ptr.isNull() == false, "ShardStore: index out of bounds");
+        if (ptr.isNull()) {
+            revert IndexOutOfBounds(index);
+        }
         return _getKeyInfo(ptr);
     }
 
@@ -160,10 +167,74 @@ library ShardStore {
      *
      * - `key` must be in the map.
      */
-    function get(MainStorage storage store, bytes32 key) internal view returns (KeyInfo storage) {
-        StoragePtr ptr = store.shards.get(key);
-        require(ptr.isNull() == false, "ShardStore: key not found");
+    function get(MainStorage storage store, ShardID key) internal view returns (KeyInfo storage) {
+        StoragePtr ptr = store.shards.get(ShardID.unwrap(key));
+        if (ptr.isNull()) {
+            revert ShardNotExists(key);
+        }
         return _getKeyInfo(ptr);
+    }
+
+    /**
+     * @dev Returns the value associated with `key`. O(1).
+     */
+    function tryGet(MainStorage storage store, ShardID key) internal view returns (bool, KeyInfo storage) {
+        StoragePtr ptr = store.shards.get(ShardID.unwrap(key));
+        return (ptr.isNull(), _getKeyInfo(ptr));
+    }
+
+    function registerTssKeys(ShardStore.MainStorage storage store, TssKey[] memory keys) internal {
+        // We don't perform any arithmetic operation, except iterate a loop
+        unchecked {
+            // Register or activate tss key (revoked keys keep the previous nonce)
+            for (uint256 i = 0; i < keys.length; i++) {
+                TssKey memory newKey = keys[i];
+                require(newKey.yParity == (newKey.yParity & 1), "y parity bit must be 0 or 1, cannot register shard");
+
+                ShardID id = ShardID.wrap(bytes32(newKey.xCoord));
+                KeyInfo storage shard = _getKeyInfo(store.shards.getUnchecked(ShardID.unwrap(id)));
+
+                // Check if the shard is already registered
+                if (store.shards.add(ShardID.unwrap(id)).isNull()) {
+                    revert ShardAlreadyRegistered(id);
+                }
+
+                shard.status = BranchlessMath.ternaryU8(newKey.yParity > 0, 0, SHARD_Y_PARITY) | SHARD_ACTIVE;
+                shard.nonce += uint32(BranchlessMath.toUint(shard.nonce == 0));
+            }
+        }
+    }
+
+    // Revoke TSS keys
+    function revokeKeys(ShardStore.MainStorage storage store, TssKey[] memory keys) internal {
+        // We don't perform any arithmetic operation, except iterate a loop
+        unchecked {
+            // Revoke tss keys
+            for (uint256 i = 0; i < keys.length; i++) {
+                TssKey memory revokedKey = keys[i];
+
+                // Read shard from storage
+                ShardID id = ShardID.wrap(bytes32(revokedKey.xCoord));
+                KeyInfo storage shard;
+                {
+                    bool shardExists;
+                    (shardExists, shard) = tryGet(store, id);
+
+                    if (!shardExists || shard.nonce == 0) {
+                        revert ShardNotExists(id);
+                    }
+                }
+
+                // Check y-parity
+                {
+                    uint8 yParity = (shard.status & SHARD_Y_PARITY) > 0 ? 1 : 0;
+                    require(yParity == revokedKey.yParity, "y parity bit mismatch, cannot revoke key");
+                }
+
+                // Disable SHARD_ACTIVE bitflag
+                shard.status = shard.status & (~SHARD_ACTIVE); // Disable active flag
+            }
+        }
     }
 
     //     /**

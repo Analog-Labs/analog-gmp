@@ -78,10 +78,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // GMP message status
     mapping(bytes32 => GmpInfo) private _messages;
 
-    // GAP necessary for migration purposes
-    mapping(GmpSender => mapping(uint16 => uint256)) private _deprecated_Deposits;
-    mapping(uint16 => bytes32) private _deprecated_Networks;
-
     // Hash of the previous GMP message submitted.
     bytes32 public prevMessageHash;
 
@@ -179,7 +175,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     function keyInfo(bytes32 id) external view returns (ShardStore.KeyInfo memory) {
         ShardStore.MainStorage storage store = ShardStore.getMainStorage();
-        return store.get(id);
+        return store.get(ShardStore.ShardID.wrap(id));
     }
 
     function networkId() external view returns (uint16) {
@@ -195,7 +191,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     function _verifySignature(Signature calldata signature, bytes32 message) private view {
         // Load shard from storage
-        KeyInfo storage signer = _shards[bytes32(signature.xCoord)];
+        ShardStore.KeyInfo storage signer;
+        {
+            ShardStore.MainStorage storage store = ShardStore.getMainStorage();
+            signer = store.get(ShardStore.ShardID.wrap(bytes32(signature.xCoord)));
+        }
 
         // Verify if shard is active
         uint8 status = signer.status;
@@ -212,11 +212,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         );
     }
 
-    // Converts a `TssKey` into an `KeyInfo` unique identifier
-    function _tssKeyToShardId(TssKey memory tssKey) private pure returns (bytes32) {
+    // Converts a `TssKey` into an `ShardStore.ShardID` unique identifier
+    function _tssKeyToShardId(TssKey memory tssKey) private pure returns (ShardStore.ShardID) {
         // The tssKey coord x is already collision resistant
         // if we are unsure about it, we can hash the coord and parity bit
-        return bytes32(tssKey.xCoord);
+        return ShardStore.ShardID.wrap(bytes32(tssKey.xCoord));
     }
 
     // Initialize networks
@@ -236,13 +236,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     function _registerKeys(TssKey[] memory keys) private {
         // We don't perform any arithmetic operation, except iterate a loop
         unchecked {
+            ShardStore.MainStorage storage store = ShardStore.getMainStorage();
+
             // Register or activate tss key (revoked keys keep the previous nonce)
             for (uint256 i = 0; i < keys.length; i++) {
                 TssKey memory newKey = keys[i];
 
                 // Read shard from storage
-                bytes32 shardId = _tssKeyToShardId(newKey);
-                KeyInfo storage shard = _shards[shardId];
+                ShardStore.KeyInfo storage shard = store.get(_tssKeyToShardId(newKey));
                 uint8 status = shard.status;
                 uint32 nonce = shard.nonce;
 
@@ -276,44 +277,17 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         }
     }
 
-    // Revoke TSS keys
-    function _revokeKeys(TssKey[] memory keys) private {
-        // We don't perform any arithmetic operation, except iterate a loop
-        unchecked {
-            // Revoke tss keys
-            for (uint256 i = 0; i < keys.length; i++) {
-                TssKey memory revokedKey = keys[i];
-
-                // Read shard from storage
-                bytes32 shardId = _tssKeyToShardId(revokedKey);
-                KeyInfo storage shard = _shards[shardId];
-
-                // Check if the shard exists and is active
-                require(shard.nonce > 0, "shard doesn't exists, cannot revoke key");
-                require((shard.status & SHARD_ACTIVE) > 0, "cannot revoke a shard key already revoked");
-
-                // Check y-parity
-                {
-                    uint8 yParity = (shard.status & SHARD_Y_PARITY) > 0 ? 1 : 0;
-                    require(yParity == revokedKey.yParity, "invalid y parity bit, cannot revoke key");
-                }
-
-                // Disable SHARD_ACTIVE bitflag
-                shard.status = shard.status & (~SHARD_ACTIVE); // Disable active flag
-            }
-        }
-    }
-
     // Register/Revoke TSS keys and emits [`KeySetChanged`] event
     function _updateKeys(bytes32 messageHash, TssKey[] memory keysToRevoke, TssKey[] memory newKeys) private {
-        // We don't perform any arithmetic operation, except iterate a loop
-        unchecked {
-            // Revoke tss keys (revoked keys can be registred again keeping the previous nonce)
-            _revokeKeys(keysToRevoke);
+        ShardStore.MainStorage storage shards = ShardStore.getMainStorage();
 
-            // Register or activate revoked keys
-            _registerKeys(newKeys);
-        }
+        // Revoke tss keys (revoked keys can be registred again keeping the previous nonce)
+        shards.revokeKeys(keysToRevoke);
+
+        // Register or activate revoked keys
+        shards.registerTssKeys(newKeys);
+
+        // Emit event
         emit KeySetChanged(messageHash, keysToRevoke, newKeys);
     }
 
@@ -670,17 +644,18 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     // OBS: remove != revoke (when revoked, you cannot register again)
-    function sudoRemoveShards(TssKey[] memory shards) external payable {
+    function sudoRemoveShards(TssKey[] memory revokedKeys) external payable {
         require(msg.sender == _getAdmin(), "unauthorized");
-        for (uint256 i; i < shards.length; i++) {
-            bytes32 shardId = _tssKeyToShardId(shards[i]);
-            delete _shards[shardId];
-        }
+        ShardStore.MainStorage storage shards = ShardStore.getMainStorage();
+        shards.revokeKeys(revokedKeys);
+        emit KeySetChanged(bytes32(0), revokedKeys, new TssKey[](0));
     }
 
-    function sudoAddShards(TssKey[] memory shards) external payable {
+    function sudoAddShards(TssKey[] memory newKeys) external payable {
         require(msg.sender == _getAdmin(), "unauthorized");
-        _registerKeys(shards);
+        ShardStore.MainStorage storage shards = ShardStore.getMainStorage();
+        shards.registerTssKeys(newKeys);
+        emit KeySetChanged(bytes32(0), new TssKey[](0), newKeys);
     }
 
     // DANGER: This function is for migration purposes only, it allows the admin to set any storage slot.

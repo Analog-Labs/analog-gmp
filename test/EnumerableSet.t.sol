@@ -168,7 +168,7 @@ contract EnumerableSetTest is Test {
     /**
      * Test if `Map.add` and `Map.at` work as expected.
      */
-    function test_fuzzz() external {
+    function test_fuzz() external {
         // bytes32 key, uint256 value
         bytes32 key = bytes32(0);
         uint256 value = 256;

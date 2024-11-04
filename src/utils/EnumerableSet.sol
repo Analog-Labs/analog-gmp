@@ -175,6 +175,14 @@ library EnumerableSet {
         }
     }
 
+    function getUnchecked(Map storage map, bytes32 key) internal pure returns (StoragePtr r) {
+        assembly ("memory-safe") {
+            mstore(0x00, key)
+            mstore(0x20, add(map.slot, 1))
+            r := keccak256(0x00, 0x40)
+        }
+    }
+
     // /**
     //  * @dev Return the entire set in an array
     //  *
