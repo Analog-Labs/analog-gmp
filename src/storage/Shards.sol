@@ -3,43 +3,17 @@
 pragma solidity ^0.8.20;
 
 import {TssKey} from "../Primitives.sol";
-// import {EnumerableSet} from "../utils/EnumerableSet.sol";
+import {EnumerableSet, Pointer} from "../utils/EnumerableSet.sol";
+import {StoragePtr} from "../utils/Pointer.sol";
 
 /**
- * @dev Library for managing
- * https://en.wikipedia.org/wiki/Set_(abstract_data_type)[sets] of primitive
- * types.
- *
- * Sets have the following properties:
- *
- * - Elements are added, removed, and checked for existence in constant time
- * (O(1)).
- * - Elements are enumerated in O(n). No guarantees are made on the ordering.
- *
- * ```solidity
- * contract Example {
- *     // Add the library methods
- *     using EnumerableSet for EnumerableSet.AddressSet;
- *
- *     // Declare a set state variable
- *     EnumerableSet.AddressSet private mySet;
- * }
- * ```
- *
- * As of v3.3.0, sets of type `bytes32` (`Bytes32Set`), `address` (`AddressSet`)
- * and `uint256` (`UintSet`) are supported.
- *
- * [WARNING]
- * ====
- * Trying to delete such a structure from storage will likely result in data corruption, rendering the structure
- * unusable.
- * See https://github.com/ethereum/solidity/pull/11843[ethereum/solidity#11843] for more info.
- *
- * In order to clean an EnumerableSet, you can either remove all elements one by one or create a fresh instance using an
- * array of EnumerableSet.
- * ====
+ * @dev EIP-7201 Shard's Storage
  */
-library ShardsStorage {
+library ShardStore {
+    using Pointer for StoragePtr;
+    using Pointer for uint256;
+    using EnumerableSet for EnumerableSet.Map;
+
     /**
      * @dev Namespace of the shards storage `analog.one.gateway.shards`.
      * keccak256(abi.encode(uint256(keccak256("analog.one.gateway.shards")) - 1)) & ~bytes32(uint256(0xff));
@@ -69,10 +43,9 @@ library ShardsStorage {
      * @custom:storage-location erc7201:analog.one.gateway.shards
      */
     struct KeyInfo {
-        uint64 index;
+        uint216 _gap;
         ShardStatus status;
         uint32 nonce;
-        uint152 _gap;
     }
 
     /**
@@ -84,15 +57,11 @@ library ShardsStorage {
      * @custom:storage-location erc7201:analog.one.gateway.shards
      */
     struct MainStorage {
-        ShardID[] keys;
-        mapping(ShardID => KeyInfo) shards;
+        EnumerableSet.Map shards;
     }
 
     error ShardAlreadyRegistered(ShardID id);
     error ShardNotExists(ShardID id);
-
-    bytes32 internal constant _SHARDS =
-        keccak256(abi.encode(uint256(keccak256("analog.one.gateway.shards")) - 1)) & ~bytes32(uint256(0xff));
 
     function _getMainStorage() internal pure returns (MainStorage storage $) {
         assembly {
@@ -110,20 +79,30 @@ library ShardsStorage {
     //     }
     // }
 
-    /**
-     * @dev Returns true if the value is in the set. O(1).
-     */
-    function _exists(KeyInfo storage keyInfo) private view returns (bool r) {
+    function asPtr(KeyInfo storage keyInfo) internal pure returns (StoragePtr ptr) {
         assembly {
-            r := gt(sload(keyInfo.slot), 0)
+            ptr := keyInfo.slot
+        }
+    }
+
+    function _getKeyInfo(StoragePtr ptr) private pure returns (KeyInfo storage keyInfo) {
+        assembly {
+            keyInfo.slot := ptr
         }
     }
 
     /**
      * @dev Returns true if the value is in the set. O(1).
      */
-    function _contains(MainStorage storage s, ShardID id) private view returns (bool) {
-        return _exists(s.shards[id]);
+    function contains(MainStorage storage store, KeyInfo storage keyInfo) internal view returns (bool) {
+        return store.shards.contains(asPtr(keyInfo));
+    }
+
+    /**
+     * @dev Returns true if the value is in the set. O(1).
+     */
+    function exists(MainStorage storage store, ShardID id) internal view returns (bool) {
+        return store.shards.exists(ShardID.unwrap(id));
     }
 
     /**
@@ -132,17 +111,15 @@ library ShardsStorage {
      * Returns true if the value was added to the set, that is if it was not
      * already present.
      */
-    function _add(MainStorage storage s, TssKey memory shard) private returns (bool) {
-        ShardID id = ShardID.wrap(bytes32(shard.xCoord));
-        KeyInfo storage keyInfo = s.shards[id];
-        if (_exists(keyInfo)) {
-            // revert ShardAlreadyRegistered(id);
+    function add(MainStorage storage store, TssKey memory shard) internal returns (bool) {
+        StoragePtr ptr = store.shards.add(bytes32(shard.xCoord));
+        if (ptr.isNull()) {
             return false;
         }
-        keyInfo.index = uint64(s.keys.length);
+        KeyInfo storage keyInfo = _getKeyInfo(ptr);
+        keyInfo._gap = 0;
         keyInfo.status = ShardStatus.Active;
         keyInfo.nonce = 1;
-        s.keys.push(id);
         return true;
     }
 
@@ -152,33 +129,22 @@ library ShardsStorage {
      * Returns true if the value was removed from the set, that is if it was
      * present.
      */
-    function _remove(MainStorage storage s, ShardID id) private returns (bool) {
-        unchecked {
-            // We cache the value's position to prevent multiple reads from the same storage slot
-            ShardID[] storage keys = s.keys;
-            uint256 size = keys.length;
-            uint256 index = s.shards[id].index;
-            if (index > 0 && index < type(uint64).max && size > 0) {
-                if (index < size) {
-                    ShardID lastKey = keys[size - 1];
-                    // Move the lastValue to the index where the value to delete is
-                    keys[index - 1] = lastKey;
-                    // Update the tracked position of the lastValue (that was just moved)
-                    s.shards[lastKey].index = uint64(index);
-                }
-                keys.pop();
-                delete s.shards[id];
-                return true;
-            }
+    function remove(MainStorage storage store, ShardID id) internal returns (bool) {
+        StoragePtr ptr = store.shards.remove(ShardID.unwrap(id));
+        if (ptr.isNull()) {
             return false;
         }
+        KeyInfo storage keyInfo = _getKeyInfo(ptr);
+        keyInfo._gap = 0;
+        keyInfo.status = ShardStatus.Revoked;
+        return true;
     }
 
     /**
      * @dev Returns the number of values on the set. O(1).
      */
-    function _length(MainStorage storage s) private view returns (uint256) {
-        return s.keys.length;
+    function _length(MainStorage storage store) private view returns (uint256) {
+        return store.shards.length();
     }
 
     /**
@@ -191,24 +157,26 @@ library ShardsStorage {
      *
      * - `index` must be strictly less than {length}.
      */
-    function _at(MainStorage storage s, uint256 index) private view returns (KeyInfo storage) {
-        return s.shards[s.keys[index]];
+    function at(MainStorage storage store, uint256 index) internal view returns (KeyInfo storage) {
+        StoragePtr ptr = store.shards.at(index);
+        require(ptr.isNull() == false, "ShardStore: index out of bounds");
+        return _getKeyInfo(ptr);
     }
 
-    /**
-     * @dev Return the entire set in an array
-     *
-     * WARNING: This operation will copy the entire storage to memory, which can be quite expensive. This is designed
-     * to mostly be used by view accessors that are queried without any gas fees. Developers should keep in mind that
-     * this function has an unbounded cost, and using it as part of a state-changing function may render the function
-     * uncallable if the set grows to a point where copying to memory consumes too much gas to fit in a block.
-     */
-    function _values(MainStorage storage s) private view returns (KeyInfo[] memory) {
-        ShardID[] memory keys = s.keys;
-        KeyInfo[] memory values = new KeyInfo[](keys.length);
-        for (uint256 i = 0; i < keys.length; i++) {
-            values[i] = s.shards[keys[i]];
-        }
-        return values;
-    }
+    //     /**
+    //      * @dev Return the entire set in an array
+    //      *
+    //      * WARNING: This operation will copy the entire storage to memory, which can be quite expensive. This is designed
+    //      * to mostly be used by view accessors that are queried without any gas fees. Developers should keep in mind that
+    //      * this function has an unbounded cost, and using it as part of a state-changing function may render the function
+    //      * uncallable if the set grows to a point where copying to memory consumes too much gas to fit in a block.
+    //      */
+    //     function _values(MainStorage storage store) private view returns (KeyInfo[] memory) {
+    //         StoragePtr[] memory keys = store.shards;
+    //         KeyInfo[] memory values = new KeyInfo[](keys.length);
+    //         for (uint256 i = 0; i < keys.length; i++) {
+    //             values[i] = _getKeyInfo(store.shards[keys[i]]);
+    //         }
+    //         return values;
+    //     }
 }

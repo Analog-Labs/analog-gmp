@@ -2,7 +2,7 @@
 // Analog's Contracts (last updated v0.1.0) (src/utils/EnumerableMap.sol)
 pragma solidity ^0.8.20;
 
-import {StoragePtr} from "./Pointer.sol";
+import {StoragePtr, Pointer} from "./Pointer.sol";
 
 /**
  * @dev Library for managing an enumerable variant of Solidity's
@@ -10,6 +10,8 @@ import {StoragePtr} from "./Pointer.sol";
  * type.
  */
 library EnumerableSet {
+    using Pointer for StoragePtr;
+
     /**
      * @dev Shard info stored in the Gateway Contract
      * OBS: the order of the attributes matters! ethereum storage is 256bit aligned, try to keep
@@ -42,6 +44,14 @@ library EnumerableSet {
      */
     function contains(Map storage map, StoragePtr value) internal view returns (bool r) {
         return indexOf(map, value) >= 0;
+    }
+
+    /**
+     * @dev Returns true if the key is in the set. O(1).
+     */
+    function exists(Map storage map, bytes32 key) internal view returns (bool r) {
+        StoragePtr ptr = get(map, key);
+        return ptr.isNull() == false;
     }
 
     /**
