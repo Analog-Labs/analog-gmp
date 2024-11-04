@@ -72,9 +72,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Non-zero value used to initialize the `prevMessageHash` storage
     bytes32 internal constant FIRST_MESSAGE_PLACEHOLDER = bytes32(uint256(2 ** 256 - 1));
 
-    // Shard data, maps the pubkey coordX (which is already collision resistant) to shard info.
-    mapping(bytes32 => KeyInfo) private _shards;
-
     // GMP message status
     mapping(bytes32 => GmpInfo) private _messages;
 
@@ -87,9 +84,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     // Network ID => Source network
     mapping(uint16 => NetworkInfo) private _networkInfo;
-
-    // Shard keys
-    bytes32[] private _shardKeys;
 
     /**
      * @dev Shard info stored in the Gateway Contract
@@ -195,7 +189,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         ShardStore.KeyInfo storage signer;
         {
             ShardStore.MainStorage storage store = ShardStore.getMainStorage();
-            signer = store.get(ShardStore.ShardID.wrap(bytes32(signature.xCoord)));
+            signer = store.get(signature);
         }
 
         // Verify if shard is active

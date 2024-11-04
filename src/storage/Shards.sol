@@ -2,7 +2,7 @@
 // Analog's Contracts (last updated v0.1.0) (src/utils/EnumerableSet.sol)
 pragma solidity ^0.8.20;
 
-import {TssKey} from "../Primitives.sol";
+import {TssKey, Signature} from "../Primitives.sol";
 import {EnumerableSet, Pointer} from "../utils/EnumerableSet.sol";
 import {BranchlessMath} from "../utils/BranchlessMath.sol";
 import {StoragePtr} from "../utils/Pointer.sol";
@@ -164,7 +164,6 @@ library ShardStore {
      * @dev Returns the value associated with `key`. O(1).
      *
      * Requirements:
-     *
      * - `key` must be in the map.
      */
     function get(MainStorage storage store, ShardID key) internal view returns (KeyInfo storage) {
@@ -173,6 +172,26 @@ library ShardStore {
             revert ShardNotExists(key);
         }
         return _getKeyInfo(ptr);
+    }
+
+    /**
+     * @dev Returns the `KeyInfo` associated with `TssKey`. O(1).
+     *
+     * Requirements:
+     * - `key.xCoord` must be in the map.
+     */
+    function get(MainStorage storage store, TssKey calldata key) internal view returns (KeyInfo storage) {
+        return get(store, ShardID.wrap(bytes32(key.xCoord)));
+    }
+
+    /**
+     * @dev Returns the `KeyInfo` associated with `Signature`. O(1).
+     *
+     * Requirements:
+     * - `signature.xCoord` must be in the map.
+     */
+    function get(MainStorage storage store, Signature calldata signature) internal view returns (KeyInfo storage) {
+        return get(store, ShardID.wrap(bytes32(signature.xCoord)));
     }
 
     /**
@@ -189,18 +208,37 @@ library ShardStore {
             // Register or activate tss key (revoked keys keep the previous nonce)
             for (uint256 i = 0; i < keys.length; i++) {
                 TssKey memory newKey = keys[i];
-                require(newKey.yParity == (newKey.yParity & 1), "y parity bit must be 0 or 1, cannot register shard");
+                uint8 yParity = newKey.yParity;
+                require(yParity == (yParity & 1), "y parity bit must be 0 or 1, cannot register shard");
 
-                ShardID id = ShardID.wrap(bytes32(newKey.xCoord));
-                KeyInfo storage shard = _getKeyInfo(store.shards.getUnchecked(ShardID.unwrap(id)));
+                // Read shard from storage
+                bytes32 id = bytes32(newKey.xCoord);
+                KeyInfo storage shard = _getKeyInfo(store.shards.getUnchecked(id));
 
                 // Check if the shard is already registered
-                if (store.shards.add(ShardID.unwrap(id)).isNull()) {
-                    revert ShardAlreadyRegistered(id);
+                if (store.shards.add(id).isNull()) {
+                    revert ShardAlreadyRegistered(ShardID.wrap(id));
                 }
 
-                shard.status = BranchlessMath.ternaryU8(newKey.yParity > 0, 0, SHARD_Y_PARITY) | SHARD_ACTIVE;
-                shard.nonce += uint32(BranchlessMath.toUint(shard.nonce == 0));
+                uint32 nonce = shard.nonce;
+                uint8 status = shard.status;
+                {
+                    uint8 actualYParity = uint8(BranchlessMath.toUint((status & SHARD_Y_PARITY) > 0));
+                    require(
+                        nonce == 0 || actualYParity == yParity,
+                        "the provided y-parity doesn't match the existing y-parity, cannot register shard"
+                    );
+                    nonce += uint32(BranchlessMath.toUint(nonce == 0));
+                }
+
+                // enable/disable the y-parity flag
+                status = BranchlessMath.ternaryU8(yParity > 0, status | SHARD_Y_PARITY, status & ~SHARD_Y_PARITY);
+                status |= SHARD_ACTIVE;
+
+                // Save new status and nonce in the storage
+                shard._gap = 0;
+                shard.status = status;
+                shard.nonce = nonce;
             }
         }
     }
