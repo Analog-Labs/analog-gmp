@@ -162,7 +162,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         _updateNetworks(networks);
 
         // Register keys
-        _registerKeys(keys);
+        ShardStore.MainStorage storage shards = ShardStore.getMainStorage();
+        shards.registerTssKeys(keys);
 
         // emit event
         TssKey[] memory revoked = new TssKey[](0);
@@ -230,50 +231,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             info.gasLimit = 15_000_000; // Default to 15M gas
             info.relativeGasPrice = UFloatMath.ONE;
             info.baseFee = 0;
-        }
-    }
-
-    function _registerKeys(TssKey[] memory keys) private {
-        // We don't perform any arithmetic operation, except iterate a loop
-        unchecked {
-            ShardStore.MainStorage storage store = ShardStore.getMainStorage();
-
-            // Register or activate tss key (revoked keys keep the previous nonce)
-            for (uint256 i = 0; i < keys.length; i++) {
-                TssKey memory newKey = keys[i];
-
-                // Read shard from storage
-                ShardStore.KeyInfo storage shard = store.get(_tssKeyToShardId(newKey));
-                uint8 status = shard.status;
-                uint32 nonce = shard.nonce;
-
-                // Check if the shard is not active
-                require((status & SHARD_ACTIVE) == 0, "already active, cannot register again");
-
-                // Check y-parity
-                uint8 yParity = newKey.yParity;
-                require(yParity == (yParity & 1), "y parity bit must be 0 or 1, cannot register shard");
-
-                // If nonce is zero, it's a new shard.
-                // If the shard exists, the provided y-parity must match the original one
-                uint8 actualYParity = uint8(BranchlessMath.toUint((status & SHARD_Y_PARITY) > 0));
-                require(
-                    nonce == 0 || actualYParity == yParity,
-                    "the provided y-parity doesn't match the existing y-parity, cannot register shard"
-                );
-
-                // if is a new shard shard, set its initial nonce to 1
-                shard.nonce = uint32(BranchlessMath.ternaryU32(nonce == 0, 1, nonce));
-
-                // enable/disable the y-parity flag
-                status = BranchlessMath.ternaryU8(yParity > 0, status | SHARD_Y_PARITY, status & ~SHARD_Y_PARITY);
-
-                // enable SHARD_ACTIVE bitflag
-                status |= SHARD_ACTIVE;
-
-                // Save new status in the storage
-                shard.status = status;
-            }
         }
     }
 
