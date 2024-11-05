@@ -181,6 +181,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return _networkInfo[id];
     }
 
+    function listShards() external view returns (ShardStore.KeyInfo[] memory) {
+        return ShardStore.getMainStorage().listShards();
+    }
+
     /**
      * @dev  Verify if shard exists, if the TSS signature is valid then increment shard's nonce.
      */
