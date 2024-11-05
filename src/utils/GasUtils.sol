@@ -13,7 +13,7 @@ library GasUtils {
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = 44469 + 2245;
+    uint256 internal constant EXECUTION_BASE_COST = 44469 + 2245 - 11;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.

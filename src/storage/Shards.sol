@@ -47,7 +47,6 @@ library ShardStore {
      * @custom:storage-location erc7201:analog.one.gateway.shards
      */
     struct KeyInfo {
-        uint216 _gap;
         uint8 status;
         uint32 nonce;
     }
@@ -123,7 +122,6 @@ library ShardStore {
             return false;
         }
         KeyInfo storage keyInfo = _getKeyInfo(ptr);
-        keyInfo._gap = 0;
         keyInfo.status &= ~SHARD_ACTIVE;
         return true;
     }
@@ -234,7 +232,6 @@ library ShardStore {
                 status |= SHARD_ACTIVE;
 
                 // Save new status and nonce in the storage
-                shard._gap = 0;
                 shard.status = status;
                 shard.nonce = nonce;
             }
