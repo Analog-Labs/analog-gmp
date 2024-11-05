@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Analog's Contracts (last updated v0.1.0) (src/utils/EnumerableSet.sol)
+// Analog's Contracts (last updated v0.1.0) (src/storage/Shards.sol)
 pragma solidity ^0.8.20;
 
 import {TssKey, Signature} from "../Primitives.sol";
@@ -200,7 +200,7 @@ library ShardStore {
      * Requirements:
      * - The `keys` should not be already registered.
      */
-    function registerTssKeys(ShardStore.MainStorage storage store, TssKey[] memory keys) internal {
+    function registerTssKeys(MainStorage storage store, TssKey[] memory keys) internal {
         // We don't perform any arithmetic operation, except iterate a loop
         unchecked {
             // Register or activate tss key (revoked keys keep the previous nonce)
