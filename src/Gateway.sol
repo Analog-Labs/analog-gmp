@@ -181,7 +181,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return _networkInfo[id];
     }
 
-    function listShards() external view returns (ShardStore.KeyInfo[] memory) {
+    function listShards() external view returns (TssKey[] memory) {
         return ShardStore.getMainStorage().listShards();
     }
 

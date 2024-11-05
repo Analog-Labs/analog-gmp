@@ -288,12 +288,13 @@ library ShardStore {
      * this function has an unbounded cost, and using it as part of a state-changing function may render the function
      * uncallable if the set grows to a point where copying to memory consumes too much gas to fit in a block.
      */
-    function listShards(MainStorage storage store) internal view returns (KeyInfo[] memory) {
+    function listShards(MainStorage storage store) internal view returns (TssKey[] memory) {
         bytes32[] memory idx = store.shards.keys;
-        KeyInfo[] memory keyInfos = new KeyInfo[](idx.length);
+        TssKey[] memory keys = new TssKey[](idx.length);
         for (uint256 i = 0; i < idx.length; i++) {
-            keyInfos[i] = _getKeyInfo(store.shards.values[idx[i]]);
+            KeyInfo storage keyInfo = _getKeyInfo(store.shards.values[idx[i]]);
+            keys[i] = TssKey(keyInfo.status & SHARD_Y_PARITY, uint256(idx[i]));
         }
-        return keyInfos;
+        return keys;
     }
 }
