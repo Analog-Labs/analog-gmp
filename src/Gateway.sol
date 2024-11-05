@@ -86,18 +86,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     mapping(uint16 => NetworkInfo) private _networkInfo;
 
     /**
-     * @dev Shard info stored in the Gateway Contract
-     * OBS: the order of the attributes matters! ethereum storage is 256bit aligned, try to keep
-     * the shard info below 256 bit, so it can be stored in one single storage slot.
-     * reference: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html
-     */
-    struct KeyInfo {
-        uint216 _gap; // gap, so we can use later for store more information about a shard
-        uint8 status; // 0 = unregisted, 1 = active, 2 = revoked
-        uint32 nonce; // shard nonce
-    }
-
-    /**
      * @dev GMP info stored in the Gateway Contract
      * OBS: the order of the attributes matters! ethereum storage is 256bit aligned, try to keep
      * the attributes 256 bit aligned, ex: nonce, block and status can be read in one storage access.
