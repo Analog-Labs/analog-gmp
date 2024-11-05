@@ -12,6 +12,8 @@ import {StoragePtr, Pointer} from "./Pointer.sol";
 library EnumerableSet {
     using Pointer for StoragePtr;
 
+    error ValueAlreadyPresent(bytes32);
+
     /**
      * @dev Shard info stored in the Gateway Contract
      * OBS: the order of the attributes matters! ethereum storage is 256bit aligned, try to keep
@@ -33,7 +35,6 @@ library EnumerableSet {
     function indexOf(Map storage map, StoragePtr ptr) internal view returns (int256 index) {
         assembly ("memory-safe") {
             index := not(sload(sub(ptr, 1)))
-            // index := or(index, sub(lt(index, len), 1))
             mstore(0x00, map.slot)
             mstore(0x00, sload(add(keccak256(0x00, 0x20), index)))
             mstore(0x20, add(map.slot, 1))
@@ -51,9 +52,13 @@ library EnumerableSet {
     /**
      * @dev Returns true if the key is in the set. O(1).
      */
-    function exists(Map storage map, bytes32 key) internal view returns (bool r) {
-        StoragePtr ptr = get(map, key);
-        return ptr.isNull() == false;
+    function has(Map storage map, bytes32 key) internal view returns (bool r) {
+        assembly ("memory-safe") {
+            mstore(0x00, key)
+            mstore(0x20, add(map.slot, 1))
+            r := keccak256(0x00, 0x40)
+            r := gt(sload(sub(r, 1)), 0)
+        }
     }
 
     /**
@@ -63,13 +68,26 @@ library EnumerableSet {
      * already present.
      */
     function add(Map storage map, bytes32 key) internal returns (StoragePtr r) {
+        bool success;
+        (success, r) = tryAdd(map, key);
+        if (!success) {
+            revert ValueAlreadyPresent(key);
+        }
+    }
+
+    /**
+     * @dev Add a value to a set. O(1).
+     *
+     * Returns true if the value was added to the set, that is if it was not
+     * already present.
+     */
+    function tryAdd(Map storage map, bytes32 key) internal returns (bool success, StoragePtr r) {
         assembly ("memory-safe") {
             mstore(0x00, key)
             mstore(0x20, add(map.slot, 1))
             r := keccak256(0x00, 0x40)
-
-            r := mul(r, iszero(sload(sub(r, 1))))
-            if r {
+            success := iszero(sload(sub(r, 1)))
+            if success {
                 // Load the array size
                 let size := sload(map.slot)
 
@@ -165,7 +183,6 @@ library EnumerableSet {
      * @dev Returns the value associated with `key`. O(1).
      *
      * Requirements:
-     *
      * - `key` must be in the map.
      */
     function get(Map storage map, bytes32 key) internal view returns (StoragePtr r) {
@@ -177,6 +194,22 @@ library EnumerableSet {
         }
     }
 
+    /**
+     * @dev Tries to returns the value associated with `key`. O(1).
+     * Does not revert if `key` is not in the map.
+     */
+    function tryGet(Map storage map, bytes32 key) internal view returns (bool exists, StoragePtr r) {
+        assembly ("memory-safe") {
+            mstore(0x00, key)
+            mstore(0x20, add(map.slot, 1))
+            r := keccak256(0x00, 0x40)
+            exists := gt(sload(sub(r, 1)), 0)
+        }
+    }
+
+    /**
+     * @dev Returns the value associated with `key`. O(1).
+     */
     function getUnchecked(Map storage map, bytes32 key) internal pure returns (StoragePtr r) {
         assembly ("memory-safe") {
             mstore(0x00, key)

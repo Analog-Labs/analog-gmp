@@ -96,26 +96,19 @@ library ShardStore {
     /**
      * @dev Returns true if the value is in the set. O(1).
      */
-    function exists(MainStorage storage store, ShardID id) internal view returns (bool) {
-        return store.shards.exists(ShardID.unwrap(id));
+    function has(MainStorage storage store, ShardID id) internal view returns (bool) {
+        return store.shards.has(ShardID.unwrap(id));
     }
 
     /**
-     * @dev Add a value to a set. O(1).
+     * @dev Get or create a value. O(1).
      *
      * Returns true if the value was added to the set, that is if it was not
      * already present.
      */
-    function set(MainStorage storage store, ShardID xCoord, KeyInfo memory shard) internal returns (bool) {
-        StoragePtr ptr = store.shards.add(ShardID.unwrap(xCoord));
-        if (ptr.isNull()) {
-            return false;
-        }
-        KeyInfo storage keyInfo = _getKeyInfo(ptr);
-        keyInfo._gap = shard._gap;
-        keyInfo.status = shard.status;
-        keyInfo.nonce = shard.nonce;
-        return true;
+    function getOrAdd(MainStorage storage store, ShardID xCoord) private returns (bool, KeyInfo storage) {
+        (bool success, StoragePtr ptr) = store.shards.tryAdd(ShardID.unwrap(xCoord));
+        return (success, _getKeyInfo(ptr));
     }
 
     /**
@@ -198,10 +191,15 @@ library ShardStore {
      * @dev Returns the value associated with `key`. O(1).
      */
     function tryGet(MainStorage storage store, ShardID key) internal view returns (bool, KeyInfo storage) {
-        StoragePtr ptr = store.shards.get(ShardID.unwrap(key));
-        return (ptr.isNull(), _getKeyInfo(ptr));
+        (bool exists, StoragePtr ptr) = store.shards.tryGet(ShardID.unwrap(key));
+        return (exists, _getKeyInfo(ptr));
     }
 
+    /**
+     * @dev Register TSS keys.
+     * Requirements:
+     * - The `keys` should not be already registered.
+     */
     function registerTssKeys(ShardStore.MainStorage storage store, TssKey[] memory keys) internal {
         // We don't perform any arithmetic operation, except iterate a loop
         unchecked {
@@ -212,12 +210,12 @@ library ShardStore {
                 require(yParity == (yParity & 1), "y parity bit must be 0 or 1, cannot register shard");
 
                 // Read shard from storage
-                bytes32 id = bytes32(newKey.xCoord);
-                KeyInfo storage shard = _getKeyInfo(store.shards.getUnchecked(id));
+                ShardID id = ShardID.wrap(bytes32(newKey.xCoord));
+                (bool success, KeyInfo storage shard) = getOrAdd(store, id);
 
                 // Check if the shard is already registered
-                if (store.shards.add(id).isNull()) {
-                    revert ShardAlreadyRegistered(ShardID.wrap(id));
+                if (!success) {
+                    revert ShardAlreadyRegistered(id);
                 }
 
                 uint32 nonce = shard.nonce;
@@ -243,7 +241,11 @@ library ShardStore {
         }
     }
 
-    // Revoke TSS keys
+    /**
+     * @dev Register TSS keys.
+     * Requirements:
+     * - The `keys` must be registered.
+     */
     function revokeKeys(ShardStore.MainStorage storage store, TssKey[] memory keys) internal {
         // We don't perform any arithmetic operation, except iterate a loop
         unchecked {
@@ -271,24 +273,27 @@ library ShardStore {
 
                 // Disable SHARD_ACTIVE bitflag
                 shard.status = shard.status & (~SHARD_ACTIVE); // Disable active flag
+
+                // Remove from the set
+                store.shards.remove(ShardID.unwrap(id));
             }
         }
     }
 
-    //     /**
-    //      * @dev Return the entire set in an array
-    //      *
-    //      * WARNING: This operation will copy the entire storage to memory, which can be quite expensive. This is designed
-    //      * to mostly be used by view accessors that are queried without any gas fees. Developers should keep in mind that
-    //      * this function has an unbounded cost, and using it as part of a state-changing function may render the function
-    //      * uncallable if the set grows to a point where copying to memory consumes too much gas to fit in a block.
-    //      */
-    //     function _values(MainStorage storage store) private view returns (KeyInfo[] memory) {
-    //         StoragePtr[] memory keys = store.shards;
-    //         KeyInfo[] memory values = new KeyInfo[](keys.length);
-    //         for (uint256 i = 0; i < keys.length; i++) {
-    //             values[i] = _getKeyInfo(store.shards[keys[i]]);
-    //         }
-    //         return values;
-    //     }
+    /**
+     * @dev Return all shards registered currently registered.
+     *
+     * WARNING: This operation will copy the entire storage to memory, which can be quite expensive. This is designed
+     * to mostly be used by view accessors that are queried without any gas fees. Developers should keep in mind that
+     * this function has an unbounded cost, and using it as part of a state-changing function may render the function
+     * uncallable if the set grows to a point where copying to memory consumes too much gas to fit in a block.
+     */
+    function shards(MainStorage storage store) internal view returns (KeyInfo[] memory) {
+        bytes32[] memory idx = store.shards.keys;
+        KeyInfo[] memory keyInfos = new KeyInfo[](idx.length);
+        for (uint256 i = 0; i < idx.length; i++) {
+            keyInfos[i] = _getKeyInfo(store.shards.values[idx[i]]);
+        }
+        return keyInfos;
+    }
 }
