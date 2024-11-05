@@ -246,7 +246,7 @@ library ShardStore {
      * Requirements:
      * - The `keys` must be registered.
      */
-    function revokeKeys(ShardStore.MainStorage storage store, TssKey[] memory keys) internal {
+    function revokeKeys(MainStorage storage store, TssKey[] memory keys) internal {
         // We don't perform any arithmetic operation, except iterate a loop
         unchecked {
             // Revoke tss keys
