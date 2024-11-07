@@ -11,7 +11,8 @@ import {
     GmpStatus,
     UpdateKeysMessage,
     UpdateNetworkInfo,
-    GmpSender
+    GmpSender,
+    TssKey
 } from "../Primitives.sol";
 
 /**
@@ -37,6 +38,11 @@ interface IExecutor {
      * @param registered shard's keys registered
      */
     event KeySetChanged(bytes32 indexed id, TssKey[] revoked, TssKey[] registered);
+
+    /**
+     * @dev List all shards currently registered in the gateway.
+     */
+    function listShards() external returns (TssKey[] memory);
 
     /**
      * Execute GMP message

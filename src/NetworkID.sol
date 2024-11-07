@@ -24,36 +24,63 @@ library NetworkIDHelpers {
         return NetworkID.unwrap(networkId);
     }
 
-    function chainId(NetworkID networkId) internal pure returns (uint64) {
-        uint256 id = NetworkID.unwrap(networkId);
-        uint256 chainid = type(uint256).max;
-
-        // Ethereum Mainnet
-        chainid = BranchlessMath.ternary(id == asUint(MAINNET), 0, chainid);
-        // Astar
-        chainid = BranchlessMath.ternary(id == asUint(ASTAR), 592, chainid);
-        // Polygon PoS
-        chainid = BranchlessMath.ternary(id == asUint(POLYGON_POS), 137, chainid);
-        // Ethereum local testnet
-        chainid = BranchlessMath.ternary(id == asUint(ETHEREUM_LOCAL_DEV), 1337, chainid);
-        // Goerli
-        chainid = BranchlessMath.ternary(id == asUint(GOERLI), 5, chainid);
-        // Sepolia
-        chainid = BranchlessMath.ternary(id == asUint(SEPOLIA), 11155111, chainid);
-        // Astar local testnet
-        chainid = BranchlessMath.ternary(id == asUint(ASTAR_LOCAL_DEV), 592, chainid);
-        // Shibuya
-        chainid = BranchlessMath.ternary(id == asUint(SHIBUYA), 81, chainid);
-        // Polygon Amoy
-        chainid = BranchlessMath.ternary(id == asUint(POLYGON_AMOY), 80002, chainid);
-        // Binance Smart Chain
-        chainid = BranchlessMath.ternary(id == asUint(BINANCE_SMART_CHAIN_TESTNET), 97, chainid);
-        // Arbitrum Sepolia
-        chainid = BranchlessMath.ternary(id == asUint(ARBITRUM_SEPOLIA), 421614, chainid);
-
-        require(chainid != type(uint256).max, "the provided network id doesn't exists");
-
-        return uint64(chainid);
+    /**
+     * @dev Get the EIP-150 chain id from the network id.
+     */
+    function chainId(NetworkID networkId) internal pure returns (uint64 chainID) {
+        assembly {
+            switch networkId
+            case 0 {
+                // Ethereum Mainnet
+                chainID := 0
+            }
+            case 1 {
+                // Astar
+                chainID := 592
+            }
+            case 2 {
+                // Polygon PoS
+                chainID := 137
+            }
+            case 3 {
+                // Ethereum local testnet
+                chainID := 1337
+            }
+            case 4 {
+                // Goerli
+                chainID := 5
+            }
+            case 5 {
+                // Sepolia
+                chainID := 11155111
+            }
+            case 6 {
+                // Astar local testnet
+                chainID := 592
+            }
+            case 7 {
+                // Shibuya
+                chainID := 81
+            }
+            case 8 {
+                // Polygon Amoy
+                chainID := 80002
+            }
+            case 9 {
+                // Binance Smart Chain
+                chainID := 97
+            }
+            case 10 {
+                // Arbitrum Sepolia
+                chainID := 421614
+            }
+            default {
+                // Unknown network id
+                chainID := 0xffffffffffffffff
+            }
+        }
+        require(chainID > 2 ** 24, "the provided network id doesn't exists");
+        return uint64(chainID);
     }
 
     /**
