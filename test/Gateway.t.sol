@@ -394,7 +394,7 @@ contract GatewayBase is Test {
             ctx.value = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gmp.gasLimit);
         }
 
-        uint256 snapshot = vm.snapshot();
+        uint256 snapshot = vm.snapshotState();
         // Must work if the funds and gas limit are sufficient
         bytes32 id = gmp.eip712TypedHash(_dstDomainSeparator);
         vm.expectEmit(true, true, true, true);
@@ -411,7 +411,7 @@ contract GatewayBase is Test {
         );
 
         // Must revert if fund are insufficient
-        vm.revertTo(snapshot);
+        vm.revertToState(snapshot);
         ctx.value -= 1;
         vm.expectRevert("insufficient tx value");
         ctx.submitMessage(gmp);
