@@ -17,15 +17,13 @@ library RouteStore {
     using Pointer for uint256;
     using EnumerableSet for EnumerableSet.Map;
     using NetworkIDHelpers for NetworkID;
+    using UFloatMath for UFloat9x56;
 
     /**
      * @dev Namespace of the routes storage `analog.one.gateway.routes`.
      * keccak256(abi.encode(uint256(keccak256("analog.one.gateway.routes")) - 1)) & ~bytes32(uint256(0xff));
      */
     bytes32 internal constant _EIP7201_NAMESPACE = 0xb184f2aad520cf7f1f1270909517c75ae33cdf2bd7d32b997a96577f11a48800;
-
-    uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
-    uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
 
     /**
      * @dev Network info stored in the Gateway Contract
@@ -39,6 +37,23 @@ library RouteStore {
         uint64 gasLimit;
         UFloat9x56 relativeGasPrice;
         uint128 baseFee;
+    }
+
+    /**
+     * @dev A Route represents a communication channel between two networks.
+     * @param networkId The id of the provided network.
+     * @param gasLimit The maximum amount of gas we allow on this particular network.
+     * @param gateway Destination chain gateway address.
+     * @param relativeGasPriceNumerator Gas price numerator in terms of the source chain token.
+     * @param relativeGasPriceDenominator Gas price denominator in terms of the source chain token.
+     */
+    struct Route {
+        NetworkID networkId;
+        uint64 gasLimit;
+        uint128 baseFee;
+        bytes32 gateway;
+        uint256 relativeGasPriceNumerator;
+        uint256 relativeGasPriceDenominator;
     }
 
     /**
@@ -81,23 +96,13 @@ library RouteStore {
         }
     }
 
-    function asPtr(NetworkInfo storage keyInfo) internal pure returns (StoragePtr ptr) {
-        assembly {
-            ptr := keyInfo.slot
-        }
-    }
-
-    function _ptrToRoute(StoragePtr ptr) private pure returns (NetworkInfo storage route) {
+    /**
+     * @dev Converts a `StoragePtr` into an `NetworkInfo`.
+     */
+    function pointerToRoute(StoragePtr ptr) private pure returns (NetworkInfo storage route) {
         assembly {
             route.slot := ptr
         }
-    }
-
-    /**
-     * @dev Returns true if the value is in the set. O(1).
-     */
-    function contains(MainStorage storage store, NetworkInfo storage keyInfo) internal view returns (bool) {
-        return store.routes.contains(asPtr(keyInfo));
     }
 
     /**
@@ -115,7 +120,7 @@ library RouteStore {
      */
     function getOrAdd(MainStorage storage store, NetworkID id) private returns (bool, NetworkInfo storage) {
         (bool success, StoragePtr ptr) = store.routes.tryAdd(bytes32(uint256(id.asUint())));
-        return (success, _ptrToRoute(ptr));
+        return (success, pointerToRoute(ptr));
     }
 
     /**
@@ -154,7 +159,7 @@ library RouteStore {
         if (ptr.isNull()) {
             revert IndexOutOfBounds(index);
         }
-        return _ptrToRoute(ptr);
+        return pointerToRoute(ptr);
     }
 
     /**
@@ -168,7 +173,7 @@ library RouteStore {
         if (ptr.isNull()) {
             revert ShardNotExists(id);
         }
-        return _ptrToRoute(ptr);
+        return pointerToRoute(ptr);
     }
 
     /**
@@ -176,7 +181,7 @@ library RouteStore {
      */
     function tryGet(MainStorage storage store, NetworkID id) internal view returns (bool, NetworkInfo storage) {
         (bool exists, StoragePtr ptr) = store.routes.tryGet(bytes32(uint256(id.asUint())));
-        return (exists, _ptrToRoute(ptr));
+        return (exists, pointerToRoute(ptr));
     }
 
     function createOrUpdateNetworkInfo(MainStorage storage store, bytes32 messageHash, UpdateNetworkInfo calldata info)
@@ -250,11 +255,21 @@ library RouteStore {
      * this function has an unbounded cost, and using it as part of a state-changing function may render the function
      * uncallable if the set grows to a point where copying to memory consumes too much gas to fit in a block.
      */
-    function listRoutes(MainStorage storage store) internal view returns (NetworkInfo[] memory) {
+    function listRoutes(MainStorage storage store) internal view returns (Route[] memory) {
         bytes32[] memory idx = store.routes.keys;
-        NetworkInfo[] memory routes = new NetworkInfo[](idx.length);
+        Route[] memory routes = new Route[](idx.length);
         for (uint256 i = 0; i < idx.length; i++) {
-            routes[i] = _ptrToRoute(store.routes.values[idx[i]]);
+            (bool success, NetworkInfo storage route) = tryGet(store, NetworkID.wrap(uint16(uint256(idx[i]))));
+            require(success, "route not found");
+            (uint256 numerator, uint256 denominator) = route.relativeGasPrice.toRational();
+            routes[i] = Route({
+                networkId: NetworkID.wrap(uint16(uint256(idx[i]))),
+                gasLimit: route.gasLimit,
+                baseFee: route.baseFee,
+                gateway: route.domainSeparator,
+                relativeGasPriceNumerator: numerator,
+                relativeGasPriceDenominator: denominator
+            });
         }
         return routes;
     }

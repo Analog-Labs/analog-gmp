@@ -104,6 +104,20 @@ enum GmpStatus {
     PENDING
 }
 
+struct GmpCallback {
+    GmpSender sender;
+    address dest;
+    uint16 destNetwork;
+    uint256 gasLimit;
+    uint256 salt;
+    bytes data;
+}
+
+/**
+ * @dev EIP-712 utility for `GmpCallback`
+ */
+library GmpCallbackUtils {}
+
 /**
  * @dev EIP-712 utility functions for primitives
  */

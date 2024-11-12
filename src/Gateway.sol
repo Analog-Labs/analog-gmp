@@ -61,9 +61,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     using UFloatMath for UFloat9x56;
     using ShardStore for ShardStore.MainStorage;
 
-    uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
-    uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
-
     /**
      * @dev Maximum size of the GMP payload
      */
@@ -156,7 +153,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return _messages[id];
     }
 
-    function keyInfo(bytes32 id) external view returns (ShardStore.KeyInfo memory) {
+    function keyInfo(bytes32 id) external view returns (ShardStore.ShardInfo memory) {
         ShardStore.MainStorage storage store = ShardStore.getMainStorage();
         return store.get(ShardStore.ShardID.wrap(id));
     }
@@ -178,19 +175,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     function _verifySignature(Signature calldata signature, bytes32 message) private view {
         // Load shard from storage
-        ShardStore.KeyInfo storage signer;
-        {
-            ShardStore.MainStorage storage store = ShardStore.getMainStorage();
-            signer = store.get(signature);
-        }
-
-        // Verify if shard is active
-        uint8 status = signer.status;
-        require((status & SHARD_ACTIVE) > 0, "shard key revoked or not exists");
+        ShardStore.ShardInfo storage signer = ShardStore.getMainStorage().get(signature);
 
         // Load y parity bit, it must be 27 (even), or 28 (odd)
         // ref: https://ethereum.github.io/yellowpaper/paper.pdf
-        uint8 yParity = BranchlessMath.ternaryU8((status & SHARD_Y_PARITY) > 0, 28, 27);
+        uint8 yParity = BranchlessMath.ternaryU8(signer.yParity > 0, 28, 27);
 
         // Verify Signature
         require(
@@ -416,7 +405,44 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // emit GmpCreated(prevHash, source, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
         // return prevHash;
         // ```
-        bytes32 eventSelector = GmpCreated.selector;
+        // bytes32 eventSelector = GmpCreated.selector;
+        _emitGmpCreated(prevHash, source, destinationAddress, destinationNetwork, executionGasLimit, salt, payload);
+        // assembly {
+        //     let ptr := sub(payload, 0x80)
+        //     mstore(ptr, destinationNetwork) // dest network
+        //     mstore(add(ptr, 0x20), executionGasLimit) // gas limit
+        //     mstore(add(ptr, 0x40), salt) // salt
+        //     mstore(add(ptr, 0x60), 0x80) // data offset
+        //     let size := and(add(mload(payload), 31), 0xffffffe0)
+        //     size := add(size, 160)
+        //     log4(ptr, size, eventSelector, prevHash, source, destinationAddress)
+        //     mstore(0, prevHash)
+        //     return(0, 32)
+        // }
+    }
+
+    /**
+     * @dev Selector of `GmpCreated` event.
+     * keccak256("GmpCreated(bytes32,bytes32,address,uint16,uint256,uint256,bytes)");
+     */
+    bytes32 private constant GMP_CREATED_EVENT_SELECTOR =
+        0x0114885f90b5168242aa31b7afb9c2e9f88e90ce329c893d3e6c56021c4c03a5;
+
+    function _emitGmpCreated(
+        bytes32 prevHash,
+        GmpSender source,
+        address destinationAddress,
+        uint16 destinationNetwork,
+        uint256 executionGasLimit,
+        uint256 salt,
+        bytes memory payload
+    ) private {
+        // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
+        // the assembly code below is equivalent to:
+        // ```solidity
+        // emit GmpCreated(prevHash, source, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
+        // return prevHash;
+        // ```
         assembly {
             let ptr := sub(payload, 0x80)
             mstore(ptr, destinationNetwork) // dest network
@@ -425,7 +451,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             mstore(add(ptr, 0x60), 0x80) // data offset
             let size := and(add(mload(payload), 31), 0xffffffe0)
             size := add(size, 160)
-            log4(ptr, size, eventSelector, prevHash, source, destinationAddress)
+            log4(ptr, size, GMP_CREATED_EVENT_SELECTOR, prevHash, source, destinationAddress)
             mstore(0, prevHash)
             return(0, 32)
         }
@@ -589,15 +615,13 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // OBS: remove != revoke (when revoked, you cannot register again)
     function sudoRemoveShards(TssKey[] memory revokedKeys) external payable {
         require(msg.sender == _getAdmin(), "unauthorized");
-        ShardStore.MainStorage storage shards = ShardStore.getMainStorage();
-        shards.revokeKeys(revokedKeys);
+        ShardStore.getMainStorage().revokeKeys(revokedKeys);
         emit KeySetChanged(bytes32(0), revokedKeys, new TssKey[](0));
     }
 
     function sudoAddShards(TssKey[] memory newKeys) external payable {
         require(msg.sender == _getAdmin(), "unauthorized");
-        ShardStore.MainStorage storage shards = ShardStore.getMainStorage();
-        shards.registerTssKeys(newKeys);
+        ShardStore.getMainStorage().registerTssKeys(newKeys);
         emit KeySetChanged(bytes32(0), new TssKey[](0), newKeys);
     }
 
