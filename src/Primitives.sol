@@ -261,14 +261,16 @@ library PrimitiveUtils {
 
     /**
      * @dev Converts the `GmpMessage` into a `GmpCallback` struct, which contains all fields from
-     * `GmpMessage`, plus the EIP-712 id and `IGmpReceiver.onGmpReceived` callback encoded.
+     * `GmpMessage`, plus the EIP-712 hash and `IGmpReceiver.onGmpReceived` callback.
      *
      * This method also prevents copying the `message.data` to memory twice, which is expensive if
-     * the data is large, using solidity `abi.encode` does the following:
+     * the data is large.
+     * Example: using solidity high-level `abi.encode` method does the following.
      *   1. Copy the `message.data` to memory to compute the `GmpMessage` EIP-712 hash.
      *   2. Copy again to encode the `IGmpReceiver.onGmpReceived` callback.
-     * Instead we copy it once and use the same memory location compute the EIP-712 hash and create
-     * the `IGmpReceiver.onGmpReceived` callback, unfortunately this requires inline assembly.
+     *
+     * Instead we copy it once and use the same memory location to compute the EIP-712 hash and
+     * create he `IGmpReceiver.onGmpReceived` callback, unfortunately this requires inline assembly.
      *
      * @param message GmpMessage from calldata to be encoded
      * @param domainSeparator EIP-712 domain separator
@@ -282,47 +284,89 @@ library PrimitiveUtils {
         bytes calldata data = message.data;
         /// @solidity memory-safe-assembly
         assembly {
+            // Allocate memory for the callback
             callback := mload(0x40)
 
-            // GmpMessage Type Hash
-            mstore(add(callback, 0x0000), GMP_MESSAGE_TYPE_HASH)
-            mstore(add(callback, 0x0020), calldataload(add(message, 0x00))) // message.source
-            mstore(add(callback, 0x0040), calldataload(add(message, 0x20))) // message.srcNetwork
-            mstore(add(callback, 0x0060), calldataload(add(message, 0x40))) // message.dest
-            mstore(add(callback, 0x0080), calldataload(add(message, 0x60))) // message.destNetwork
-            mstore(add(callback, 0x00a0), calldataload(add(message, 0x80))) // message.gasLimit
-            mstore(add(callback, 0x00c0), calldataload(add(message, 0xa0))) // message.salt
+            //////////////////////////////////////////////////////////
+            // First need compute to `GmpMessage` EIP-712 Type Hash //
+            //////////////////////////////////////////////////////////
 
-            // Copy message.data to memory
+            // Store the `GMP_MESSAGE_TYPE_HASH` in the first 32 bytes of the callback.
+            mstore(add(callback, 0x0000), GMP_MESSAGE_TYPE_HASH) // callback.eip712hash
+
+            // Then we copy all `GmpMessage` fields to memory, except the `data` field.
+            mstore(add(callback, 0x0020), calldataload(add(message, 0x00))) // callback.source
+            mstore(add(callback, 0x0040), calldataload(add(message, 0x20))) // callback.srcNetwork
+            mstore(add(callback, 0x0060), calldataload(add(message, 0x40))) // callback.dest
+            mstore(add(callback, 0x0080), calldataload(add(message, 0x60))) // callback.destNetwork
+            mstore(add(callback, 0x00a0), calldataload(add(message, 0x80))) // callback.gasLimit
+            mstore(add(callback, 0x00c0), calldataload(add(message, 0xa0))) // callback.salt
+
+            // mstore(add(callback, 0x00e0), calldataload(add(message, 0xa0))) // callback.data <- pointer
+            //
+            // Following `Solidity memory layout`, here we must store a pointer to the `bytes` field.
+            // ref: https://docs.soliditylang.org/en/latest/internals/layout_in_memory.html
+            //
+            // But we will skip this for now, once we need to store the `keccak256(message.data)` here
+            // for computing the EIP-712 hash.
+
+            //  MEMORY OFFSET    |             RESERVED FIELD               |
+            // 0x00e0..0x0100 <- reserved for the `data` pointer
+            // 0x0100..0x0120 <- reserved for the `callback.length` field.
+            // 0x0120..0x0124 <- reserved for the `onGmpReceived.selector` field (4 bytes).
+            // 0x0124..0x0144 <- reserved for the `onGmpReceived.id` param.
+            // 0x0144..0x0164 <- reserved for the `onGmpReceived.network` param.
+            // 0x0164..0x0184 <- reserved for the `onGmpReceived.source` param.
+            // 0x0184..0x01a4 <- reserved for the `onGmpReceived.data.offset` param (calldata pointer).
+            // 0x01a4..0x01c4 <- reserved for the `onGmpReceived.data.length` param.
+            // 0x01c4..?????? <- reserved for the `onGmpReceived.data` bytes.
+
+            // Store `onGmpReceived.data.length` at `0x01a4..0x01c4`.
             let size := data.length
-            mstore(add(callback, 0x01c4), size) // message.data.length
+            mstore(add(callback, 0x01c4), size)
+
+            // Copy `message.data` to memory at `0x01c4`, as described above.
             calldatacopy(add(callback, 0x01e4), data.offset, size) // message.data
 
-            // Computed GMP Typed Hash
-            let messageHash := keccak256(add(callback, 0x01e4), size) // keccak(message.data)
+            // Compute `keccak256(message.data)`
+            let messageHash := keccak256(add(callback, 0x01e4), size)
+
+            // temporarily store the result at `0x00e0..0x0100`, which is the end of
+            // the `GmpMessage` struct.
             mstore(add(callback, 0x00e0), messageHash)
-            messageHash := keccak256(callback, 0x0100) // GMP eip712 hash
+
+            // Compute `keccak256(abi.encode(GMP_MESSAGE_TYPE_HASH, message.source, ..., keccak256(message.data)))`
+            messageHash := keccak256(callback, 0x0100)
+
+            // Compute the final EIP-712 Signature Hash
             mstore(0, 0x1901)
             mstore(0x20, domainSeparator)
             mstore(0x40, messageHash) // this will be restored at the end of this function
             messageHash := keccak256(0x1e, 0x42) // GMP Typed Hash
 
-            // Retore message.data.offset
-            mstore(add(callback, 0x00e0), add(callback, 0x0120))
+            // Replace the `GMP_MESSAGE_TYPE_HASH` by the `eip712hash`.
             mstore(callback, messageHash)
 
-            // selector + GMP_ID + network + source + data.offset + data.length
-            size := add(and(add(size, 31), 0xffffffe0), 0xa4)
+            // Replace the `eip712hash` by the `callback.data.offset`.
+            mstore(add(callback, 0x00e0), add(callback, 0x0120))
 
-            // onGmpReceived(bytes32 id, uint128 network, bytes32 source, bytes calldata payload)
-            mstore(add(callback, 0x0124), 0x01900937) // selector
-            mstore(add(callback, 0x0120), size) // length
-            mstore(add(callback, 0x0144), messageHash) // id
-            mstore(add(callback, 0x0164), calldataload(add(message, 0x20))) // network
-            mstore(add(callback, 0x0184), calldataload(add(message, 0x00))) // source
-            mstore(add(callback, 0x01a4), 0x80) // payload.offset
+            // Compute the callback size, which is equivalent to compute the following:
+            // ```solidity
+            // abi.encodeCall(IGmpReceiver.onGmpReceived, (eip712hash, network, sender, data)).length;
+            // ```
+            // So essentially is the size of `message.data` 32 byte aligned + 164 bytes for the other fields.
+            size := add(and(add(size, 31), 0xffffffe0), 164)
 
-            // update free memory pointer
+            // Add the missing fields between `0x0100..0x01a4` to the callback.
+            // The fields between `0x01a4..0x01c4` are already set.
+            mstore(add(callback, 0x0124), 0x01900937) // selector (4 bytes)
+            mstore(add(callback, 0x0120), size) // length (32 bytes)
+            mstore(add(callback, 0x0144), messageHash) // eip-712 hash (32 bytes)
+            mstore(add(callback, 0x0164), calldataload(add(message, 0x20))) // network (32 bytes)
+            mstore(add(callback, 0x0184), calldataload(add(message, 0x00))) // source (32 bytes)
+            mstore(add(callback, 0x01a4), 0x80) // payload.offset (32 bytes)
+
+            // Update free memory pointer and align it to 32 bytes
             size := add(and(add(size, 31), 0xffffffe0), 0x0120)
             size := and(add(add(callback, size), 31), 0xffffffe0)
             mstore(0x40, add(size, 0x40))
