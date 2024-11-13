@@ -334,26 +334,25 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     /**
      * @dev Send message from this chain to another chain.
      * @param destinationAddress the target address on the destination chain
-     * @param destinationNetwork the target chain where the contract call will be made
+     * @param routeId the target chain where the contract call will be made
      * @param executionGasLimit the gas limit available for the contract call
      * @param data message data with no specified format
      */
-    function submitMessage(
-        address destinationAddress,
-        uint16 destinationNetwork,
-        uint256 executionGasLimit,
-        bytes calldata data
-    ) external payable returns (bytes32) {
+    function submitMessage(address destinationAddress, uint16 routeId, uint256 executionGasLimit, bytes calldata data)
+        external
+        payable
+        returns (bytes32)
+    {
         // Check if the message data is too large
         require(data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
 
-        // Check if the destination network is supported
-        // NetworkInfo storage info = _networkInfo[destinationNetwork];
-        RouteStore.NetworkInfo storage route = RouteStore.getMainStorage().get(NetworkID.wrap(destinationNetwork));
-        bytes32 domainSeparator = route.domainSeparator;
-        require(domainSeparator != bytes32(0), "unsupported network");
+        // Check if the provided parameters are valid
+        RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(NetworkID.wrap(routeId));
+        require(route.domainSeparator != bytes32(0), "unsupported route");
+        require(route.baseFee > 0 || UFloat9x56.unwrap(route.relativeGasPrice) > 0, "route temporarily disabled");
+        require(executionGasLimit <= route.gasLimit, "message exceeds maximum gas limit");
 
-        // Check if the sender has deposited enougth funds to execute the GMP message
+        // Check if the sender has deposited sufficient funds to execute the GMP message
         {
             uint256 nonZeros = GasUtils.countNonZerosCalldata(data);
             uint256 zeros = data.length - nonZeros;
@@ -376,14 +375,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         bytes memory payload;
         {
             GmpMessage memory message =
-                GmpMessage(source, NETWORK_ID, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
-            prevHash = message.eip712TypedHash(domainSeparator);
+                GmpMessage(source, NETWORK_ID, destinationAddress, routeId, executionGasLimit, salt, data);
+            prevHash = message.eip712TypedHash(route.domainSeparator);
             prevMessageHash = prevHash;
             payload = message.data;
         }
 
         // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
-        _emitGmpCreated(prevHash, source, destinationAddress, destinationNetwork, executionGasLimit, salt, payload);
+        _emitGmpCreated(prevHash, source, destinationAddress, routeId, executionGasLimit, salt, payload);
     }
 
     /**

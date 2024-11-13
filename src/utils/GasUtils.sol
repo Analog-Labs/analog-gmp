@@ -23,7 +23,7 @@ library GasUtils {
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 25473;
+    uint256 internal constant SUBMIT_BASE_COST = 25710;
 
     using BranchlessMath for uint256;
 
@@ -86,7 +86,7 @@ library GasUtils {
             gasCost += words << 8;
 
             // Memory expansion cost
-            words += 13;
+            words += 13 + 4;
             gasCost += ((words * words) >> 9) + (words * 3);
 
             return gasCost;
