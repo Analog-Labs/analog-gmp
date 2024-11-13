@@ -25,7 +25,8 @@ import {
     GmpStatus,
     GmpSender,
     GmpCallback,
-    PrimitiveUtils
+    PrimitiveUtils,
+    MAX_PAYLOAD_SIZE
 } from "./Primitives.sol";
 import {NetworkID, NetworkIDHelpers} from "./NetworkID.sol";
 
@@ -67,12 +68,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     using UFloatMath for UFloat9x56;
     using ShardStore for ShardStore.MainStorage;
     using RouteStore for RouteStore.MainStorage;
+    using RouteStore for RouteStore.NetworkInfo;
     using NetworkIDHelpers for NetworkID;
-
-    /**
-     * @dev Maximum size of the GMP payload
-     */
-    uint256 internal constant MAX_PAYLOAD_SIZE = 0x6000;
 
     /**
      * @dev Non-zero value used to initialize the `prevMessageHash` storage
@@ -200,13 +197,12 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     // Register/Revoke TSS keys using shard TSS signature
     function updateKeys(Signature calldata signature, UpdateKeysMessage calldata message) external {
+        // Check if the message was already executed to prevent replay attacks
         bytes32 messageHash = message.eip712TypedHash(DOMAIN_SEPARATOR);
-
-        // Verify signature and if the message was already executed
         require(_executedMessages[messageHash] == bytes32(0), "message already executed");
-        _verifySignature(signature, messageHash);
 
-        // Store the message hash to prevent replay attacks
+        // Verify the signature and store the message hash
+        _verifySignature(signature, messageHash);
         _executedMessages[messageHash] = bytes32(signature.xCoord);
 
         // Register/Revoke shards pubkeys
@@ -326,6 +322,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
             /// @solidity memory-safe-assembly
             assembly {
+                // Refund the gas used
                 pop(call(gas(), caller(), refund, 0, 0, 0, 0))
             }
         }
@@ -347,20 +344,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         require(data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
 
         // Check if the provided parameters are valid
+        // See `RouteStorage.estimateWeiCost` at `storage/Routes.sol` for more details.
         RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(NetworkID.wrap(routeId));
-        require(route.domainSeparator != bytes32(0), "unsupported route");
-        require(route.baseFee > 0 || UFloat9x56.unwrap(route.relativeGasPrice) > 0, "route temporarily disabled");
-        require(executionGasLimit <= route.gasLimit, "message exceeds maximum gas limit");
-
-        // Check if the sender has deposited sufficient funds to execute the GMP message
-        {
-            uint256 nonZeros = GasUtils.countNonZerosCalldata(data);
-            uint256 zeros = data.length - nonZeros;
-            uint256 msgPrice = GasUtils.estimateWeiCost(
-                route.relativeGasPrice, route.baseFee, uint16(nonZeros), uint16(zeros), executionGasLimit
-            );
-            require(msg.value >= msgPrice, "insufficient tx value");
-        }
+        require(msg.value >= route.estimateWeiCost(data, executionGasLimit), "insufficient tx value");
 
         // We use 20 bytes for represent the address and 1 bit for the contract flag
         GmpSender source = msg.sender.toSender(tx.origin != msg.sender);
@@ -434,18 +420,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         returns (uint256)
     {
         //  NetworkInfo storage network = _networkInfo[networkid];
-        RouteStore.NetworkInfo memory network = RouteStore.getMainStorage().get(NetworkID.wrap(networkid));
-        uint256 baseFee = uint256(network.baseFee);
-        UFloat9x56 relativeGasPrice = network.relativeGasPrice;
-
-        // Verify if the network exists
-        require(baseFee > 0 || UFloat9x56.unwrap(relativeGasPrice) > 0, "unsupported network");
-
-        // if the message data is too large, we use the maximum base fee.
-        baseFee = BranchlessMath.ternary(messageSize > MAX_PAYLOAD_SIZE, 2 ** 256 - 1, baseFee);
+        RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(NetworkID.wrap(networkid));
 
         // Estimate the cost
-        return GasUtils.estimateWeiCost(relativeGasPrice, baseFee, uint16(messageSize), 0, gasLimit);
+        return route.estimateWeiCost(uint16(messageSize), gasLimit);
     }
 
     /**

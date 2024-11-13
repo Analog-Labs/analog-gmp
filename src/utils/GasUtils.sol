@@ -16,14 +16,14 @@ library GasUtils {
     uint256 internal constant EXECUTION_BASE_COST = 46674;
 
     /**
-     * @dev Base amount of memory used by `IExecutor.execute` method.
+     * @dev Initial amount of memory used by `IExecutor.execute` method.
      */
     uint256 internal constant MEMORY_OFFSET = 0x3c0;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 25710;
+    uint256 internal constant SUBMIT_BASE_COST = 25814;
 
     using BranchlessMath for uint256;
 

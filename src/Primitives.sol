@@ -8,6 +8,11 @@ import {UFloatMath, UFloat9x56} from "./utils/Float9x56.sol";
 import {NetworkID} from "./NetworkID.sol";
 
 /**
+ * @dev Maximum size of the GMP payload
+ */
+uint256 constant MAX_PAYLOAD_SIZE = 0x6000;
+
+/**
  * @dev GmpSender is the sender of a GMP message
  */
 type GmpSender is bytes32;

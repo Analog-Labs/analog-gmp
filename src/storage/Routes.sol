@@ -2,12 +2,13 @@
 // Analog's Contracts (last updated v0.1.0) (src/storage/Routes.sol)
 pragma solidity ^0.8.20;
 
-import {UpdateNetworkInfo, Signature, Network, Route} from "../Primitives.sol";
+import {UpdateNetworkInfo, Signature, Network, Route, MAX_PAYLOAD_SIZE} from "../Primitives.sol";
 import {NetworkIDHelpers, NetworkID} from "../NetworkID.sol";
 import {EnumerableSet, Pointer} from "../utils/EnumerableSet.sol";
 import {BranchlessMath} from "../utils/BranchlessMath.sol";
 import {UFloat9x56, UFloatMath} from "../utils/Float9x56.sol";
 import {StoragePtr} from "../utils/Pointer.sol";
+import {GasUtils} from "../utils/GasUtils.sol";
 
 /**
  * @dev EIP-7201 Route's Storage
@@ -242,5 +243,45 @@ library RouteStore {
             });
         }
         return routes;
+    }
+
+    /**
+     * @dev Check a few preconditions before estimate the GMP wei cost.
+     */
+    function _checkPreconditions(NetworkInfo memory route, uint256 messageSize, uint256 gasLimit) private pure {
+        // Verify if the network exists
+        require(route.domainSeparator != bytes32(0), "unsupported route");
+        require(route.baseFee > 0 || UFloat9x56.unwrap(route.relativeGasPrice) > 0, "route is temporarily disabled");
+
+        // Verify if the gas limit and message size are within the limits
+        require(gasLimit <= route.gasLimit, "gas limit exceeded");
+        require(messageSize <= MAX_PAYLOAD_SIZE, "maximum payload size exceeded");
+    }
+
+    /**
+     * @dev Utility function for measure the wei cost of a GMP message.
+     */
+    function estimateWeiCost(NetworkInfo memory route, bytes calldata data, uint256 gasLimit)
+        internal
+        pure
+        returns (uint256)
+    {
+        _checkPreconditions(route, data.length, gasLimit);
+        uint256 nonZeros = GasUtils.countNonZerosCalldata(data);
+        uint256 zeros = data.length - nonZeros;
+        return
+            GasUtils.estimateWeiCost(route.relativeGasPrice, route.baseFee, uint16(nonZeros), uint16(zeros), gasLimit);
+    }
+
+    /**
+     * @dev Utility function for measure the wei cost of a GMP message.
+     */
+    function estimateWeiCost(NetworkInfo memory route, uint256 messageSize, uint256 gasLimit)
+        internal
+        pure
+        returns (uint256)
+    {
+        _checkPreconditions(route, messageSize, gasLimit);
+        return GasUtils.estimateWeiCost(route.relativeGasPrice, route.baseFee, uint16(messageSize), 0, gasLimit);
     }
 }
