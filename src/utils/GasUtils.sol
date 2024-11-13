@@ -13,14 +13,29 @@ library GasUtils {
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = 46667 + 17;
+    uint256 internal constant EXECUTION_BASE_COST = 46685;
+
+    /**
+     * @dev Base amount of memory used by `IExecutor.execute` method.
+     */
+    uint256 internal constant MEMORY_OFFSET = 0x3c0;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 23206;
+    uint256 internal constant SUBMIT_BASE_COST = 23313;
 
     using BranchlessMath for uint256;
+
+    /**
+     * @dev Compute the gas cost of memory expansion.
+     * @param words number of words, where a word is 32 bytes
+     */
+    function memoryExpansionGasCost(uint256 words) internal pure returns (uint256) {
+        unchecked {
+            return (words.saturatingMul(words) >> 9).saturatingAdd(words.saturatingMul(3));
+        }
+    }
 
     /**
      * @dev Compute the amount of gas used by the `GatewayProxy`.
@@ -44,7 +59,7 @@ library GasUtils {
 
             // MEMORY EXPANSION
             uint256 words = BranchlessMath.max(calldataLen, returnLen);
-            gasCost = gasCost.saturatingAdd((words.saturatingMul(words) >> 9).saturatingAdd(words * 3));
+            gasCost = gasCost.saturatingAdd(memoryExpansionGasCost(words));
             return gasCost;
         }
     }
@@ -186,9 +201,10 @@ library GasUtils {
             // Memory expansion cost
             words = 0xa4 + (words << 5); // onGmpReceived encoded call size
             words = (words + 31) & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0;
-            words += 0x02bc; // Memory size
+            words += MEMORY_OFFSET; // Memory size
             words = (words + 31) >> 5; // to words
             gas = gas.saturatingAdd(((words * words) >> 9) + (words * 3));
+
             return gas;
         }
     }
@@ -197,7 +213,7 @@ library GasUtils {
      * @dev Compute the inverse of `N - floor(N / 64)` defined by EIP-150, used to
      * compute the gas needed for a transaction.
      */
-    function _inverseOfAllButOne64th(uint256 x) private pure returns (uint256 inverse) {
+    function inverseOfAllButOne64th(uint256 x) internal pure returns (uint256 inverse) {
         unchecked {
             // inverse = (x * 64) / 63
             inverse = x.saturatingShl(6).saturatingDiv(63);
@@ -213,10 +229,10 @@ library GasUtils {
      */
     function executionGasNeeded(uint256 messageSize, uint256 gasLimit) internal pure returns (uint256 gasNeeded) {
         unchecked {
-            gasNeeded = _inverseOfAllButOne64th(gasLimit);
+            gasNeeded = inverseOfAllButOne64th(gasLimit);
             gasNeeded = gasNeeded.saturatingAdd(_executionGasCost(messageSize, gasLimit));
-            gasNeeded = gasNeeded.saturatingAdd(2114);
-            gasNeeded = _inverseOfAllButOne64th(gasNeeded);
+            gasNeeded = gasNeeded.saturatingAdd(2114 + 2);
+            gasNeeded = inverseOfAllButOne64th(gasNeeded);
             messageSize = (uint256(messageSize).saturatingAdd(31) >> 5) << 5;
             messageSize = messageSize.saturatingAdd(388);
             gasNeeded = gasNeeded.saturatingAdd(proxyOverheadGasCost(messageSize, 64));

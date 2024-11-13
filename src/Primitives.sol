@@ -105,18 +105,20 @@ enum GmpStatus {
 }
 
 struct GmpCallback {
-    GmpSender sender;
+    bytes32 id;
+    GmpSender source;
+    uint16 srcNetwork;
     address dest;
     uint16 destNetwork;
     uint256 gasLimit;
     uint256 salt;
-    bytes data;
+    bytes callback;
 }
 
-/**
- * @dev EIP-712 utility for `GmpCallback`
- */
-library GmpCallbackUtils {}
+// /**
+//  * @dev EIP-712 utility for `GmpCallback`
+//  */
+// library GmpCallbackUtils {}
 
 /**
  * @dev EIP-712 utility functions for primitives
@@ -231,7 +233,7 @@ library PrimitiveUtils {
     function encodeCallback(GmpMessage calldata message, bytes32 domainSeparator)
         internal
         pure
-        returns (bytes32 messageHash, bytes memory r)
+        returns (GmpCallback memory r)
     {
         bytes calldata data = message.data;
         // /// @solidity memory-safe-assembly
@@ -246,46 +248,42 @@ library PrimitiveUtils {
             mstore(add(r, 0x0080), calldataload(add(message, 0x60))) // message.destNetwork
             mstore(add(r, 0x00a0), calldataload(add(message, 0x80))) // message.gasLimit
             mstore(add(r, 0x00c0), calldataload(add(message, 0xa0))) // message.salt
-            // mstore(add(r, 0x00e0), add(r, 0x01e0)) // message.data
-
-            // --- test
 
             // Copy message.data to memory
-            let size := data.length
-            mstore(add(r, 0x01c0), size) // message.data.length
-            calldatacopy(add(r, 0x01e0), data.offset, size) // message.data
+            {
+                let size := data.length
+                mstore(add(r, 0x01c4), size) // message.data.length
+                calldatacopy(add(r, 0x01e4), data.offset, size) // message.data
 
-            // Computed GMP Typed Hash
-            messageHash := keccak256(add(r, 0x01e0), size) // keccak(message.data)
-            mstore(add(r, 0x00e0), messageHash)
-            messageHash := keccak256(r, 0x0100) // GMP eip712 hash
-            mstore(0, 0x1901)
-            mstore(0x20, domainSeparator)
-            mstore(0x40, messageHash) // this will be restored at the end of this function
-            messageHash := keccak256(0x1e, 0x42) // GMP Typed Hash
+                // Computed GMP Typed Hash
+                let messageHash := keccak256(add(r, 0x01e4), size) // keccak(message.data)
+                mstore(add(r, 0x00e0), messageHash)
+                messageHash := keccak256(r, 0x0100) // GMP eip712 hash
+                mstore(0, 0x1901)
+                mstore(0x20, domainSeparator)
+                mstore(0x40, messageHash) // this will be restored at the end of this function
+                messageHash := keccak256(0x1e, 0x42) // GMP Typed Hash
 
-            // Retore message.data.offset
-            mstore(add(r, 0x00e0), add(r, 0x01e0))
+                // Retore message.data.offset
+                mstore(add(r, 0x00e0), add(r, 0x0120))
+                mstore(r, messageHash)
 
-            // selector + GMP_ID + network + source + data.offset + data.length
-            size := add(and(add(size, 31), 0xffffffe0), 0xa4)
+                // selector + GMP_ID + network + source + data.offset + data.length
+                size := add(and(add(size, 31), 0xffffffe0), 0xa4)
 
-            // onGmpReceived(bytes32 id, uint128 network, bytes32 source, bytes calldata payload)
-            mstore(add(r, 0x0120), 0x01900937) // selector
-            mstore(add(r, 0x011c), size) // length
-            mstore(add(r, 0x0140), messageHash) // id
-            mstore(add(r, 0x0160), calldataload(add(message, 0x20))) // network
-            mstore(add(r, 0x0180), calldataload(add(message, 0x00))) // source
-            mstore(add(r, 0x01a0), 0x80) // message.data.offset
-            // mstore(add(r, 0x01c0), data.length) // message.data.length
-            // calldatacopy(add(r, 0x01e0), data.offset, size) // message.data
+                // onGmpReceived(bytes32 id, uint128 network, bytes32 source, bytes calldata payload)
+                mstore(add(r, 0x0124), 0x01900937) // selector
+                mstore(add(r, 0x0120), size) // length
+                mstore(add(r, 0x0144), messageHash) // id
+                mstore(add(r, 0x0164), calldataload(add(message, 0x20))) // network
+                mstore(add(r, 0x0184), calldataload(add(message, 0x00))) // source
+                mstore(add(r, 0x01a4), 0x80) // payload.offset
 
-            // update free memory pointer
-            size := add(and(add(size, 31), 0xffffffe0), 0x011c)
-            size := and(add(add(r, size), 31), 0xffffffe0)
-            mstore(0x40, add(size, 0x40))
-
-            r := add(r, 0x011c)
+                // update free memory pointer
+                size := add(and(add(size, 31), 0xffffffe0), 0x0120)
+                size := and(add(add(r, size), 31), 0xffffffe0)
+                mstore(0x40, add(size, 0x40))
+            }
         }
     }
 

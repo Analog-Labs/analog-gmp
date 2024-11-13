@@ -22,6 +22,7 @@ import {
     Network,
     GmpStatus,
     GmpSender,
+    GmpCallback,
     PrimitiveUtils
 } from "./Primitives.sol";
 
@@ -239,12 +240,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     // Execute GMP message
-    function _execute(bytes32 payloadHash, GmpMessage calldata message, bytes memory data)
-        private
-        returns (GmpStatus status, bytes32 result)
-    {
+    function _execute(GmpCallback memory message) private returns (GmpStatus status, bytes32 result) {
         // Verify if this GMP message was already executed
-        GmpInfo storage gmp = _messages[payloadHash];
+        GmpInfo storage gmp = _messages[message.id];
         require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
 
         // Update status to `pending` to prevent reentrancy attacks.
@@ -268,13 +266,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         bool success;
         address dest = message.dest;
 
+        bytes memory callback = message.callback;
         /// @solidity memory-safe-assembly
         assembly {
             // Using low-level assembly because the GMP is considered executed
             // regardless if the call reverts or not.
-            let ptr := add(data, 32)
-            let size := mload(data)
-            mstore(data, 0)
+            let ptr := add(callback, 32)
+            let size := mload(callback)
+            mstore(callback, 0)
 
             // returns 1 if the call succeed, and 0 if it reverted
             success :=
@@ -284,13 +283,13 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                     0, // value in wei to transfer (always zero for GMP)
                     ptr, // input memory pointer
                     size, // input size
-                    data, // output memory pointer
+                    callback, // output memory pointer
                     32 // output size (fixed 32 bytes)
                 )
 
             // Get Result, reuse data to keep a predictable memory expansion
-            result := mload(data)
-            mstore(data, size)
+            result := mload(callback)
+            mstore(callback, size)
         }
 
         // Update GMP status
@@ -300,7 +299,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         gmp.status = status;
 
         // Emit event
-        emit GmpExecuted(payloadHash, message.source, message.dest, status, result);
+        emit GmpExecuted(message.id, message.source, message.dest, status, result);
     }
 
     /**
@@ -315,7 +314,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint256 initialGas = gasleft();
         // Add the solidity selector overhead to the initial gas, this way we guarantee that
         // the `initialGas` represents the actual gas that was available to this contract.
-        initialGas = initialGas.saturatingAdd(453);
+        initialGas = initialGas.saturatingAdd(454);
 
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
@@ -325,16 +324,16 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         require(message.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
 
         // Verify the signature
-        (bytes32 messageHash, bytes memory data) = message.encodeCallback(DOMAIN_SEPARATOR);
-        _verifySignature(signature, messageHash);
+        (GmpCallback memory callback) = message.encodeCallback(DOMAIN_SEPARATOR);
+        _verifySignature(signature, callback.id);
 
         // Execute GMP message
-        (status, result) = _execute(messageHash, message, data);
+        (status, result) = _execute(callback);
 
         // Refund the chronicle gas
         unchecked {
             // Compute GMP gas used
-            uint256 gasUsed = 7214;
+            uint256 gasUsed = 7211;
             gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseCost());
             gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
             gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
