@@ -127,8 +127,19 @@ enum GmpStatus {
     PENDING
 }
 
+/**
+ * @dev GmpMessage with EIP-712 GMP ID and callback function encoded.
+ * @param eip712hash EIP-712 hash of the `GmpMessage`, which is it's unique identifier
+ * @param source Pubkey/Address of who send the GMP message
+ * @param srcNetwork Source chain identifier (for ethereum networks it is the EIP-155 chain id)
+ * @param dest Destination/Recipient contract address
+ * @param destNetwork Destination chain identifier (it's the EIP-155 chain_id for ethereum networks)
+ * @param gasLimit gas limit of the GMP call
+ * @param salt Message salt, useful for sending two messages with same content
+ * @param callback encoded callback of `IGmpRecipient` interface, see `IGateway.sol` for more details.
+ */
 struct GmpCallback {
-    bytes32 id;
+    bytes32 eip712hash;
     GmpSender source;
     uint16 srcNetwork;
     address dest;
@@ -137,11 +148,6 @@ struct GmpCallback {
     uint256 salt;
     bytes callback;
 }
-
-// /**
-//  * @dev EIP-712 utility for `GmpCallback`
-//  */
-// library GmpCallbackUtils {}
 
 /**
  * @dev EIP-712 utility functions for primitives
@@ -253,13 +259,28 @@ library PrimitiveUtils {
         }
     }
 
-    function encodeCallback(GmpMessage calldata message, bytes32 domainSeparator)
+    /**
+     * @dev Converts the `GmpMessage` into a `GmpCallback` struct, which contains all fields from
+     * `GmpMessage`, plus the EIP-712 id and `IGmpReceiver.onGmpReceived` callback encoded.
+     *
+     * This method also prevents copying the `message.data` to memory twice, which is expensive if
+     * the `message.data` is large, using traditional solidity does the following:
+     *   1. Copy the data to memory to compute the `GmpMessage` EIP-712 hash.
+     *   2. Copy again to encode the `IGmpReceiver.onGmpReceived` callback.
+     * Instead we copy it once and use the same memory location compute the EIP-712 hash and create
+     * the `IGmpReceiver.onGmpReceived` callback, unfortunately this requires inline assembly.
+     *
+     * @param message GmpMessage from calldata to be encoded
+     * @param domainSeparator EIP-712 domain separator
+     * @return r `GmpCallback` struct
+     */
+    function intoCallback(GmpMessage calldata message, bytes32 domainSeparator)
         internal
         pure
         returns (GmpCallback memory r)
     {
         bytes calldata data = message.data;
-        // /// @solidity memory-safe-assembly
+        /// @solidity memory-safe-assembly
         assembly {
             r := mload(0x40)
 

@@ -221,7 +221,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Execute GMP message
     function _execute(GmpCallback memory message) private returns (GmpStatus status, bytes32 result) {
         // Verify if this GMP message was already executed
-        GmpInfo storage gmp = _messages[message.id];
+        GmpInfo storage gmp = _messages[message.eip712hash];
         require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
 
         // Update status to `pending` to prevent reentrancy attacks.
@@ -278,7 +278,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         gmp.status = status;
 
         // Emit event
-        emit GmpExecuted(message.id, message.source, message.dest, status, result);
+        emit GmpExecuted(message.eip712hash, message.source, message.dest, status, result);
     }
 
     /**
@@ -302,9 +302,12 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Check if the message data is too large
         require(message.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
 
-        // Verify the signature
-        (GmpCallback memory callback) = message.encodeCallback(DOMAIN_SEPARATOR);
-        _verifySignature(signature, callback.id);
+        // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
+        // see `src/Primitives.sol` for more details.
+        GmpCallback memory callback = message.intoCallback(DOMAIN_SEPARATOR);
+
+        // Verify the TSS Schnorr Signature
+        _verifySignature(signature, callback.eip712hash);
 
         // Execute GMP message
         (status, result) = _execute(callback);
