@@ -137,10 +137,9 @@ contract GatewayBase is Test {
     bytes32 private _srcDomainSeparator;
     bytes32 private _dstDomainSeparator;
 
-    uint256 private constant SUBMIT_GAS_COST = 15034;
+    // Netowrk ids
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
-    uint8 private constant GMP_STATUS_SUCCESS = 1;
 
     constructor() {
         signer = new Signer(secret);

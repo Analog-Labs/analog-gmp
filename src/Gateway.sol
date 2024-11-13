@@ -293,7 +293,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint256 initialGas = gasleft();
         // Add the solidity selector overhead to the initial gas, this way we guarantee that
         // the `initialGas` represents the actual gas that was available to this contract.
-        initialGas = initialGas.saturatingAdd(453);
+        initialGas = initialGas.saturatingAdd(437);
 
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
@@ -312,7 +312,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Refund the chronicle gas
         unchecked {
             // Compute GMP gas used
-            uint256 gasUsed = 7211;
+            uint256 gasUsed = 7223;
             gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseCost());
             gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
             gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
@@ -457,7 +457,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     /*//////////////////////////////////////////////////////////////
-                               ADMIN LOGIC
+                    SHARDS MANAGEMENT METHODS
     //////////////////////////////////////////////////////////////*/
 
     /**
@@ -465,6 +465,22 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     function shards() external view returns (TssKey[] memory) {
         return ShardStore.getMainStorage().listShards();
+    }
+
+    /**
+     * @dev Returns the number of active shards.
+     */
+    function shardCount() external view returns (uint256) {
+        return ShardStore.getMainStorage().length();
+    }
+
+    /**
+     * @dev Returns a shard by index.
+     * - Reverts with `IndexOutOfBounds` if the index is out of bounds.
+     */
+    function shardAt(uint256 index) external view returns (TssKey memory) {
+        (ShardStore.ShardID xCoord, ShardStore.ShardInfo storage shard) = ShardStore.getMainStorage().at(index);
+        return TssKey({xCoord: uint256(ShardStore.ShardID.unwrap(xCoord)), yParity: shard.yParity});
     }
 
     /**
@@ -476,12 +492,32 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     /**
-     * @dev Register a single Shards with provided TSS public key.
+     * @dev Register Shards in batch.
      */
     function setShard(TssKey[] calldata publicKeys) external {
         require(msg.sender == _getAdmin(), "unauthorized");
         ShardStore.getMainStorage().registerTssKeys(publicKeys);
     }
+
+    /**
+     * @dev Revoke a single shard TSS Key.
+     */
+    function revokeShard(TssKey calldata publicKey) external {
+        require(msg.sender == _getAdmin(), "unauthorized");
+        ShardStore.getMainStorage().revoke(publicKey);
+    }
+
+    /**
+     * @dev Revoke Shards in batch.
+     */
+    function revokeShard(TssKey[] calldata publicKeys) external {
+        require(msg.sender == _getAdmin(), "unauthorized");
+        ShardStore.getMainStorage().revokeKeys(publicKeys);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                       LISTING ROUTES AND SHARDS
+    //////////////////////////////////////////////////////////////*/
 
     /**
      * @dev List all routes.

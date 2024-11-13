@@ -139,12 +139,12 @@ library ShardStore {
      *
      * - `index` must be strictly less than {length}.
      */
-    function at(MainStorage storage store, uint256 index) internal view returns (ShardInfo storage) {
-        StoragePtr ptr = store.shards.at(index);
+    function at(MainStorage storage store, uint256 index) internal view returns (ShardID, ShardInfo storage) {
+        (bytes32 xCoord, StoragePtr ptr) = store.shards.at(index);
         if (ptr.isNull()) {
             revert IndexOutOfBounds(index);
         }
-        return ptr.asShardInfo();
+        return (ShardID.wrap(xCoord), ptr.asShardInfo());
     }
 
     /**
@@ -245,23 +245,27 @@ library ShardStore {
      * Requirements:
      * - The `keys` must be registered.
      */
-    function revokeKeys(MainStorage storage store, TssKey[] calldata keys) internal {
-        // We don't perform any arithmetic operation, except iterate a loop
-        unchecked {
-            // Revoke tss keys
-            for (uint256 i = 0; i < keys.length; i++) {
-                TssKey calldata revokedKey = keys[i];
+    function revoke(MainStorage storage store, TssKey calldata publicKey) internal {
+        // Read shard from storage
+        ShardID id = ShardID.wrap(bytes32(publicKey.xCoord));
+        ShardInfo memory shard = get(store, id);
 
-                // Read shard from storage
-                ShardID id = ShardID.wrap(bytes32(revokedKey.xCoord));
-                ShardInfo memory shard = get(store, id);
+        // Check y-parity
+        require(shard.yParity == shard.yParity, "y parity mismatch, cannot revoke key");
 
-                // Check y-parity
-                require(shard.yParity == revokedKey.yParity, "y parity mismatch, cannot revoke key");
+        // Remove from the set
+        store.shards.remove(ShardID.unwrap(id));
+    }
 
-                // Remove from the set
-                store.shards.remove(ShardID.unwrap(id));
-            }
+    /**
+     * @dev Revoke TSS keys im batch.
+     * Requirements:
+     * - The `publicKeys` must be registered.
+     */
+    function revokeKeys(MainStorage storage store, TssKey[] calldata publicKeys) internal {
+        // Revoke tss keys
+        for (uint256 i = 0; i < publicKeys.length; i++) {
+            revoke(store, publicKeys[i]);
         }
     }
 

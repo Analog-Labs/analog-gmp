@@ -135,12 +135,12 @@ library RouteStore {
      *
      * - `index` must be strictly less than {length}.
      */
-    function at(MainStorage storage store, uint256 index) internal view returns (NetworkInfo storage) {
-        StoragePtr ptr = store.routes.at(index);
-        if (ptr.isNull()) {
+    function at(MainStorage storage store, uint256 index) internal view returns (NetworkID, NetworkInfo storage) {
+        (bytes32 key, StoragePtr value) = store.routes.at(index);
+        if (value.isNull()) {
             revert IndexOutOfBounds(index);
         }
-        return pointerToRoute(ptr);
+        return (NetworkID.wrap(uint16(uint256(key))), pointerToRoute(value));
     }
 
     /**
