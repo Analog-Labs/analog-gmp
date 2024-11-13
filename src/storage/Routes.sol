@@ -2,7 +2,7 @@
 // Analog's Contracts (last updated v0.1.0) (src/storage/Routes.sol)
 pragma solidity ^0.8.20;
 
-import {UpdateNetworkInfo, Signature, Network} from "../Primitives.sol";
+import {UpdateNetworkInfo, Signature, Network, Route} from "../Primitives.sol";
 import {NetworkIDHelpers, NetworkID} from "../NetworkID.sol";
 import {EnumerableSet, Pointer} from "../utils/EnumerableSet.sol";
 import {BranchlessMath} from "../utils/BranchlessMath.sol";
@@ -40,33 +40,14 @@ library RouteStore {
     }
 
     /**
-     * @dev A Route represents a communication channel between two networks.
-     * @param networkId The id of the provided network.
-     * @param gasLimit The maximum amount of gas we allow on this particular network.
-     * @param gateway Destination chain gateway address.
-     * @param relativeGasPriceNumerator Gas price numerator in terms of the source chain token.
-     * @param relativeGasPriceDenominator Gas price denominator in terms of the source chain token.
-     */
-    struct Route {
-        NetworkID networkId;
-        uint64 gasLimit;
-        uint128 baseFee;
-        bytes32 gateway;
-        uint256 relativeGasPriceNumerator;
-        uint256 relativeGasPriceDenominator;
-    }
-
-    /**
-     * @dev Network info stored in the Gateway Contract
-     * @param id Message unique id.
+     * @dev Emitted when a route is updated.
      * @param networkId Network identifier.
      * @param domainSeparator Domain EIP-712 - Replay Protection Mechanism.
      * @param relativeGasPrice Gas price of destination chain, in terms of the source chain token.
      * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
      * @param gasLimit The maximum amount of gas we allow on this particular network.
      */
-    event NetworkUpdated(
-        bytes32 indexed id,
+    event RouteUpdated(
         uint16 indexed networkId,
         bytes32 indexed domainSeparator,
         UFloat9x56 relativeGasPrice,
@@ -86,8 +67,7 @@ library RouteStore {
         EnumerableSet.Map routes;
     }
 
-    error ShardAlreadyRegistered(NetworkID id);
-    error ShardNotExists(NetworkID id);
+    error RouteNotExists(NetworkID id);
     error IndexOutOfBounds(uint256 index);
 
     function getMainStorage() internal pure returns (MainStorage storage $) {
@@ -171,7 +151,7 @@ library RouteStore {
     function get(MainStorage storage store, NetworkID id) internal view returns (NetworkInfo storage) {
         StoragePtr ptr = store.routes.get(bytes32(uint256(id.asUint())));
         if (ptr.isNull()) {
-            revert ShardNotExists(id);
+            revert RouteNotExists(id);
         }
         return pointerToRoute(ptr);
     }
@@ -184,63 +164,53 @@ library RouteStore {
         return (exists, pointerToRoute(ptr));
     }
 
-    function createOrUpdateNetworkInfo(MainStorage storage store, bytes32 messageHash, UpdateNetworkInfo calldata info)
-        private
-    {
-        require(info.mortality >= block.number, "message expired");
-
-        // Verify signature and if the message was already executed
-        // require(_executedMessages[messageHash] == bytes32(0), "message already executed");
-
+    function createOrUpdateRoute(MainStorage storage store, Route calldata route) internal {
         // Update network info
-        (bool created, NetworkInfo storage stored) = getOrAdd(store, NetworkID.wrap(info.networkId));
-        require(!created || info.domainSeparator != bytes32(0), "domain separator cannot be zero");
+        (bool created, NetworkInfo storage stored) = getOrAdd(store, route.networkId);
+        require(!created || stored.domainSeparator != bytes32(0), "domain separator cannot be zero");
 
         // Verify and update domain separator if it's not zero
-        if (info.domainSeparator != bytes32(0)) {
-            stored.domainSeparator = info.domainSeparator;
+        if (route.gateway != bytes32(0)) {
+            stored.domainSeparator = route.gateway;
         }
 
         // Update gas limit if it's not zero
-        if (info.gasLimit > 0) {
-            stored.gasLimit = info.gasLimit;
+        if (route.gasLimit > 0) {
+            stored.gasLimit = route.gasLimit;
         }
 
         // Update relative gas price and base fee if any of them are greater than zero
-        if (UFloat9x56.unwrap(info.relativeGasPrice) > 0 || info.baseFee > 0) {
-            stored.relativeGasPrice = info.relativeGasPrice;
-            stored.baseFee = info.baseFee;
+        if (route.relativeGasPriceDenominator > 0) {
+            UFloat9x56 relativeGasPrice =
+                UFloatMath.fromRational(route.relativeGasPriceNumerator, route.relativeGasPriceDenominator);
+            stored.relativeGasPrice = relativeGasPrice;
+            stored.baseFee = route.baseFee;
         }
 
-        // Save the message hash to prevent replay attacks
-        // _executedMessages[messageHash] = executor;
-
-        // Update network info
-        // _networkInfo[info.networkId] = stored;
-
-        emit NetworkUpdated(
-            messageHash,
-            info.networkId,
-            stored.domainSeparator,
-            stored.relativeGasPrice,
-            stored.baseFee,
-            stored.gasLimit
+        emit RouteUpdated(
+            route.networkId.asUint(), stored.domainSeparator, stored.relativeGasPrice, stored.baseFee, stored.gasLimit
         );
     }
 
-    // Initialize networks
+    /**
+     * @dev Storage initializer function, used to set up the initial storage of the contract.
+     * @param store Storage location.
+     * @param networks List of networks to initialize.
+     * @param networkdID The network id of this chain.
+     * @param computeDomainSeparator Function to compute the domain separator.
+     */
     function initialize(
         MainStorage storage store,
         Network[] calldata networks,
         NetworkID networkdID,
-        function(Network calldata) internal pure returns(bytes32) computeDomainSeparator
-    ) private {
+        function(NetworkID, address) internal pure returns (bytes32) computeDomainSeparator
+    ) internal {
         for (uint256 i = 0; i < networks.length; i++) {
             Network calldata network = networks[i];
-            (bool exists, NetworkInfo storage info) = tryGet(store, NetworkID.wrap(network.id));
-            require(!exists && info.domainSeparator == bytes32(0), "network already initialized");
+            (bool created, NetworkInfo storage info) = getOrAdd(store, NetworkID.wrap(network.id));
+            require(created, "network already initialized");
             require(network.id != networkdID.asUint() || network.gateway == address(this), "wrong gateway address");
-            info.domainSeparator = computeDomainSeparator(network);
+            info.domainSeparator = computeDomainSeparator(NetworkID.wrap(network.id), network.gateway);
             info.gasLimit = 15_000_000; // Default to 15M gas
             info.relativeGasPrice = UFloatMath.ONE;
             info.baseFee = 0;

@@ -627,7 +627,7 @@ contract GatewayBase is Test {
             id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
         );
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
-        assertEq(ctx.executionCost, expectedCost - 6800, "unexpected execution gas cost");
+        assertEq(ctx.executionCost, expectedCost - 8800, "unexpected execution gas cost");
     }
 }
 

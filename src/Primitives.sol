@@ -5,6 +5,7 @@ pragma solidity >=0.8.0;
 
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {UFloatMath, UFloat9x56} from "./utils/Float9x56.sol";
+import {NetworkID} from "./NetworkID.sol";
 
 /**
  * @dev GmpSender is the sender of a GMP message
@@ -81,6 +82,23 @@ struct UpdateNetworkInfo {
     UFloat9x56 relativeGasPrice;
     uint128 baseFee;
     uint64 mortality;
+}
+
+/**
+ * @dev A Route represents a communication channel between two networks.
+ * @param networkId The id of the provided network.
+ * @param gasLimit The maximum amount of gas we allow on this particular network.
+ * @param gateway Destination chain gateway address.
+ * @param relativeGasPriceNumerator Gas price numerator in terms of the source chain token.
+ * @param relativeGasPriceDenominator Gas price denominator in terms of the source chain token.
+ */
+struct Route {
+    NetworkID networkId;
+    uint64 gasLimit;
+    uint128 baseFee;
+    bytes32 gateway;
+    uint256 relativeGasPriceNumerator;
+    uint256 relativeGasPriceDenominator;
 }
 
 /**
@@ -250,40 +268,38 @@ library PrimitiveUtils {
             mstore(add(r, 0x00c0), calldataload(add(message, 0xa0))) // message.salt
 
             // Copy message.data to memory
-            {
-                let size := data.length
-                mstore(add(r, 0x01c4), size) // message.data.length
-                calldatacopy(add(r, 0x01e4), data.offset, size) // message.data
+            let size := data.length
+            mstore(add(r, 0x01c4), size) // message.data.length
+            calldatacopy(add(r, 0x01e4), data.offset, size) // message.data
 
-                // Computed GMP Typed Hash
-                let messageHash := keccak256(add(r, 0x01e4), size) // keccak(message.data)
-                mstore(add(r, 0x00e0), messageHash)
-                messageHash := keccak256(r, 0x0100) // GMP eip712 hash
-                mstore(0, 0x1901)
-                mstore(0x20, domainSeparator)
-                mstore(0x40, messageHash) // this will be restored at the end of this function
-                messageHash := keccak256(0x1e, 0x42) // GMP Typed Hash
+            // Computed GMP Typed Hash
+            let messageHash := keccak256(add(r, 0x01e4), size) // keccak(message.data)
+            mstore(add(r, 0x00e0), messageHash)
+            messageHash := keccak256(r, 0x0100) // GMP eip712 hash
+            mstore(0, 0x1901)
+            mstore(0x20, domainSeparator)
+            mstore(0x40, messageHash) // this will be restored at the end of this function
+            messageHash := keccak256(0x1e, 0x42) // GMP Typed Hash
 
-                // Retore message.data.offset
-                mstore(add(r, 0x00e0), add(r, 0x0120))
-                mstore(r, messageHash)
+            // Retore message.data.offset
+            mstore(add(r, 0x00e0), add(r, 0x0120))
+            mstore(r, messageHash)
 
-                // selector + GMP_ID + network + source + data.offset + data.length
-                size := add(and(add(size, 31), 0xffffffe0), 0xa4)
+            // selector + GMP_ID + network + source + data.offset + data.length
+            size := add(and(add(size, 31), 0xffffffe0), 0xa4)
 
-                // onGmpReceived(bytes32 id, uint128 network, bytes32 source, bytes calldata payload)
-                mstore(add(r, 0x0124), 0x01900937) // selector
-                mstore(add(r, 0x0120), size) // length
-                mstore(add(r, 0x0144), messageHash) // id
-                mstore(add(r, 0x0164), calldataload(add(message, 0x20))) // network
-                mstore(add(r, 0x0184), calldataload(add(message, 0x00))) // source
-                mstore(add(r, 0x01a4), 0x80) // payload.offset
+            // onGmpReceived(bytes32 id, uint128 network, bytes32 source, bytes calldata payload)
+            mstore(add(r, 0x0124), 0x01900937) // selector
+            mstore(add(r, 0x0120), size) // length
+            mstore(add(r, 0x0144), messageHash) // id
+            mstore(add(r, 0x0164), calldataload(add(message, 0x20))) // network
+            mstore(add(r, 0x0184), calldataload(add(message, 0x00))) // source
+            mstore(add(r, 0x01a4), 0x80) // payload.offset
 
-                // update free memory pointer
-                size := add(and(add(size, 31), 0xffffffe0), 0x0120)
-                size := and(add(add(r, size), 31), 0xffffffe0)
-                mstore(0x40, add(size, 0x40))
-            }
+            // update free memory pointer
+            size := add(and(add(size, 31), 0xffffffe0), 0x0120)
+            size := and(add(add(r, size), 31), 0xffffffe0)
+            mstore(0x40, add(size, 0x40))
         }
     }
 

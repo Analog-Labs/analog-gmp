@@ -190,45 +190,52 @@ library ShardStore {
     }
 
     /**
-     * @dev Register TSS keys.
+     * @dev Register a single TSS key.
+     * Requirements:
+     * - The `newKey` should not be already registered.
+     */
+    function register(MainStorage storage store, TssKey calldata newKey) internal {
+        // Check y-parity
+        require(newKey.yParity == (newKey.yParity & 1), "y parity bit must be 0 or 1, cannot register shard");
+
+        // Read shard from storage
+        ShardID id = ShardID.wrap(bytes32(newKey.xCoord));
+        (bool created, ShardInfo storage stored) = getOrAdd(store, id);
+
+        // Check if the shard is already registered
+        if (!created) {
+            revert ShardAlreadyRegistered(id);
+        }
+
+        // Get the current status and nonce
+        ShardInfo memory shard = stored;
+
+        require(
+            shard.createdAtBlock == 0 || shard.yParity == newKey.yParity,
+            "the provided y-parity doesn't match the existing y-parity, cannot register shard"
+        );
+
+        // Update nonce
+        shard.nonce |= uint32(BranchlessMath.toUint(shard.nonce == 0));
+
+        // Save new status and nonce in the storage
+        stored.createdAtBlock =
+            BranchlessMath.ternaryU64(shard.createdAtBlock > 0, shard.createdAtBlock, uint64(block.number));
+        stored.nonce = shard.nonce;
+        stored.yParity = newKey.yParity;
+    }
+
+    /**
+     * @dev Register TSS keys in batch.
      * Requirements:
      * - The `keys` should not be already registered.
      */
-    function registerTssKeys(MainStorage storage store, TssKey[] memory keys) internal {
+    function registerTssKeys(MainStorage storage store, TssKey[] calldata keys) internal {
         // We don't perform any arithmetic operation, except iterate a loop
         unchecked {
             // Register or activate tss key (revoked keys keep the previous nonce)
             for (uint256 i = 0; i < keys.length; i++) {
-                TssKey memory newKey = keys[i];
-
-                // Check y-parity
-                require(newKey.yParity == (newKey.yParity & 1), "y parity bit must be 0 or 1, cannot register shard");
-
-                // Read shard from storage
-                ShardID id = ShardID.wrap(bytes32(newKey.xCoord));
-                (bool success, ShardInfo storage stored) = getOrAdd(store, id);
-
-                // Check if the shard is already registered
-                if (!success) {
-                    revert ShardAlreadyRegistered(id);
-                }
-
-                // Get the current status and nonce
-                ShardInfo memory shard = stored;
-
-                require(
-                    shard.createdAtBlock == 0 || shard.yParity == newKey.yParity,
-                    "the provided y-parity doesn't match the existing y-parity, cannot register shard"
-                );
-
-                // Update nonce
-                shard.nonce |= uint32(BranchlessMath.toUint(shard.nonce == 0));
-
-                // Save new status and nonce in the storage
-                stored.createdAtBlock =
-                    BranchlessMath.ternaryU64(shard.createdAtBlock > 0, shard.createdAtBlock, uint64(block.number));
-                stored.nonce = shard.nonce;
-                stored.yParity = newKey.yParity;
+                register(store, keys[i]);
             }
         }
     }
@@ -238,12 +245,12 @@ library ShardStore {
      * Requirements:
      * - The `keys` must be registered.
      */
-    function revokeKeys(MainStorage storage store, TssKey[] memory keys) internal {
+    function revokeKeys(MainStorage storage store, TssKey[] calldata keys) internal {
         // We don't perform any arithmetic operation, except iterate a loop
         unchecked {
             // Revoke tss keys
             for (uint256 i = 0; i < keys.length; i++) {
-                TssKey memory revokedKey = keys[i];
+                TssKey calldata revokedKey = keys[i];
 
                 // Read shard from storage
                 ShardID id = ShardID.wrap(bytes32(revokedKey.xCoord));

@@ -196,8 +196,6 @@ contract GasUtilsBase is Test {
         vm.assume(gasLimit >= 5000);
         vm.assume(messageSize <= (0x6000 - 32));
         messageSize += 32;
-        console.log("messageSize:", messageSize);
-        console.log("   gasLimit:", gasLimit);
         vm.txGasPrice(1);
         address sender = TestUtils.createTestAccount(100 ether);
 
