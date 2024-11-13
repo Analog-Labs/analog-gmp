@@ -13,7 +13,7 @@ library GasUtils {
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = 46667;
+    uint256 internal constant EXECUTION_BASE_COST = 46667 + 17;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
@@ -186,7 +186,7 @@ library GasUtils {
             // Memory expansion cost
             words = 0xa4 + (words << 5); // onGmpReceived encoded call size
             words = (words + 31) & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0;
-            words += 0x0200; // Memory size
+            words += 0x02bc; // Memory size
             words = (words + 31) >> 5; // to words
             gas = gas.saturatingAdd(((words * words) >> 9) + (words * 3));
             return gas;
