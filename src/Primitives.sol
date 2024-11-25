@@ -5,6 +5,12 @@ pragma solidity >=0.8.0;
 
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {UFloatMath, UFloat9x56} from "./utils/Float9x56.sol";
+import {NetworkID} from "./NetworkID.sol";
+
+/**
+ * @dev Maximum size of the GMP payload
+ */
+uint256 constant MAX_PAYLOAD_SIZE = 0x6000;
 
 /**
  * @dev GmpSender is the sender of a GMP message
@@ -84,6 +90,23 @@ struct UpdateNetworkInfo {
 }
 
 /**
+ * @dev A Route represents a communication channel between two networks.
+ * @param networkId The id of the provided network.
+ * @param gasLimit The maximum amount of gas we allow on this particular network.
+ * @param gateway Destination chain gateway address.
+ * @param relativeGasPriceNumerator Gas price numerator in terms of the source chain token.
+ * @param relativeGasPriceDenominator Gas price denominator in terms of the source chain token.
+ */
+struct Route {
+    NetworkID networkId;
+    uint64 gasLimit;
+    uint128 baseFee;
+    bytes32 gateway;
+    uint256 relativeGasPriceNumerator;
+    uint256 relativeGasPriceDenominator;
+}
+
+/**
  * @dev Message payload used to revoke or/and register new shards
  * @param revoke Shard's keys to revoke
  * @param register Shard's keys to register
@@ -102,6 +125,28 @@ enum GmpStatus {
     REVERT,
     INSUFFICIENT_FUNDS,
     PENDING
+}
+
+/**
+ * @dev GmpMessage with EIP-712 GMP ID and callback function encoded.
+ * @param eip712hash EIP-712 hash of the `GmpMessage`, which is it's unique identifier
+ * @param source Pubkey/Address of who send the GMP message
+ * @param srcNetwork Source chain identifier (for ethereum networks it is the EIP-155 chain id)
+ * @param dest Destination/Recipient contract address
+ * @param destNetwork Destination chain identifier (it's the EIP-155 chain_id for ethereum networks)
+ * @param gasLimit gas limit of the GMP call
+ * @param salt Message salt, useful for sending two messages with same content
+ * @param callback encoded callback of `IGmpRecipient` interface, see `IGateway.sol` for more details.
+ */
+struct GmpCallback {
+    bytes32 eip712hash;
+    GmpSender source;
+    uint16 srcNetwork;
+    address dest;
+    uint16 destNetwork;
+    uint256 gasLimit;
+    uint256 salt;
+    bytes callback;
 }
 
 /**
@@ -214,53 +259,73 @@ library PrimitiveUtils {
         }
     }
 
-    function encodeCallback(GmpMessage calldata message, bytes32 domainSeparator)
+    /**
+     * @dev Converts the `GmpMessage` into a `GmpCallback` struct, which contains all fields from
+     * `GmpMessage`, plus the EIP-712 id and `IGmpReceiver.onGmpReceived` callback encoded.
+     *
+     * This method also prevents copying the `message.data` to memory twice, which is expensive if
+     * the data is large, using solidity `abi.encode` does the following:
+     *   1. Copy the `message.data` to memory to compute the `GmpMessage` EIP-712 hash.
+     *   2. Copy again to encode the `IGmpReceiver.onGmpReceived` callback.
+     * Instead we copy it once and use the same memory location compute the EIP-712 hash and create
+     * the `IGmpReceiver.onGmpReceived` callback, unfortunately this requires inline assembly.
+     *
+     * @param message GmpMessage from calldata to be encoded
+     * @param domainSeparator EIP-712 domain separator
+     * @return callback `GmpCallback` struct
+     */
+    function intoCallback(GmpMessage calldata message, bytes32 domainSeparator)
         internal
         pure
-        returns (bytes32 messageHash, bytes memory r)
+        returns (GmpCallback memory callback)
     {
         bytes calldata data = message.data;
         /// @solidity memory-safe-assembly
         assembly {
-            r := mload(0x40)
+            callback := mload(0x40)
 
             // GmpMessage Type Hash
-            mstore(add(r, 0x0004), GMP_MESSAGE_TYPE_HASH)
-            mstore(add(r, 0x0024), calldataload(add(message, 0x00))) // message.source
-            mstore(add(r, 0x0044), calldataload(add(message, 0x20))) // message.srcNetwork
-            mstore(add(r, 0x0064), calldataload(add(message, 0x40))) // message.dest
-            mstore(add(r, 0x0084), calldataload(add(message, 0x60))) // message.destNetwork
-            mstore(add(r, 0x00a4), calldataload(add(message, 0x80))) // message.gasLimit
-            mstore(add(r, 0x00c4), calldataload(add(message, 0xa0))) // message.salt
+            mstore(add(callback, 0x0000), GMP_MESSAGE_TYPE_HASH)
+            mstore(add(callback, 0x0020), calldataload(add(message, 0x00))) // message.source
+            mstore(add(callback, 0x0040), calldataload(add(message, 0x20))) // message.srcNetwork
+            mstore(add(callback, 0x0060), calldataload(add(message, 0x40))) // message.dest
+            mstore(add(callback, 0x0080), calldataload(add(message, 0x60))) // message.destNetwork
+            mstore(add(callback, 0x00a0), calldataload(add(message, 0x80))) // message.gasLimit
+            mstore(add(callback, 0x00c0), calldataload(add(message, 0xa0))) // message.salt
 
             // Copy message.data to memory
             let size := data.length
-            mstore(add(r, 0x0104), size) // message.data length
-            calldatacopy(add(r, 0x0124), data.offset, size) // message.data
+            mstore(add(callback, 0x01c4), size) // message.data.length
+            calldatacopy(add(callback, 0x01e4), data.offset, size) // message.data
 
             // Computed GMP Typed Hash
-            messageHash := keccak256(add(r, 0x0124), size) // keccak(message.data)
-            mstore(add(r, 0x00e4), messageHash)
-            messageHash := keccak256(add(r, 0x04), 0x0100) // GMP eip712 hash
+            let messageHash := keccak256(add(callback, 0x01e4), size) // keccak(message.data)
+            mstore(add(callback, 0x00e0), messageHash)
+            messageHash := keccak256(callback, 0x0100) // GMP eip712 hash
             mstore(0, 0x1901)
             mstore(0x20, domainSeparator)
             mstore(0x40, messageHash) // this will be restored at the end of this function
             messageHash := keccak256(0x1e, 0x42) // GMP Typed Hash
 
-            // onGmpReceived
-            size := and(add(size, 31), 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0)
-            size := add(size, 0xa4)
-            mstore(add(r, 0x0064), 0x01900937) // selector
-            mstore(add(r, 0x0060), size) // length
-            mstore(add(r, 0x0084), messageHash) // GMP Typed Hash
-            mstore(add(r, 0x00a4), calldataload(add(message, 0x20))) // msg.network
-            mstore(add(r, 0x00c4), calldataload(add(message, 0x00))) // msg.source
-            mstore(add(r, 0x00e4), 0x80) // msg.data offset
+            // Retore message.data.offset
+            mstore(add(callback, 0x00e0), add(callback, 0x0120))
+            mstore(callback, messageHash)
 
-            size := and(add(size, 31), 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0)
-            size := add(size, 0x60)
-            mstore(0x40, add(add(r, size), 0x40))
-            r := add(r, 0x60)
+            // selector + GMP_ID + network + source + data.offset + data.length
+            size := add(and(add(size, 31), 0xffffffe0), 0xa4)
+
+            // onGmpReceived(bytes32 id, uint128 network, bytes32 source, bytes calldata payload)
+            mstore(add(callback, 0x0124), 0x01900937) // selector
+            mstore(add(callback, 0x0120), size) // length
+            mstore(add(callback, 0x0144), messageHash) // id
+            mstore(add(callback, 0x0164), calldataload(add(message, 0x20))) // network
+            mstore(add(callback, 0x0184), calldataload(add(message, 0x00))) // source
+            mstore(add(callback, 0x01a4), 0x80) // payload.offset
+
+            // update free memory pointer
+            size := add(and(add(size, 31), 0xffffffe0), 0x0120)
+            size := and(add(add(callback, size), 31), 0xffffffe0)
+            mstore(0x40, add(size, 0x40))
         }
     }
 

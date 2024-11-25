@@ -167,15 +167,14 @@ library EnumerableSet {
      *
      * - `index` must be strictly less than {length}.
      */
-    function at(Map storage map, uint256 index) internal view returns (StoragePtr r) {
+    function at(Map storage map, uint256 index) internal view returns (bytes32 key, StoragePtr r) {
         assembly ("memory-safe") {
             mstore(0x00, map.slot)
-            let key := sload(add(keccak256(0x00, 0x20), index))
+            key := sload(add(keccak256(0x00, 0x20), index))
             mstore(0x00, key)
             mstore(0x20, add(map.slot, 1))
             r := keccak256(0x00, 0x40)
-            key := not(sload(sub(r, 1)))
-            r := mul(r, and(lt(index, sload(map.slot)), eq(index, key)))
+            r := mul(r, and(lt(index, sload(map.slot)), eq(index, not(sload(sub(r, 1))))))
         }
     }
 

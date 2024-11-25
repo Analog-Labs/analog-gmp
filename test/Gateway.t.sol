@@ -137,10 +137,9 @@ contract GatewayBase is Test {
     bytes32 private _srcDomainSeparator;
     bytes32 private _dstDomainSeparator;
 
-    uint256 private constant SUBMIT_GAS_COST = 15034;
+    // Netowrk ids
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
-    uint8 private constant GMP_STATUS_SUCCESS = 1;
 
     constructor() {
         signer = new Signer(secret);
@@ -216,7 +215,7 @@ contract GatewayBase is Test {
     function test_estimateMessageCost() external {
         vm.txGasPrice(1);
         uint256 cost = gateway.estimateMessageCost(DEST_NETWORK_ID, 96, 100000);
-        assertEq(cost, GasUtils.EXECUTION_BASE_COST + 134032);
+        assertEq(cost, GasUtils.EXECUTION_BASE_COST + 134075);
     }
 
     function test_checkPayloadSize() external {
@@ -627,7 +626,7 @@ contract GatewayBase is Test {
             id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
         );
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
-        assertEq(ctx.executionCost, expectedCost - 6800, "unexpected execution gas cost");
+        assertEq(ctx.executionCost, expectedCost - 8800, "unexpected execution gas cost");
     }
 }
 

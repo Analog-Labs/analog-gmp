@@ -45,7 +45,8 @@ contract EnumerableSetTest is Test {
     }
 
     function _at(uint256 index, bool success) private view returns (MyStruct storage r) {
-        bytes32 ptr = map.at(index).asBytes32();
+        (, StoragePtr raw) = map.at(index);
+        bytes32 ptr = raw.asBytes32();
         if (success) {
             assertNotEq(ptr, bytes32(0), "map.at failed");
             assembly {
@@ -189,8 +190,10 @@ contract EnumerableSetTest is Test {
         assertEq(index, 0, "unexpected index");
 
         // Map.at works
-        store = map.at(0).getUint256Slot();
+        (bytes32 atKey, StoragePtr raw) = map.at(0);
+        store = raw.getUint256Slot();
         assertEq(store.value, value, "unexpected value when retrieving by index");
+        assertEq(atKey, key, "unexpected key when retrieving by index");
 
         // Map.contains works
         StoragePtr ptr = map.get(key);

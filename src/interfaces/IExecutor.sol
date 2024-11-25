@@ -12,7 +12,7 @@ import {
     UpdateKeysMessage,
     UpdateNetworkInfo,
     GmpSender,
-    TssKey
+    Route
 } from "../Primitives.sol";
 
 /**
@@ -42,7 +42,12 @@ interface IExecutor {
     /**
      * @dev List all shards currently registered in the gateway.
      */
-    function listShards() external returns (TssKey[] memory);
+    function shards() external returns (TssKey[] memory);
+
+    /**
+     * @dev List all shards currently registered in the gateway.
+     */
+    function routes() external returns (Route[] memory);
 
     /**
      * Execute GMP message
@@ -52,20 +57,6 @@ interface IExecutor {
     function execute(Signature calldata signature, GmpMessage calldata message)
         external
         returns (GmpStatus status, bytes32 result);
-
-    /**
-     * Update TSS key set
-     * @param signature Schnorr signature
-     * @param message Shard's keys to register and revoke
-     */
-    function updateKeys(Signature memory signature, UpdateKeysMessage memory message) external;
-
-    /**
-     * Update or insert a new network info
-     * @param signature Schnorr signature
-     * @param info Network info
-     */
-    function setNetworkInfo(Signature memory signature, UpdateNetworkInfo memory info) external;
 
     /**
      * Deposit funds to the gateway contract
