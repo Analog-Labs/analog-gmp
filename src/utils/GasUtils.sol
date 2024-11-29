@@ -10,22 +10,26 @@ import {BranchlessMath} from "./BranchlessMath.sol";
  * @dev Utilities for compute the GMP gas price, gas cost and gas needed.
  */
 library GasUtils {
+    using BranchlessMath for uint256;
+
+    // /**
+    //  * @dev GatewayProxy overhead
+    //  * SLOAD 2100 (implementation_slot)
+    //  * CALLDATACOPY 3 + (words * 3) + (words * words) >> 9 + (words * 3)
+    //  * DELEGATECALL 2100 (implementation)
+    //  * OTHER OPCODES 21
+    //  */
+    // uint256 internal constant GATEWAY_PROXY_OVERHEAD = 2100 + 3 + 2100 + 21;
+
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = 46658;
-
-    /**
-     * @dev Initial amount of memory used by `IExecutor.execute` method.
-     */
-    uint256 internal constant MEMORY_OFFSET = 0x3c0;
+    uint256 internal constant EXECUTION_BASE_COST = 46149; //46578;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 25802;
-
-    using BranchlessMath for uint256;
+    uint256 internal constant SUBMIT_BASE_COST = 25838;
 
     /**
      * @dev Compute the gas cost of memory expansion.
@@ -176,35 +180,107 @@ library GasUtils {
         }
     }
 
-    function _executionGasCost(uint256 messageSize, uint256 gasUsed) private pure returns (uint256) {
-        // Add the base execution gas cost
-        uint256 gas = EXECUTION_BASE_COST.saturatingAdd(gasUsed);
+    /**
+     * @dev Compute the number of words.
+     */
+    function _toWord(uint256 x) private pure returns (uint256 r) {
+        assembly {
+            r := add(shr(5, x), gt(and(x, 0x1f), 0))
+        }
+    }
 
+    function _executionGasCost(uint256 messageSize, uint256 gasUsed) internal pure returns (uint256) {
         // Safety: The operations below can't overflow because the message size can't be greater than 2**16
         unchecked {
-            // Add padding to the message size, making it a multiple of 32
-            messageSize = (uint256(messageSize) + 31) & 0xffffe0;
+            // Selector overhead
+            // uint256 baseCost = 442;
+            uint256 memoryExpansion = 0x60;
 
-            // selector + Signature + GmpMessage
-            uint256 words = messageSize.saturatingAdd(388 + 31) >> 5;
+            // all opcodes until message.intoCallback(DOMAIN_SEPARATOR)
+            // baseCost += 449;
 
-            // Add `countZeros` gas cost
-            gas = gas.saturatingAdd((words * 106) + (((words + 254) / 255) * 214));
+            // -- message.intoCallback() --
+            // baseCost += 438;
+            memoryExpansion = 0x80 + 0x01c4;
 
-            // calldatacopy (3 gas per word)
-            words = messageSize >> 5;
-            gas = gas.saturatingAdd(words * 3);
+            // CALLDATACOPY 3 + (3 * words) + memory_expansion
+            // baseCost += 3;
+            uint256 gas = _toWord(messageSize) * 3;
+            memoryExpansion += messageSize;
+            memoryExpansion = memoryExpansion.align32();
 
-            // keccak256 (6 gas per word)
-            gas = gas.saturatingAdd(words * 6);
+            // opcodes until keccak256
+            // baseCost += 31;
 
-            // Memory expansion cost
-            words = 0xa4 + (words << 5); // onGmpReceived encoded call size
-            words = (words + 31) & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0;
-            words += MEMORY_OFFSET; // Memory size
-            words = (words + 31) >> 5; // to words
-            gas = gas.saturatingAdd(((words * words) >> 9) + (words * 3));
+            // keccak256 30 + 6 gas per word
+            // baseCost += 30;
+            gas = gas.saturatingAdd(_toWord(messageSize) * 6);
 
+            // baseCost += 448;
+            // -- message.intoCallback() --
+            // baseCost += 34;
+
+            // -- _verifySignature --
+            // baseCost += 7933;
+            // -- _verifySignature --
+
+            // baseCost += 18;
+
+            // _execute
+            // baseCost += 22551;
+            // baseCost += 2; // GAS
+            // baseCost += 97;
+            //  ------  CALL ------
+            // baseCost += 2600;
+            gas = gas.saturatingAdd(gasUsed);
+            memoryExpansion += 4;
+            memoryExpansion = memoryExpansion.align32();
+            //  ------  CALL ------
+            // baseCost += 67;
+            // baseCost += 100; // SLOAD
+            // baseCost += 69;
+            // baseCost += 100; // SSTORE
+
+            // -- emit GmpExecuted --
+            // baseCost += 207;
+            // memoryExpansion += 0x40;
+            // baseCost += 2387; // LOG4
+            // -- emit GmpExecuted --
+            // baseCost += 26;
+            // end _execute
+
+            // baseCost += 34;
+
+            // GasUtils.txBaseCost()
+            {
+                // baseCost += 64; // base cost
+
+                // chunk start cost
+                // baseCost += 66;
+
+                // Selector + Signature + GmpMessage
+                uint256 words = messageSize.align32().saturatingAdd(388 + 31) >> 5;
+                words = (words * 106) + (((words.saturatingSub(255) + 254) / 255) * 214);
+                gas = gas.saturatingAdd(words);
+
+                // baseCost += 171; // End countNonZeros
+                // baseCost += 70; // End txBaseCost
+            }
+            // end GasUtils.txBaseCost()
+
+            // baseCost += 560;
+            // ----- GAS -------
+
+            // baseCost += 168;
+            // baseCost += 6800;
+            // REFUND CALL
+
+            // baseCost += 184;
+            // RETURN
+
+            // gas = gas.saturatingAdd(baseCost);
+            gas = gas.saturatingAdd(EXECUTION_BASE_COST);
+            gas = gas.saturatingAdd(memoryExpansionGasCost(_toWord(memoryExpansion)));
             return gas;
         }
     }
@@ -229,12 +305,12 @@ library GasUtils {
      */
     function executionGasNeeded(uint256 messageSize, uint256 gasLimit) internal pure returns (uint256 gasNeeded) {
         unchecked {
-            gasNeeded = inverseOfAllButOne64th(gasLimit);
-            gasNeeded = gasNeeded.saturatingAdd(_executionGasCost(messageSize, gasLimit));
-            gasNeeded = gasNeeded.saturatingAdd(2114 + 2);
+            // gasNeeded = inverseOfAllButOne64th(gasLimit);
+            // gasNeeded = gasNeeded.saturatingAdd(_executionGasCost(messageSize, gasLimit));
+            gasNeeded = _executionGasCost(messageSize, gasLimit);
+            gasNeeded = gasNeeded.saturatingAdd(2300 - 184);
             gasNeeded = inverseOfAllButOne64th(gasNeeded);
-            messageSize = (uint256(messageSize).saturatingAdd(31) >> 5) << 5;
-            messageSize = messageSize.saturatingAdd(388);
+            messageSize = messageSize.align32().saturatingAdd(388);
             gasNeeded = gasNeeded.saturatingAdd(proxyOverheadGasCost(messageSize, 64));
             gasNeeded = gasNeeded.saturatingSub(39);
         }

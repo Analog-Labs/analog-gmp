@@ -3,7 +3,8 @@
 
 pragma solidity >=0.8.0;
 
-import {Schnorr} from "@frost-evm/Schnorr.sol";
+// import {Schnorr} from "@frost-evm/Schnorr.sol";
+import {Schnorr} from "./utils/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {GasUtils} from "./utils/GasUtils.sol";
 import {ERC1967} from "./utils/ERC1967.sol";
@@ -250,25 +251,20 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         assembly {
             // Using low-level assembly because the GMP is considered executed
             // regardless if the call reverts or not.
-            let ptr := add(callback, 32)
-            let size := mload(callback)
-            mstore(callback, 0)
-
-            // returns 1 if the call succeed, and 0 if it reverted
+            mstore(0, 0)
             success :=
                 call(
                     gasLimit, // call gas limit defined in the GMP message or 50% of the block gas limit
                     dest, // dest address
                     0, // value in wei to transfer (always zero for GMP)
-                    ptr, // input memory pointer
-                    size, // input size
-                    callback, // output memory pointer
+                    add(callback, 32), // input memory pointer
+                    mload(callback), // input size
+                    0, // output memory pointer
                     32 // output size (fixed 32 bytes)
                 )
 
             // Get Result, reuse data to keep a predictable memory expansion
-            result := mload(callback)
-            mstore(callback, size)
+            result := mload(0)
         }
 
         // Update GMP status
@@ -293,7 +289,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint256 initialGas = gasleft();
         // Add the solidity selector overhead to the initial gas, this way we guarantee that
         // the `initialGas` represents the actual gas that was available to this contract.
-        initialGas = initialGas.saturatingAdd(437);
+        initialGas = initialGas.saturatingAdd(451);
 
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
@@ -315,7 +311,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Refund the chronicle gas
         unchecked {
             // Compute GMP gas used
-            uint256 gasUsed = 7223;
+            uint256 gasUsed = 7223 - 16 - 55;
             gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseCost());
             gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
             gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());

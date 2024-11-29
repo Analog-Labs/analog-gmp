@@ -9,7 +9,7 @@ import {console} from "forge-std/console.sol";
 import {Random} from "./Random.sol";
 import {MockERC20} from "./MockERC20.sol";
 import {GmpTestTools} from "./GmpTestTools.sol";
-import {TestUtils, SigningKey, VerifyingKey, SigningUtils} from "./TestUtils.sol";
+import {TestUtils, SigningKey, VerifyingKey, SigningUtils, VerifyingUtils} from "./TestUtils.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
@@ -28,7 +28,7 @@ import {
 
 contract ExampleTest is Test {
     using SigningUtils for SigningKey;
-    using SigningUtils for VerifyingKey;
+    using VerifyingUtils for VerifyingKey;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for address;
 

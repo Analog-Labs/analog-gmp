@@ -188,7 +188,6 @@ library PrimitiveUtils {
                 mstore(ptr, hash)
             }
         }
-
         return keccak256(keysHashed);
     }
 
@@ -259,6 +258,32 @@ library PrimitiveUtils {
         }
     }
 
+    type MessagePtr is uint256;
+
+    function memToCallback(GmpMessage memory message, bytes32 domainSeparator)
+        internal
+        view
+        returns (GmpCallback memory callback)
+    {
+        MessagePtr ptr;
+        assembly {
+            ptr := message
+        }
+        _intoCallback(ptr, domainSeparator, false, callback);
+    }
+
+    function intoCallback(GmpMessage calldata message, bytes32 domainSeparator)
+        internal
+        view
+        returns (GmpCallback memory callback)
+    {
+        MessagePtr ptr;
+        assembly {
+            ptr := message
+        }
+        _intoCallback(ptr, domainSeparator, true, callback);
+    }
+
     /**
      * @dev Converts the `GmpMessage` into a `GmpCallback` struct, which contains all fields from
      * `GmpMessage`, plus the EIP-712 hash and `IGmpReceiver.onGmpReceived` callback.
@@ -274,18 +299,15 @@ library PrimitiveUtils {
      *
      * @param message GmpMessage from calldata to be encoded
      * @param domainSeparator EIP-712 domain separator
-     * @return callback `GmpCallback` struct
+     * @param callback `GmpCallback` struct
      */
-    function intoCallback(GmpMessage calldata message, bytes32 domainSeparator)
-        internal
-        pure
-        returns (GmpCallback memory callback)
+    function _intoCallback(MessagePtr message, bytes32 domainSeparator, bool isCalldata, GmpCallback memory callback)
+        private
+        view
     {
-        bytes calldata data = message.data;
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             // Allocate memory for the callback
-            callback := mload(0x40)
+            // callback := mload(0x40)
 
             //////////////////////////////////////////////////////////
             // First need compute to `GmpMessage` EIP-712 Type Hash //
@@ -295,12 +317,43 @@ library PrimitiveUtils {
             mstore(add(callback, 0x0000), GMP_MESSAGE_TYPE_HASH) // callback.eip712hash
 
             // Then we copy all `GmpMessage` fields to memory, except the `data` field.
-            mstore(add(callback, 0x0020), calldataload(add(message, 0x00))) // callback.source
-            mstore(add(callback, 0x0040), calldataload(add(message, 0x20))) // callback.srcNetwork
-            mstore(add(callback, 0x0060), calldataload(add(message, 0x40))) // callback.dest
-            mstore(add(callback, 0x0080), calldataload(add(message, 0x60))) // callback.destNetwork
-            mstore(add(callback, 0x00a0), calldataload(add(message, 0x80))) // callback.gasLimit
-            mstore(add(callback, 0x00c0), calldataload(add(message, 0xa0))) // callback.salt
+            let size
+            {
+                switch isCalldata
+                case 0 {
+                    mstore(add(callback, 0x20), mload(add(message, 0x00))) // callback.source
+                    mstore(add(callback, 0x40), mload(add(message, 0x20))) // callback.srcNetwork
+                    mstore(add(callback, 0x60), mload(add(message, 0x40))) // callback.dest
+                    mstore(add(callback, 0x80), mload(add(message, 0x60))) // callback.destNetwork
+                    mstore(add(callback, 0xa0), mload(add(message, 0x80))) // callback.gasLimit
+                    mstore(add(callback, 0xc0), mload(add(message, 0xa0))) // callback.salt
+
+                    // Store `onGmpReceived.data.length` at `0x01a4..0x01c4`.
+                    let offset := mload(add(message, 0xc0))
+                    size := mload(offset)
+                    mstore(add(callback, 0x01a4), size)
+
+                    if iszero(staticcall(gas(), 0x04, add(offset, 0x20), size, add(callback, 0x01c4), size)) {
+                        revert(0, 0)
+                    }
+                }
+                default {
+                    mstore(add(callback, 0x20), calldataload(add(message, 0x00))) // callback.source
+                    mstore(add(callback, 0x40), calldataload(add(message, 0x20))) // callback.srcNetwork
+                    mstore(add(callback, 0x60), calldataload(add(message, 0x40))) // callback.dest
+                    mstore(add(callback, 0x80), calldataload(add(message, 0x60))) // callback.destNetwork
+                    mstore(add(callback, 0xa0), calldataload(add(message, 0x80))) // callback.gasLimit
+                    mstore(add(callback, 0xc0), calldataload(add(message, 0xa0))) // callback.salt
+
+                    // Store `onGmpReceived.data.length` at `0x01a4..0x01c4`.
+                    let offset := add(calldataload(add(message, 0xc0)), message)
+                    size := calldataload(offset)
+                    mstore(add(callback, 0x01a4), size)
+
+                    // Copy `message.data` to memory at `0x01c4`, as described above.
+                    calldatacopy(add(callback, 0x01c4), add(offset, 0x20), size)
+                }
+            }
 
             // mstore(add(callback, 0x00e0), calldataload(add(message, 0xa0))) // callback.data <- pointer
             //
@@ -310,26 +363,19 @@ library PrimitiveUtils {
             // But we will skip this for now, once we need to store the `keccak256(message.data)` here
             // for computing the EIP-712 hash.
 
-            //  MEMORY OFFSET    |             RESERVED FIELD               |
-            // 0x00e0..0x0100 <- reserved for the `data` pointer
-            // 0x0100..0x0120 <- reserved for the `callback.length` field.
-            // 0x0120..0x0124 <- reserved for the `onGmpReceived.selector` field (4 bytes).
-            // 0x0124..0x0144 <- reserved for the `onGmpReceived.id` param.
-            // 0x0144..0x0164 <- reserved for the `onGmpReceived.network` param.
-            // 0x0164..0x0184 <- reserved for the `onGmpReceived.source` param.
-            // 0x0184..0x01a4 <- reserved for the `onGmpReceived.data.offset` param (calldata pointer).
-            // 0x01a4..0x01c4 <- reserved for the `onGmpReceived.data.length` param.
-            // 0x01c4..?????? <- reserved for the `onGmpReceived.data` bytes.
-
-            // Store `onGmpReceived.data.length` at `0x01a4..0x01c4`.
-            let size := data.length
-            mstore(add(callback, 0x01c4), size)
-
-            // Copy `message.data` to memory at `0x01c4`, as described above.
-            calldatacopy(add(callback, 0x01e4), data.offset, size) // message.data
+            // |  MEMORY OFFSET  |             RESERVED FIELD               |
+            // | 0x00e0..0x0100 <- reserved for the `callback.data` pointer
+            // | 0x0100..0x0120 <- reserved for the `callback.data.length` field.
+            // | 0x0120..0x0124 <- reserved for the `onGmpReceived.selector` field (4 bytes).
+            // | 0x0124..0x0144 <- reserved for the `onGmpReceived.id` param.
+            // | 0x0144..0x0164 <- reserved for the `onGmpReceived.network` param.
+            // | 0x0164..0x0184 <- reserved for the `onGmpReceived.source` param.
+            // | 0x0184..0x01a4 <- reserved for the `onGmpReceived.data.offset` param (calldata pointer).
+            // | 0x01a4..0x01c4 <- reserved for the `onGmpReceived.data.length` param.
+            // | 0x01c4..?????? <- reserved for the `onGmpReceived.data` bytes.
 
             // Compute `keccak256(message.data)`
-            let messageHash := keccak256(add(callback, 0x01e4), size)
+            let messageHash := keccak256(add(callback, 0x01c4), size)
 
             // temporarily store the result at `0x00e0..0x0100`, which is the end of
             // the `GmpMessage` struct.
@@ -348,28 +394,40 @@ library PrimitiveUtils {
             mstore(callback, messageHash)
 
             // Replace the `eip712hash` by the `callback.data.offset`.
-            mstore(add(callback, 0x00e0), add(callback, 0x0120))
+            mstore(add(callback, 0x00e0), add(callback, 0x0100))
+
+            // Update free memory pointer to the end of the callback (0x01c4 + data.length)
+            // size := and(add(add(add(callback, 0x01c4), size), 31), 0xffffffe0)
+            size := and(add(size, 31), 0xffffffe0)
+            {
+                let end := add(add(callback, 0x01c4), size)
+                mstore(0x40, and(add(end, 63), 0xffffffe0))
+            }
 
             // Compute the callback size, which is equivalent to compute the following:
             // ```solidity
             // abi.encodeCall(IGmpReceiver.onGmpReceived, (eip712hash, network, sender, data)).length;
             // ```
             // So essentially is the size of `message.data` 32 byte aligned + 164 bytes for the other fields.
-            size := add(and(add(size, 31), 0xffffffe0), 164)
+            size := add(size, 164)
 
             // Add the missing fields between `0x0100..0x01a4` to the callback.
             // The fields between `0x01a4..0x01c4` are already set.
-            mstore(add(callback, 0x0124), 0x01900937) // selector (4 bytes)
-            mstore(add(callback, 0x0120), size) // length (32 bytes)
-            mstore(add(callback, 0x0144), messageHash) // eip-712 hash (32 bytes)
-            mstore(add(callback, 0x0164), calldataload(add(message, 0x20))) // network (32 bytes)
-            mstore(add(callback, 0x0184), calldataload(add(message, 0x00))) // source (32 bytes)
-            mstore(add(callback, 0x01a4), 0x80) // payload.offset (32 bytes)
-
-            // Update free memory pointer and align it to 32 bytes
-            size := add(and(add(size, 31), 0xffffffe0), 0x0120)
-            size := and(add(add(callback, size), 31), 0xffffffe0)
-            mstore(0x40, add(size, 0x40))
+            mstore(add(callback, 0x0104), 0x01900937) // selector (4 bytes)
+            mstore(add(callback, 0x0124), messageHash) // eip712hash (32 bytes)
+            {
+                switch isCalldata
+                case 0 {
+                    mstore(add(callback, 0x0144), mload(add(message, 0x20))) // network (32 bytes)
+                    mstore(add(callback, 0x0164), mload(add(message, 0x00))) // source (32 bytes)
+                }
+                default {
+                    mstore(add(callback, 0x0144), calldataload(add(message, 0x20))) // network (32 bytes)
+                    mstore(add(callback, 0x0164), calldataload(add(message, 0x00))) // source (32 bytes)
+                }
+            }
+            mstore(add(callback, 0x0184), 0x80) // payload.offset (32 bytes)
+            mstore(add(callback, 0x0100), size) // callback.data.length (32 bytes)
         }
     }
 

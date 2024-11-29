@@ -4,6 +4,7 @@
 pragma solidity >=0.8.0;
 
 import {VmSafe, Vm} from "forge-std/Vm.sol";
+import {console} from "forge-std/console.sol";
 import {Schnorr} from "@frost-evm/Schnorr.sol";
 import {SECP256K1} from "@frost-evm/SECP256K1.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
@@ -229,6 +230,19 @@ library TestUtils {
         internal
         returns (uint256 executionCost, uint256 baseCost, bytes memory out)
     {
+        bool success;
+        (executionCost, baseCost, success, out) = tryExecuteCall(sender, dest, gasLimit, value, data);
+        // Revert if the execution failed
+        assembly {
+            if iszero(success) { revert(add(out, 32), mload(out)) }
+        }
+    }
+
+    // Execute a contract call and calculate the acurrate execution gas cost
+    function tryExecuteCall(address sender, address dest, uint256 gasLimit, uint256 value, bytes memory data)
+        internal
+        returns (uint256 executionCost, uint256 baseCost, bool success, bytes memory out)
+    {
         // Guarantee there's enough gas to execute the call
         {
             uint256 gasRequired = (gasLimit * 64) / 63;
@@ -248,7 +262,6 @@ library TestUtils {
         }
 
         // Execute
-        bool success;
         {
             (VmSafe.CallerMode callerMode, address msgSender, address txOrigin) =
                 setCallerMode(VmSafe.CallerMode.RecurrentPrank, sender, sender);
@@ -260,11 +273,6 @@ library TestUtils {
         uint256 refund = gasLimit.saturatingSub(executionCost).saturatingMul(tx.gasprice);
         if (refund > 0) {
             vm.deal(sender, sender.balance + refund);
-        }
-
-        // Revert if the execution failed
-        assembly {
-            if iszero(success) { revert(add(out, 32), mload(out)) }
         }
     }
 
@@ -307,23 +315,193 @@ library TestUtils {
         f();
         setCallerMode(callerMode, msgSender, txOrigin);
     }
-}
 
-library SigningUtils {
-    function yParity(VerifyingKey memory pubkey) internal pure returns (uint8) {
-        return uint8(pubkey.py % 2) + 27;
+    /**
+     * @dev Call a function, then clear and restore the free memory pointer after the call
+     */
+    function restoreMemory(uint256 data, function (uint256) internal returns (bool) callback) internal {
+        uint256 freeMemPtr;
+        assembly {
+            freeMemPtr := mload(0x40)
+        }
+        callback(data);
+        assembly {
+            // Clear the memory
+            let len := sub(mload(0x40), freeMemPtr)
+            calldatacopy(freeMemPtr, calldatasize(), len)
+
+            // Restore the memory pointer
+            mstore(0x40, freeMemPtr)
+        }
     }
 
-    function yParity(SigningKey memory signer) internal pure returns (uint8) {
-        return yParity(signer.pubkey);
+    function binarySearch(uint256 lower, uint256 upper, function (uint256) internal returns (bool) cb)
+        private
+        returns (uint256, uint256)
+    {
+        unchecked {
+            uint256 snapshotId = vm.snapshotState();
+            require(lower < upper, "'lower' must be less than 'upper'");
+            uint256 freeMemory;
+            assembly {
+                freeMemory := mload(0x40)
+            }
+            bool target = cb(lower);
+            console.log("setup lower");
+            vm.revertToState(snapshotId);
+            console.log("setup upper");
+            require(cb(upper) != target, "cb(lower) == cb(upper)");
+            console.log("setup done");
+            assembly {
+                // Clear the memory
+                let len := sub(mload(0x40), freeMemory)
+                calldatacopy(freeMemory, calldatasize(), len)
+            }
+            uint256 prev = 0;
+            uint256 mid = type(uint256).max;
+            while (prev != mid) {
+                prev = mid;
+                mid = (upper + lower) >> 1;
+                vm.revertToState(snapshotId);
+                if (cb(mid) == target) {
+                    console.log("lower: ", mid, lower, upper);
+                    lower = mid;
+                } else {
+                    console.log("upper: ", mid, lower, upper);
+                    upper = mid;
+                }
+                // assembly {
+                //     // Clear the memory
+                //     let len := sub(mload(0x40), freeMemory)
+                //     calldatacopy(freeMemory, calldatasize(), len)
+                //     mstore(0x40, freeMemory)
+                // }
+            }
+            vm.revertToState(snapshotId);
+            console.log("will return", lower, upper);
+            return (lower, upper);
+        }
+    }
+}
+
+type Fn is uint256;
+
+type FnMut is uint256;
+
+library FnUtils {
+    function intoFn(function(uint256) internal pure returns (uint256) callback) internal pure returns (Fn fn) {
+        assembly {
+            fn := callback
+        }
+    }
+
+    function intoFn(function(uint256) internal returns (uint256) callback) internal pure returns (FnMut fn) {
+        assembly {
+            fn := callback
+        }
+    }
+
+    function callU256(FnMut fn, uint256 param) internal returns (uint256) {
+        function(uint256) internal returns (uint256) callback;
+        assembly {
+            callback := fn
+        }
+        return callback(param);
+    }
+
+    function callU256(FnMut fn, bytes32 param) internal returns (uint256) {
+        function(bytes32) internal returns (uint256) callback;
+        assembly {
+            callback := fn
+        }
+        return callback(param);
+    }
+
+    function callU256(FnMut fn, bytes memory param) internal returns (uint256) {
+        function(bytes memory) internal returns (uint256) callback;
+        assembly {
+            callback := fn
+        }
+        return callback(param);
+    }
+
+    function callBool(FnMut fn, uint256 param) internal returns (bool) {
+        function(uint256) internal returns (bool) callback;
+        assembly {
+            callback := fn
+        }
+        return callback(param);
+    }
+
+    function callBool(FnMut fn, bytes32 param) internal returns (bool) {
+        function(bytes32) internal returns (bool) callback;
+        assembly {
+            callback := fn
+        }
+        return callback(param);
+    }
+
+    function callBool(FnMut fn, bytes memory param) internal returns (bool) {
+        function(bytes memory) internal returns (bool) callback;
+        assembly {
+            callback := fn
+        }
+        return callback(param);
+    }
+
+    function asUint256Bytes(Fn fn) internal pure returns (function(uint256) internal pure returns (uint256) callback) {
+        assembly {
+            fn := callback
+        }
+    }
+}
+
+library VerifyingUtils {
+    function yParity(VerifyingKey memory pubkey) internal pure returns (uint8) {
+        return uint8(pubkey.py % 2) + 27;
     }
 
     function challenge(VerifyingKey memory pubkey, bytes32 hash, address r) internal pure returns (uint256) {
         return uint256(keccak256(abi.encodePacked(r, yParity(pubkey), pubkey.px, uint256(hash))));
     }
 
+    function verifyPrehash(VerifyingKey memory pubkey, bytes32 prehash, uint256 c, uint256 z)
+        internal
+        pure
+        returns (bool)
+    {
+        return Schnorr.verify(yParity(pubkey), pubkey.px, uint256(prehash), c, z);
+    }
+
+    function verify(VerifyingKey memory pubkey, bytes memory message, uint256 c, uint256 z)
+        internal
+        pure
+        returns (bool)
+    {
+        return verifyPrehash(pubkey, keccak256(message), c, z);
+    }
+}
+
+library SigningUtils {
+    // function yParity(VerifyingKey memory pubkey) internal pure returns (uint8) {
+    //     return uint8(pubkey.py % 2) + 27;
+    // }
+
+    function yParity(SigningKey memory signer) internal pure returns (uint8) {
+        return uint8(signer.pubkey.py % 2) + 27;
+    }
+
+    function xCoord(SigningKey memory signer) internal pure returns (uint256) {
+        return signer.pubkey.px;
+    }
+
+    // function challenge(VerifyingKey memory pubkey, bytes32 hash, address r) internal pure returns (uint256) {
+    //     return uint256(keccak256(abi.encodePacked(r, yParity(pubkey), pubkey.px, uint256(hash))));
+    // }
+
     function challenge(SigningKey memory signer, bytes32 hash, address r) internal pure returns (uint256) {
-        return challenge(signer.pubkey, hash, r);
+        return uint256(keccak256(abi.encodePacked(r, yParity(signer), signer.pubkey.px, uint256(hash))));
+        // return challenge(signer.pubkey, hash, r);
     }
 
     function signPrehashed(SigningKey memory signer, bytes32 hash, uint256 nonce)
@@ -346,28 +524,29 @@ library SigningUtils {
         return signPrehashed(signer, keccak256(message), nonce);
     }
 
-    function verifyPrehash(VerifyingKey memory pubkey, bytes32 prehash, uint256 c, uint256 z)
-        internal
-        pure
-        returns (bool)
-    {
-        return Schnorr.verify(yParity(pubkey), pubkey.px, uint256(prehash), c, z);
-    }
+    // function verifyPrehash(VerifyingKey memory pubkey, bytes32 prehash, uint256 c, uint256 z)
+    //     internal
+    //     pure
+    //     returns (bool)
+    // {
+    //     return Schnorr.verify(yParity(pubkey), pubkey.px, uint256(prehash), c, z);
+    // }
 
-    function verify(VerifyingKey memory pubkey, bytes memory message, uint256 c, uint256 z)
-        internal
-        pure
-        returns (bool)
-    {
-        return verifyPrehash(pubkey, keccak256(message), c, z);
-    }
+    // function verify(VerifyingKey memory pubkey, bytes memory message, uint256 c, uint256 z)
+    //     internal
+    //     pure
+    //     returns (bool)
+    // {
+    //     return verifyPrehash(pubkey, keccak256(message), c, z);
+    // }
 
     function verifyPrehash(SigningKey memory signer, bytes32 prehash, uint256 c, uint256 z)
         internal
         pure
         returns (bool)
     {
-        return verifyPrehash(signer.pubkey, prehash, c, z);
+        return Schnorr.verify(yParity(signer), signer.pubkey.px, uint256(prehash), c, z);
+        // return verifyPrehash(signer.pubkey, prehash, c, z);
     }
 
     function verify(SigningKey memory signer, bytes memory message, uint256 c, uint256 z)
@@ -375,6 +554,7 @@ library SigningUtils {
         pure
         returns (bool)
     {
-        return verifyPrehash(signer.pubkey, keccak256(message), c, z);
+        return verifyPrehash(signer, keccak256(message), c, z);
+        // return verifyPrehash(signer.pubkey, keccak256(message), c, z);
     }
 }

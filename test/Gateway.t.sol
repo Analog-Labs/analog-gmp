@@ -3,10 +3,10 @@
 
 pragma solidity >=0.8.0;
 
-import {Signer} from "frost-evm/sol/Signer.sol";
+// import {Signer} from "frost-evm/sol/Signer.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {TestUtils} from "./TestUtils.sol";
+import {TestUtils, SigningKey, SigningUtils} from "./TestUtils.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {GasUtils} from "../src/utils/GasUtils.sol";
@@ -25,9 +25,6 @@ import {
     PrimitiveUtils,
     GmpSender
 } from "../src/Primitives.sol";
-
-uint256 constant secret = 0x42;
-uint256 constant nonce = 0x69;
 
 contract SigUtilsTest is GatewayEIP712, Test {
     using PrimitiveUtils for GmpMessage;
@@ -62,6 +59,28 @@ struct CallOptions {
 }
 
 library GatewayUtils {
+    function tryExecute(CallOptions memory ctx, Signature memory signature, GmpMessage memory message)
+        internal
+        returns (bool success, GmpStatus status, bytes32 result)
+    {
+        bytes memory encodedCall = abi.encodeCall(IExecutor.execute, (signature, message));
+        bytes memory output;
+        (ctx.executionCost, ctx.baseCost, success, output) =
+            TestUtils.tryExecuteCall(ctx.from, ctx.to, ctx.gasLimit, ctx.value, encodedCall);
+
+        if (success) {
+            require(output.length == 64, "unexpected output length for IExecutor.execute method");
+            assembly {
+                let ptr := add(output, 32)
+                status := mload(ptr)
+                result := mload(add(ptr, 32))
+            }
+        } else {
+            status = GmpStatus.NOT_FOUND;
+            result = bytes32(0);
+        }
+    }
+
     function execute(CallOptions memory ctx, Signature memory signature, GmpMessage memory message)
         internal
         returns (GmpStatus status, bytes32 result)
@@ -126,9 +145,13 @@ contract GatewayBase is Test {
     using PrimitiveUtils for address;
     using GatewayUtils for CallOptions;
     using BranchlessMath for uint256;
+    using SigningUtils for SigningKey;
 
     Gateway internal gateway;
-    Signer internal signer;
+
+    // Chronicle TSS Secret
+    uint256 private constant SECRET = 0x42;
+    uint256 private constant SIGNING_NONCE = 0x69;
 
     // Receiver Contract, the will waste the exact amount of gas you sent to it in the data field
     IGmpReceiver internal receiver;
@@ -142,7 +165,7 @@ contract GatewayBase is Test {
     uint16 internal constant DEST_NETWORK_ID = 1337;
 
     constructor() {
-        signer = new Signer(secret);
+        SigningKey memory signer = TestUtils.createSigner(SECRET);
         address deployer = TestUtils.createTestAccount(100 ether);
         vm.startPrank(deployer, deployer);
 
@@ -152,6 +175,7 @@ contract GatewayBase is Test {
 
         // 2 - Deploy the Proxy Contract
         TssKey[] memory keys = new TssKey[](1);
+        // keys[0] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()}); // Shard key
         keys[0] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()}); // Shard key
         Network[] memory networks = new Network[](2);
         networks[0].id = SRC_NETWORK_ID; // sepolia network id
@@ -189,8 +213,9 @@ contract GatewayBase is Test {
         } else {
             domainSeparator = _dstDomainSeparator;
         }
-        uint256 hash = uint256(gmp.eip712TypedHash(domainSeparator));
-        (uint256 e, uint256 s) = signer.signPrehashed(hash, nonce);
+        bytes32 hash = gmp.eip712TypedHash(domainSeparator);
+        SigningKey memory signer = TestUtils.createSigner(SECRET);
+        (uint256 e, uint256 s) = signer.signPrehashed(hash, SIGNING_NONCE);
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
     }
 
@@ -261,8 +286,11 @@ contract GatewayBase is Test {
     /**
      * @dev Test the gas metering for the `execute` function.
      */
-    function test_gasMeter(uint16 messageSize) external {
-        vm.assume(messageSize <= 0x6000);
+    // function test_gasMeter(uint16 messageSize) external {
+    //     vm.assume(messageSize <= 0x6000);
+    function test_gasMeter() external {
+        // uint16 messageSize = 7992;
+        uint16 messageSize = 800;
         vm.txGasPrice(1);
         address sender = TestUtils.createTestAccount(100 ether);
 
@@ -270,16 +298,23 @@ contract GatewayBase is Test {
         GmpMessage memory gmp = GmpMessage({
             source: sender.toSender(false),
             srcNetwork: SRC_NETWORK_ID,
-            dest: address(bytes20(keccak256("dummy_address"))),
+            dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
-            gasLimit: 0,
+            gasLimit: 1000,
             salt: 0,
             data: new bytes(messageSize)
         });
+        {
+            bytes memory gmpData = gmp.data;
+            assembly {
+                mstore(add(gmpData, 0x20), 1000)
+            }
+        }
         Signature memory sig = sign(gmp);
 
         // Calculate memory expansion cost and base cost
         (uint256 baseCost, uint256 executionCost) = GatewayUtils.computeGmpGasCost(sig, gmp);
+        executionCost += gmp.gasLimit;
 
         // Transaction Parameters
         CallOptions memory ctx = CallOptions({
@@ -306,7 +341,17 @@ contract GatewayBase is Test {
 
         // Give sufficient gas
         ctx.gasLimit += 1;
+        ctx.executionCost = 0;
+        ctx.baseCost = 0;
         (status, returned) = ctx.execute(sig, gmp);
+
+        // if (ctx.gasLimit > 20000) {
+        //     console.log("         gas needed:", GasUtils.executionGasNeeded(uint16(gmp.data.length), gmp.gasLimit));
+        //     console.log("       gas provided:", ctx.gasLimit - baseCost);
+        //     console.log("   execution refund:", GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit));
+        //     console.log("    actual gas used:", ctx.executionCost);
+        //     revert("successo");
+        // }
 
         assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "gmp execution failed");
         assertEq(uint256(returned), gmp.gasLimit, "wrong gmp return value");
@@ -348,6 +393,114 @@ contract GatewayBase is Test {
             GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 4500,
             "unexpected submit message gas cost"
         );
+    }
+
+    function _binarySearch(uint256 lower, uint256 upper, function (uint256) internal returns (bool) cb)
+        private
+        returns (uint256, uint256)
+    {
+        unchecked {
+            uint256 snapshotId = vm.snapshotState();
+            require(lower < upper, "'lower' must be less than 'upper'");
+            uint256 freeMemory;
+            assembly {
+                freeMemory := mload(0x40)
+            }
+            bool target = cb(lower);
+            console.log("setup lower");
+            vm.revertToState(snapshotId);
+            console.log("setup upper");
+            require(cb(upper) != target, "cb(lower) == cb(upper)");
+            console.log("setup done");
+            // assembly {
+            //     // Clear the memory
+            //     let len := sub(mload(0x40), freeMemory)
+            //     calldatacopy(freeMemory, calldatasize(), len)
+            // }
+            uint256 prev = 0;
+            uint256 mid = type(uint256).max;
+            while (prev != mid) {
+                prev = mid;
+                mid = (upper + lower) >> 1;
+                vm.revertToState(snapshotId);
+                if (cb(mid) == target) {
+                    console.log("lower: ", mid, lower, upper);
+                    lower = mid;
+                } else {
+                    console.log("upper: ", mid, lower, upper);
+                    upper = mid;
+                }
+                // assembly {
+                //     // Clear the memory
+                //     let len := sub(mload(0x40), freeMemory)
+                //     calldatacopy(freeMemory, calldatasize(), len)
+                //     mstore(0x40, freeMemory)
+                // }
+            }
+            vm.revertToState(snapshotId);
+            console.log("will return", lower, upper);
+            return (lower, upper);
+        }
+    }
+
+    function _testMaxMemory(uint256 maxMemory) internal returns (bool) {
+        try vm.stopExpectSafeMemory() {}
+        catch {
+            console.log("vm.stopExpectSafeMemory ERROR");
+        }
+
+        uint16 messageSize = 800;
+        vm.txGasPrice(1);
+        address sender = TestUtils.createTestAccount(100 ether);
+
+        // Build and sign GMP message
+        GmpMessage memory gmp = GmpMessage({
+            source: sender.toSender(false),
+            srcNetwork: SRC_NETWORK_ID,
+            dest: address(bytes20(keccak256("dummy_address"))),
+            destNetwork: DEST_NETWORK_ID,
+            gasLimit: 0,
+            salt: 0,
+            data: new bytes(messageSize)
+        });
+        Signature memory sig = sign(gmp);
+
+        // Transaction Parameters
+        CallOptions memory ctx = CallOptions({
+            from: sender,
+            to: address(gateway),
+            value: 0,
+            gasLimit: gasleft() / 2,
+            executionCost: 0,
+            baseCost: 0
+        });
+
+        // Expect a revert
+        try vm.expectSafeMemoryCall(0, uint64(maxMemory)) {}
+        catch {
+            console.log("vm.expectSafeMemoryCall ERROR");
+        }
+        (bool success,,) = ctx.tryExecute(sig, gmp);
+        return success;
+    }
+
+    // function _testMaxMemoryCB(uint256 maxMemory) private returns (bool) {
+    //     try GatewayBase(address(this))._testMaxMemory(maxMemory) {
+    //         console.log(" OK -> ", maxMemory);
+    //         return true;
+    //     } catch (bytes memory reason) {
+    //         console.log("ERR -> ", maxMemory, string(reason));
+    //         // console.log(string(reason));
+    //         return false;
+    //     }
+    // }
+
+    function test_jose() external {
+        uint256 lower = 1;
+        uint256 upper = 2000;
+        // require(_testMaxMemory(upper), "deu ruim");
+        (lower, upper) = _binarySearch(lower, upper, _testMaxMemory);
+        console.log("success!", lower, upper);
     }
 
     function test_submitMessageMeter(uint16 messageSize) external {

@@ -193,6 +193,9 @@ contract GasUtilsBase is Test {
      * @dev Compare the estimated gas cost VS the actual gas cost of the `execute` method.
      */
     function test_baseExecutionCost(uint16 messageSize, uint16 gasLimit) external {
+        // uint16 messageSize, uint16 gasLimit
+        // uint16 messageSize = 7944;
+        // uint16 gasLimit = 19072;
         vm.assume(gasLimit >= 5000);
         vm.assume(messageSize <= (0x6000 - 32));
         messageSize += 32;
@@ -220,31 +223,45 @@ contract GasUtilsBase is Test {
             assertEq(balanceBefore, ctx.from.balance, "Balance should not change");
         }
 
+        emit log_named_uint("execution cost", GasUtils._executionGasCost(gmp.data.length, gmp.gasLimit));
+        uint256 executionCost = GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit);
+        assertEq(ctx.executionCost, executionCost, "execution cost mismatch");
+
         // Calculate the expected base cost
-        uint256 dynamicCost =
-            GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit) - GasUtils.EXECUTION_BASE_COST;
+        uint256 dynamicCost = executionCost - GasUtils.EXECUTION_BASE_COST;
         uint256 expectedBaseCost = ctx.executionCost - dynamicCost;
+        {
+            console.log("proxy: ", ctx.to);
+            console.logBytes(ctx.to.code);
+            address implementationAddr = address(
+                uint160(uint256(vm.load(ctx.to, 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc)))
+            );
+            console.log("implementation: ", implementationAddr);
+            console.logBytes(implementationAddr.code);
+            console.log("calldata:");
+            console.logBytes(abi.encodeCall(IExecutor.execute, (sig, gmp)));
+        }
         assertEq(expectedBaseCost, GasUtils.EXECUTION_BASE_COST, "Wrong EXECUTION_BASE_COST");
     }
 
     function test_gasUtils() external pure {
         uint256 baseCost = GasUtils.EXECUTION_BASE_COST;
-        assertEq(GasUtils.estimateGas(0, 0, 0), 31783 + baseCost);
-        assertEq(GasUtils.estimateGas(0, 33, 0), 32155 + baseCost);
-        assertEq(GasUtils.estimateGas(33, 0, 0), 32815 + baseCost);
-        assertEq(GasUtils.estimateGas(20, 13, 0), 32555 + baseCost);
+        assertEq(GasUtils.estimateGas(0, 0, 0), 31519 + baseCost);
+        assertEq(GasUtils.estimateGas(0, 33, 0), 31888 + baseCost);
+        assertEq(GasUtils.estimateGas(33, 0, 0), 32548 + baseCost);
+        assertEq(GasUtils.estimateGas(20, 13, 0), 32288 + baseCost);
 
         UFloat9x56 one = UFloatMath.ONE;
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 31783 + baseCost);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 32155 + baseCost);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 32815 + baseCost);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 32555 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 31519 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 31888 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 32548 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 32288 + baseCost);
 
         UFloat9x56 two = UFloat9x56.wrap(0x8080000000000000);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), (31783 + baseCost) * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), (32155 + baseCost) * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), (32815 + baseCost) * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), (32555 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), (31519 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), (31888 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), (32548 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), (32288 + baseCost) * 2);
     }
 }
 
