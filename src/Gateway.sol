@@ -3,7 +3,6 @@
 
 pragma solidity >=0.8.0;
 
-// import {Schnorr} from "@frost-evm/Schnorr.sol";
 import {Schnorr} from "./utils/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {GasUtils} from "./utils/GasUtils.sol";
