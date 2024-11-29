@@ -306,9 +306,17 @@ library PrimitiveUtils {
         view
     {
         assembly ("memory-safe") {
-            // Allocate memory for the callback
-            // callback := mload(0x40)
-
+            // |  MEMORY OFFSET  |             RESERVED FIELD               |
+            // | 0x00e0..0x0100 <- `callback.data` pointer
+            // | 0x0100..0x0120 <- `callback.data.length` field.
+            // | 0x0120..0x0124 <- `onGmpReceived.selector` field (4 bytes).
+            // | 0x0124..0x0144 <- `onGmpReceived.id` param.
+            // | 0x0144..0x0164 <- `onGmpReceived.network` param.
+            // | 0x0164..0x0184 <- `onGmpReceived.source` param.
+            // | 0x0184..0x01a4 <- `onGmpReceived.data.offset` param (calldata pointer).
+            // | 0x01a4..0x01c4 <- `onGmpReceived.data.length` param.
+            // | 0x01c4..?????? <- `onGmpReceived.data` bytes.
+            //
             //////////////////////////////////////////////////////////
             // First need compute to `GmpMessage` EIP-712 Type Hash //
             //////////////////////////////////////////////////////////
@@ -354,25 +362,6 @@ library PrimitiveUtils {
                     calldatacopy(add(callback, 0x01c4), add(offset, 0x20), size)
                 }
             }
-
-            // mstore(add(callback, 0x00e0), calldataload(add(message, 0xa0))) // callback.data <- pointer
-            //
-            // Following `Solidity memory layout`, here we must store a pointer to the `bytes` field.
-            // ref: https://docs.soliditylang.org/en/latest/internals/layout_in_memory.html
-            //
-            // But we will skip this for now, once we need to store the `keccak256(message.data)` here
-            // for computing the EIP-712 hash.
-
-            // |  MEMORY OFFSET  |             RESERVED FIELD               |
-            // | 0x00e0..0x0100 <- reserved for the `callback.data` pointer
-            // | 0x0100..0x0120 <- reserved for the `callback.data.length` field.
-            // | 0x0120..0x0124 <- reserved for the `onGmpReceived.selector` field (4 bytes).
-            // | 0x0124..0x0144 <- reserved for the `onGmpReceived.id` param.
-            // | 0x0144..0x0164 <- reserved for the `onGmpReceived.network` param.
-            // | 0x0164..0x0184 <- reserved for the `onGmpReceived.source` param.
-            // | 0x0184..0x01a4 <- reserved for the `onGmpReceived.data.offset` param (calldata pointer).
-            // | 0x01a4..0x01c4 <- reserved for the `onGmpReceived.data.length` param.
-            // | 0x01c4..?????? <- reserved for the `onGmpReceived.data` bytes.
 
             // Compute `keccak256(message.data)`
             let messageHash := keccak256(add(callback, 0x01c4), size)

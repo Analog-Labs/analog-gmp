@@ -193,9 +193,6 @@ contract GasUtilsBase is Test {
      * @dev Compare the estimated gas cost VS the actual gas cost of the `execute` method.
      */
     function test_baseExecutionCost(uint16 messageSize, uint16 gasLimit) external {
-        // uint16 messageSize, uint16 gasLimit
-        // uint16 messageSize = 7944;
-        // uint16 gasLimit = 19072;
         vm.assume(gasLimit >= 5000);
         vm.assume(messageSize <= (0x6000 - 32));
         messageSize += 32;

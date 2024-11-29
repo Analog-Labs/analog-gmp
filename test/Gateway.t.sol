@@ -3,7 +3,6 @@
 
 pragma solidity >=0.8.0;
 
-// import {Signer} from "frost-evm/sol/Signer.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils, SigningKey, SigningUtils} from "./TestUtils.sol";
@@ -175,7 +174,6 @@ contract GatewayBase is Test {
 
         // 2 - Deploy the Proxy Contract
         TssKey[] memory keys = new TssKey[](1);
-        // keys[0] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()}); // Shard key
         keys[0] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()}); // Shard key
         Network[] memory networks = new Network[](2);
         networks[0].id = SRC_NETWORK_ID; // sepolia network id
@@ -286,11 +284,8 @@ contract GatewayBase is Test {
     /**
      * @dev Test the gas metering for the `execute` function.
      */
-    // function test_gasMeter(uint16 messageSize) external {
-    //     vm.assume(messageSize <= 0x6000);
-    function test_gasMeter() external {
-        // uint16 messageSize = 7992;
-        uint16 messageSize = 800;
+    function test_gasMeter(uint16 messageSize) external {
+        vm.assume(messageSize <= 0x6000 && messageSize >= 32);
         vm.txGasPrice(1);
         address sender = TestUtils.createTestAccount(100 ether);
 
@@ -345,14 +340,6 @@ contract GatewayBase is Test {
         ctx.baseCost = 0;
         (status, returned) = ctx.execute(sig, gmp);
 
-        // if (ctx.gasLimit > 20000) {
-        //     console.log("         gas needed:", GasUtils.executionGasNeeded(uint16(gmp.data.length), gmp.gasLimit));
-        //     console.log("       gas provided:", ctx.gasLimit - baseCost);
-        //     console.log("   execution refund:", GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit));
-        //     console.log("    actual gas used:", ctx.executionCost);
-        //     revert("successo");
-        // }
-
         assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "gmp execution failed");
         assertEq(uint256(returned), gmp.gasLimit, "wrong gmp return value");
         assertEq(ctx.baseCost, baseCost, "ctx.baseCost != baseCost");
@@ -393,114 +380,6 @@ contract GatewayBase is Test {
             GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 4500,
             "unexpected submit message gas cost"
         );
-    }
-
-    function _binarySearch(uint256 lower, uint256 upper, function (uint256) internal returns (bool) cb)
-        private
-        returns (uint256, uint256)
-    {
-        unchecked {
-            uint256 snapshotId = vm.snapshotState();
-            require(lower < upper, "'lower' must be less than 'upper'");
-            uint256 freeMemory;
-            assembly {
-                freeMemory := mload(0x40)
-            }
-            bool target = cb(lower);
-            console.log("setup lower");
-            vm.revertToState(snapshotId);
-            console.log("setup upper");
-            require(cb(upper) != target, "cb(lower) == cb(upper)");
-            console.log("setup done");
-            // assembly {
-            //     // Clear the memory
-            //     let len := sub(mload(0x40), freeMemory)
-            //     calldatacopy(freeMemory, calldatasize(), len)
-            // }
-            uint256 prev = 0;
-            uint256 mid = type(uint256).max;
-            while (prev != mid) {
-                prev = mid;
-                mid = (upper + lower) >> 1;
-                vm.revertToState(snapshotId);
-                if (cb(mid) == target) {
-                    console.log("lower: ", mid, lower, upper);
-                    lower = mid;
-                } else {
-                    console.log("upper: ", mid, lower, upper);
-                    upper = mid;
-                }
-                // assembly {
-                //     // Clear the memory
-                //     let len := sub(mload(0x40), freeMemory)
-                //     calldatacopy(freeMemory, calldatasize(), len)
-                //     mstore(0x40, freeMemory)
-                // }
-            }
-            vm.revertToState(snapshotId);
-            console.log("will return", lower, upper);
-            return (lower, upper);
-        }
-    }
-
-    function _testMaxMemory(uint256 maxMemory) internal returns (bool) {
-        try vm.stopExpectSafeMemory() {}
-        catch {
-            console.log("vm.stopExpectSafeMemory ERROR");
-        }
-
-        uint16 messageSize = 800;
-        vm.txGasPrice(1);
-        address sender = TestUtils.createTestAccount(100 ether);
-
-        // Build and sign GMP message
-        GmpMessage memory gmp = GmpMessage({
-            source: sender.toSender(false),
-            srcNetwork: SRC_NETWORK_ID,
-            dest: address(bytes20(keccak256("dummy_address"))),
-            destNetwork: DEST_NETWORK_ID,
-            gasLimit: 0,
-            salt: 0,
-            data: new bytes(messageSize)
-        });
-        Signature memory sig = sign(gmp);
-
-        // Transaction Parameters
-        CallOptions memory ctx = CallOptions({
-            from: sender,
-            to: address(gateway),
-            value: 0,
-            gasLimit: gasleft() / 2,
-            executionCost: 0,
-            baseCost: 0
-        });
-
-        // Expect a revert
-        try vm.expectSafeMemoryCall(0, uint64(maxMemory)) {}
-        catch {
-            console.log("vm.expectSafeMemoryCall ERROR");
-        }
-        (bool success,,) = ctx.tryExecute(sig, gmp);
-        return success;
-    }
-
-    // function _testMaxMemoryCB(uint256 maxMemory) private returns (bool) {
-    //     try GatewayBase(address(this))._testMaxMemory(maxMemory) {
-    //         console.log(" OK -> ", maxMemory);
-    //         return true;
-    //     } catch (bytes memory reason) {
-    //         console.log("ERR -> ", maxMemory, string(reason));
-    //         // console.log(string(reason));
-    //         return false;
-    //     }
-    // }
-
-    function test_jose() external {
-        uint256 lower = 1;
-        uint256 upper = 2000;
-        // require(_testMaxMemory(upper), "deu ruim");
-        (lower, upper) = _binarySearch(lower, upper, _testMaxMemory);
-        console.log("success!", lower, upper);
     }
 
     function test_submitMessageMeter(uint16 messageSize) external {

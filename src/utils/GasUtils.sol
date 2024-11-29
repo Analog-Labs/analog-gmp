@@ -12,15 +12,6 @@ import {BranchlessMath} from "./BranchlessMath.sol";
 library GasUtils {
     using BranchlessMath for uint256;
 
-    // /**
-    //  * @dev GatewayProxy overhead
-    //  * SLOAD 2100 (implementation_slot)
-    //  * CALLDATACOPY 3 + (words * 3) + (words * words) >> 9 + (words * 3)
-    //  * DELEGATECALL 2100 (implementation)
-    //  * OTHER OPCODES 21
-    //  */
-    // uint256 internal constant GATEWAY_PROXY_OVERHEAD = 2100 + 3 + 2100 + 21;
-
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
@@ -90,7 +81,7 @@ library GasUtils {
             gasCost += words << 8;
 
             // Memory expansion cost
-            words += 13 + 4;
+            words += 17;
             gasCost += ((words * words) >> 9) + (words * 3);
 
             return gasCost;
@@ -308,8 +299,6 @@ library GasUtils {
      */
     function executionGasNeeded(uint256 messageSize, uint256 gasLimit) internal pure returns (uint256 gasNeeded) {
         unchecked {
-            // gasNeeded = inverseOfAllButOne64th(gasLimit);
-            // gasNeeded = gasNeeded.saturatingAdd(_executionGasCost(messageSize, gasLimit));
             gasNeeded = _executionGasCost(messageSize, gasLimit);
             gasNeeded = gasNeeded.saturatingAdd(2300 - 184);
             gasNeeded = inverseOfAllButOne64th(gasNeeded);
