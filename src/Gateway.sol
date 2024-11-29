@@ -150,7 +150,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Register networks
         RouteStore.getMainStorage().initialize(networks, NetworkID.wrap(NETWORK_ID), computeDomainSeparator);
-        // _updateNetworks(networks);
 
         // Register keys
         ShardStore.getMainStorage().registerTssKeys(keys);
@@ -417,7 +416,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         view
         returns (uint256)
     {
-        //  NetworkInfo storage network = _networkInfo[networkid];
         RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(NetworkID.wrap(networkid));
 
         // Estimate the cost
