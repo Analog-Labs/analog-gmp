@@ -370,12 +370,6 @@ library TestUtils {
                     console.log("upper: ", mid, lower, upper);
                     upper = mid;
                 }
-                // assembly {
-                //     // Clear the memory
-                //     let len := sub(mload(0x40), freeMemory)
-                //     calldatacopy(freeMemory, calldatasize(), len)
-                //     mstore(0x40, freeMemory)
-                // }
             }
             vm.revertToState(snapshotId);
             console.log("will return", lower, upper);
@@ -483,10 +477,6 @@ library VerifyingUtils {
 }
 
 library SigningUtils {
-    // function yParity(VerifyingKey memory pubkey) internal pure returns (uint8) {
-    //     return uint8(pubkey.py % 2) + 27;
-    // }
-
     function yParity(SigningKey memory signer) internal pure returns (uint8) {
         return uint8(signer.pubkey.py % 2) + 27;
     }
@@ -495,13 +485,8 @@ library SigningUtils {
         return signer.pubkey.px;
     }
 
-    // function challenge(VerifyingKey memory pubkey, bytes32 hash, address r) internal pure returns (uint256) {
-    //     return uint256(keccak256(abi.encodePacked(r, yParity(pubkey), pubkey.px, uint256(hash))));
-    // }
-
     function challenge(SigningKey memory signer, bytes32 hash, address r) internal pure returns (uint256) {
         return uint256(keccak256(abi.encodePacked(r, yParity(signer), signer.pubkey.px, uint256(hash))));
-        // return challenge(signer.pubkey, hash, r);
     }
 
     function signPrehashed(SigningKey memory signer, bytes32 hash, uint256 nonce)
@@ -524,29 +509,12 @@ library SigningUtils {
         return signPrehashed(signer, keccak256(message), nonce);
     }
 
-    // function verifyPrehash(VerifyingKey memory pubkey, bytes32 prehash, uint256 c, uint256 z)
-    //     internal
-    //     pure
-    //     returns (bool)
-    // {
-    //     return Schnorr.verify(yParity(pubkey), pubkey.px, uint256(prehash), c, z);
-    // }
-
-    // function verify(VerifyingKey memory pubkey, bytes memory message, uint256 c, uint256 z)
-    //     internal
-    //     pure
-    //     returns (bool)
-    // {
-    //     return verifyPrehash(pubkey, keccak256(message), c, z);
-    // }
-
     function verifyPrehash(SigningKey memory signer, bytes32 prehash, uint256 c, uint256 z)
         internal
         pure
         returns (bool)
     {
         return Schnorr.verify(yParity(signer), signer.pubkey.px, uint256(prehash), c, z);
-        // return verifyPrehash(signer.pubkey, prehash, c, z);
     }
 
     function verify(SigningKey memory signer, bytes memory message, uint256 c, uint256 z)
@@ -555,6 +523,5 @@ library SigningUtils {
         returns (bool)
     {
         return verifyPrehash(signer, keccak256(message), c, z);
-        // return verifyPrehash(signer.pubkey, keccak256(message), c, z);
     }
 }
