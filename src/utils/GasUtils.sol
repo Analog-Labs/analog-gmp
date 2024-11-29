@@ -24,12 +24,12 @@ library GasUtils {
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = 46149; //46578;
+    uint256 internal constant EXECUTION_BASE_COST = 46100;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 25838;
+    uint256 internal constant SUBMIT_BASE_COST = 25845;
 
     /**
      * @dev Compute the gas cost of memory expansion.
@@ -193,7 +193,7 @@ library GasUtils {
         // Safety: The operations below can't overflow because the message size can't be greater than 2**16
         unchecked {
             // Selector overhead
-            // uint256 baseCost = 442;
+            // uint256 baseCost = 420;
             uint256 memoryExpansion = 0x60;
 
             // all opcodes until message.intoCallback(DOMAIN_SEPARATOR)
@@ -215,9 +215,10 @@ library GasUtils {
             // keccak256 30 + 6 gas per word
             // baseCost += 30;
             gas = gas.saturatingAdd(_toWord(messageSize) * 6);
+            // baseCost += 424;
 
-            // baseCost += 448;
             // -- message.intoCallback() --
+
             // baseCost += 34;
 
             // -- _verifySignature --
@@ -229,12 +230,14 @@ library GasUtils {
             // _execute
             // baseCost += 22551;
             // baseCost += 2; // GAS
+
             // baseCost += 97;
             //  ------  CALL ------
+
             // baseCost += 2600;
             gas = gas.saturatingAdd(gasUsed);
-            memoryExpansion += 4;
-            memoryExpansion = memoryExpansion.align32();
+            memoryExpansion = (messageSize.align32() + 0x80 + 0x0120 + 164).align32();
+
             //  ------  CALL ------
             // baseCost += 67;
             // baseCost += 100; // SLOAD
@@ -242,11 +245,14 @@ library GasUtils {
             // baseCost += 100; // SSTORE
 
             // -- emit GmpExecuted --
-            // baseCost += 207;
-            // memoryExpansion += 0x40;
+            // baseCost += 141;
+            memoryExpansion += 0x20; // MSTORE
+            // baseCost += 24;
+            memoryExpansion += 0x20; // MSTORE
+            // baseCost += 39;
             // baseCost += 2387; // LOG4
-            // -- emit GmpExecuted --
             // baseCost += 26;
+            // -- emit GmpExecuted --
             // end _execute
 
             // baseCost += 34;
@@ -271,12 +277,9 @@ library GasUtils {
             // baseCost += 560;
             // ----- GAS -------
 
-            // baseCost += 168;
-            // baseCost += 6800;
-            // REFUND CALL
-
-            // baseCost += 184;
-            // RETURN
+            // baseCost += 168; // GAS
+            // baseCost += 6800; // REFUND CALL
+            // baseCost += 184; // RETURN
 
             // gas = gas.saturatingAdd(baseCost);
             gas = gas.saturatingAdd(EXECUTION_BASE_COST);

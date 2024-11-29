@@ -396,20 +396,12 @@ library PrimitiveUtils {
             // Replace the `eip712hash` by the `callback.data.offset`.
             mstore(add(callback, 0x00e0), add(callback, 0x0100))
 
-            // Update free memory pointer to the end of the callback (0x01c4 + data.length)
-            // size := and(add(add(add(callback, 0x01c4), size), 31), 0xffffffe0)
-            size := and(add(size, 31), 0xffffffe0)
-            {
-                let end := add(add(callback, 0x01c4), size)
-                mstore(0x40, and(add(end, 63), 0xffffffe0))
-            }
-
             // Compute the callback size, which is equivalent to compute the following:
             // ```solidity
             // abi.encodeCall(IGmpReceiver.onGmpReceived, (eip712hash, network, sender, data)).length;
             // ```
             // So essentially is the size of `message.data` 32 byte aligned + 164 bytes for the other fields.
-            size := add(size, 164)
+            size := add(and(add(size, 31), 0xffffffe0), 164)
 
             // Add the missing fields between `0x0100..0x01a4` to the callback.
             // The fields between `0x01a4..0x01c4` are already set.
@@ -428,6 +420,10 @@ library PrimitiveUtils {
             }
             mstore(add(callback, 0x0184), 0x80) // payload.offset (32 bytes)
             mstore(add(callback, 0x0100), size) // callback.data.length (32 bytes)
+            {
+                // Update free memory pointer to the end of the callback (0x0120 + data.length)
+                mstore(0x40, and(add(add(callback, 0x013f), size), 0xffffffe0))
+            }
         }
     }
 
