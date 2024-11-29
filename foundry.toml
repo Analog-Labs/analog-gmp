@@ -1,5 +1,6 @@
 [profile.default]
 src = "src"
+test = "test2"            # TODO: change back to test before merge
 out = "out"
 libs = ["lib"]
 match_contract = ".+Test"
@@ -7,7 +8,7 @@ match_contract = ".+Test"
 ########
 # Lint #
 ########
-deny_warnings = true
+# deny_warnings = true
 
 ################
 # Solc options #

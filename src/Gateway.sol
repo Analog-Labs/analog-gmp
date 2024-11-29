@@ -493,7 +493,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     /**
      * @dev Register Shards in batch.
      */
-    function setShard(TssKey[] calldata publicKeys) external {
+    function setShards(TssKey[] calldata publicKeys) external {
         require(msg.sender == _getAdmin(), "unauthorized");
         ShardStore.getMainStorage().registerTssKeys(publicKeys);
     }
@@ -536,7 +536,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     /**
      * @dev Create or update an array of routes
      */
-    function setRoute(Route[] calldata values) external {
+    function setRoutes(Route[] calldata values) external {
         require(msg.sender == _getAdmin(), "unauthorized");
         require(values.length > 0, "routes cannot be empty");
         RouteStore.MainStorage storage store = RouteStore.getMainStorage();

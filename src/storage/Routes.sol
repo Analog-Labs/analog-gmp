@@ -238,8 +238,8 @@ library RouteStore {
                 gasLimit: route.gasLimit,
                 baseFee: route.baseFee,
                 gateway: route.domainSeparator,
-                relativeGasPriceNumerator: numerator,
-                relativeGasPriceDenominator: denominator
+                relativeGasPriceNumerator: uint128(numerator),
+                relativeGasPriceDenominator: uint128(denominator)
             });
         }
         return routes;
