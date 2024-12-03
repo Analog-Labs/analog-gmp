@@ -18,13 +18,30 @@ import {
     TssKey,
     GmpMessage,
     UpdateKeysMessage,
-    UpdateNetworkInfo,
     Signature,
     Network,
     GmpStatus,
     GmpSender,
     PrimitiveUtils
 } from "../src/Primitives.sol";
+
+/**
+ * @dev Message payload used to update the network info.
+ * @param networkId Domain EIP-712 - Replay Protection Mechanism.
+ * @param domainSeparator Domain EIP-712 - Replay Protection Mechanism.
+ * @param gasLimit The maximum amount of gas we allow on this particular network.
+ * @param relativeGasPrice Gas price of destination chain, in terms of the source chain token.
+ * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
+ * @param mortality maximum block in which this message is valid.
+ */
+struct UpdateNetworkInfo {
+    uint16 networkId;
+    bytes32 domainSeparator;
+    uint64 gasLimit;
+    UFloat9x56 relativeGasPrice;
+    uint128 baseFee;
+    uint64 mortality;
+}
 
 contract MigrateGateway is Script {
     using NetworkIDHelpers for NetworkID;

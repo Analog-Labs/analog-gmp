@@ -239,7 +239,7 @@ contract GatewayBase is Test {
         SigningKey memory signer;
         for (uint256 i = 0; i < keys.length; i++) {
             signer = TestUtils.signerFromEntropy(bytes32(i));
-            keys[i] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()});
+            keys[i] = TssKey({yParity: signer.yParity() == 28 ? 3 : 2, xCoord: signer.xCoord()});
         }
         _shortTssKeys(keys);
         
@@ -260,10 +260,10 @@ contract GatewayBase is Test {
             assertEq(shards[i].yParity, keys[i].yParity);
         }
 
-        // Replace one shard key
+        // // Replace one shard key
         signer = TestUtils.signerFromEntropy(bytes32(uint256(12345)));
         keys[0].xCoord = signer.xCoord();
-        keys[0].yParity = signer.yParity() == 28 ? 1 : 0;
+        keys[0].yParity = signer.yParity() == 28 ? 3 : 2;
         _shortTssKeys(keys);
         vm.prank(ADMIN, ADMIN);
         gateway.setShards(keys);

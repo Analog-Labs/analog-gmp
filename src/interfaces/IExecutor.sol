@@ -10,7 +10,6 @@ import {
     GmpStatus,
     GmpStatus,
     UpdateKeysMessage,
-    UpdateNetworkInfo,
     GmpSender,
     Route
 } from "../Primitives.sol";

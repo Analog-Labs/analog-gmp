@@ -298,22 +298,25 @@ library ShardStore {
         }
     }
 
-    function revoke(MainStorage storage store, TssKey calldata id) internal {
-        _revoke(store, ShardID.wrap(bytes32(id.xCoord)));
-    }
-
     /**
-     * @dev Register TSS keys.
+     * @dev Revoke Shards keys.
      * Requirements:
      * - The `keys` must be registered.
      */
-    function _revoke(MainStorage storage store, ShardID id) private {
+    function revoke(MainStorage storage store, TssKey calldata key) internal {
         // Read shard from storage
-        ShardInfo memory shard = get(store, id);
+        ShardID id = ShardID.wrap(bytes32(key.xCoord));
+        ShardInfo memory stored = get(store, id);
 
         // Check y-parity
-        require(shard.yParity == shard.yParity, "y parity mismatch, cannot revoke key");
+        require(stored.yParity == (key.yParity & 1), "y parity mismatch, cannot revoke key");
+        _revoke(store, id);
+    }
 
+    /**
+     * @dev Revoke Shards keys.
+     */
+    function _revoke(MainStorage storage store, ShardID id) private {
         // Remove from the set
         store.shards.remove(ShardID.unwrap(id));
     }

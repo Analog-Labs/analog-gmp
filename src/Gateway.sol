@@ -18,7 +18,6 @@ import {
     TssKey,
     GmpMessage,
     UpdateKeysMessage,
-    UpdateNetworkInfo,
     Signature,
     Network,
     Route,
@@ -61,7 +60,6 @@ abstract contract GatewayEIP712 {
 
 contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     using PrimitiveUtils for UpdateKeysMessage;
-    using PrimitiveUtils for UpdateNetworkInfo;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for address;
     using BranchlessMath for uint256;
@@ -108,20 +106,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     struct GmpInfo {
         GmpStatus status;
         uint64 blockNumber; // block in which the message was processed
-    }
-
-    /**
-     * @dev Network info stored in the Gateway Contract
-     * @param domainSeparator Domain EIP-712 - Replay Protection Mechanism.
-     * @param gasLimit The maximum amount of gas we allow on this particular network.
-     * @param relativeGasPrice Gas price of destination chain, in terms of the source chain token.
-     * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
-     */
-    struct NetworkInfo {
-        bytes32 domainSeparator;
-        uint64 gasLimit;
-        UFloat9x56 relativeGasPrice;
-        uint128 baseFee;
     }
 
     /**
