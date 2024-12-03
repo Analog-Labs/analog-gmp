@@ -492,7 +492,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     function setShards(TssKey[] calldata publicKeys) external {
         require(msg.sender == _getAdmin(), "unauthorized");
-        ShardStore.getMainStorage().registerTssKeys(publicKeys);
+        ShardStore.getMainStorage().replaceTssKeys(publicKeys);
     }
 
     /**

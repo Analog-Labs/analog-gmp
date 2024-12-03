@@ -163,13 +163,15 @@ contract GatewayBase is Test {
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
 
+    address internal constant ADMIN = address(uint160(uint256(keccak256("proxy.admin"))));
+
     constructor() {
         SigningKey memory signer = TestUtils.createSigner(SECRET);
-        address deployer = TestUtils.createTestAccount(100 ether);
-        vm.startPrank(deployer, deployer);
+        vm.deal(ADMIN, 100 ether);
+        vm.startPrank(ADMIN, ADMIN);
 
         // 1 - Deploy the implementation contract
-        address proxyAddr = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
+        address proxyAddr = vm.computeCreateAddress(ADMIN, vm.getNonce(ADMIN) + 1);
         Gateway implementation = new Gateway(DEST_NETWORK_ID, proxyAddr);
 
         // 2 - Deploy the Proxy Contract
@@ -180,7 +182,7 @@ contract GatewayBase is Test {
         networks[0].gateway = proxyAddr; // sepolia proxy address
         networks[1].id = DEST_NETWORK_ID; // shibuya network id
         networks[1].gateway = proxyAddr; // shibuya proxy address
-        bytes memory initializer = abi.encodeCall(Gateway.initialize, (msg.sender, keys, networks));
+        bytes memory initializer = abi.encodeCall(Gateway.initialize, (ADMIN, keys, networks));
         gateway = Gateway(address(new GatewayProxy(address(implementation), initializer)));
         vm.deal(address(gateway), 100 ether);
 
@@ -215,6 +217,64 @@ contract GatewayBase is Test {
         SigningKey memory signer = TestUtils.createSigner(SECRET);
         (uint256 e, uint256 s) = signer.signPrehashed(hash, SIGNING_NONCE);
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
+    }
+
+    function _shortTssKeys(TssKey[] memory keys) private pure {
+        // sort keys by xCoord
+        for (uint256 i=0; i<keys.length; i++) {
+            for (uint256 j=i+1; j<keys.length; j++) {
+                if (keys[i].xCoord > keys[j].xCoord) {
+                    TssKey memory temp = keys[i];
+                    keys[i] = keys[j];
+                    keys[j] = temp;
+                }
+            }
+        }
+    }
+
+    function test_setShards() external {
+        TssKey[] memory keys = new TssKey[](10);
+
+        // create random shard keys
+        SigningKey memory signer;
+        for (uint256 i = 0; i < keys.length; i++) {
+            signer = TestUtils.signerFromEntropy(bytes32(i));
+            keys[i] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()});
+        }
+        _shortTssKeys(keys);
+        
+
+        // Only admin can set shards keys
+        vm.expectRevert("unauthorized");
+        gateway.setShards(keys);
+
+        // Set shards keys must work
+        vm.prank(ADMIN, ADMIN);
+        gateway.setShards(keys);
+
+        // Check shards keys
+        TssKey[] memory shards = gateway.shards();
+        _shortTssKeys(shards);
+        for (uint256 i = 0; i < shards.length; i++) {
+            assertEq(shards[i].xCoord, keys[i].xCoord);
+            assertEq(shards[i].yParity, keys[i].yParity);
+        }
+
+        // Replace one shard key
+        signer = TestUtils.signerFromEntropy(bytes32(uint256(12345)));
+        keys[0].xCoord = signer.xCoord();
+        keys[0].yParity = signer.yParity() == 28 ? 1 : 0;
+        _shortTssKeys(keys);
+        vm.prank(ADMIN, ADMIN);
+        gateway.setShards(keys);
+
+        // Check shards keys
+        shards = gateway.shards();
+        _shortTssKeys(shards);
+        for (uint256 i = 0; i < shards.length; i++) {
+            assertEq(shards[i].xCoord, keys[i].xCoord);
+            assertEq(shards[i].yParity, keys[i].yParity);
+        }
     }
 
     function test_Receiver() external {

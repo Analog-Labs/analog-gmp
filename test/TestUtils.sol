@@ -180,9 +180,16 @@ library TestUtils {
      * @dev Creates a new TSS signer
      */
     function signerFromEntropy(bytes32 entropy) internal pure returns (SigningKey memory) {
-        uint256 secret = uint256(entropy);
+        uint256 secret;
+        assembly {
+            mstore(0, entropy)
+            secret := keccak256(0x00, 0x20)
+        }
         while (secret >= Schnorr.Q) {
-            secret = uint256(keccak256(abi.encodePacked(secret)));
+            assembly {
+                mstore(0, secret)
+                secret := keccak256(0x00, 0x20)
+            }
         }
         return createSigner(secret);
     }
