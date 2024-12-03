@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Analog's Contracts (last updated v0.1.0) (src/GatewayProxy.sol)
+// Analog's Contracts (last updated v0.1.0) (test/utils/GmpProxy.sol)
 
 pragma solidity >=0.8.0;
 
@@ -7,8 +7,6 @@ import {ERC1967} from "../../src/utils/ERC1967.sol";
 import {IGmpReceiver} from "../../src/interfaces/IGmpReceiver.sol";
 import {IGateway} from "../../src/interfaces/IGateway.sol";
 import {BranchlessMath} from "../../src/utils/BranchlessMath.sol";
-// import {GmpMessage as Message} from "../../src/Primitives.sol";
-// import {Context, CreateKind, IUniversalFactory} from "@universal-factory/IUniversalFactory.sol";
 
 
 contract GatewayProxy is IGmpReceiver {
