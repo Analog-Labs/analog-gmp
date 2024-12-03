@@ -196,7 +196,7 @@ library ShardStore {
      */
     function register(MainStorage storage store, TssKey calldata newKey) internal returns (bool) {
         // Check y-parity
-        require(newKey.yParity == (newKey.yParity & 1), "y parity bit must be 0 or 1, cannot register shard");
+        require(newKey.yParity == (newKey.yParity & 3), "y parity bit must be 2 or 3, cannot register shard");
 
         // Read shard from storage
         ShardID id = ShardID.wrap(bytes32(newKey.xCoord));
@@ -223,7 +223,7 @@ library ShardStore {
         stored.createdAtBlock =
             BranchlessMath.ternaryU64(shard.createdAtBlock > 0, shard.createdAtBlock, uint64(block.number));
         stored.nonce = shard.nonce;
-        stored.yParity = newKey.yParity;
+        stored.yParity = newKey.yParity & 1;
         return true;
     }
 
@@ -265,7 +265,7 @@ library ShardStore {
                 if (register(store, key)) {
                     // Shard registered
                     created[createdCount++] = TssKey({
-                        yParity: key.yParity,
+                        yParity: key.yParity + 2,
                         xCoord: key.xCoord
                     });
                 } else {
@@ -352,7 +352,7 @@ library ShardStore {
             if (!success) {
                 revert ShardNotExists(id);
             }
-            shards[i] = TssKey(shard.yParity, uint256(ShardID.unwrap(id)));
+            shards[i] = TssKey(shard.yParity + 2, uint256(ShardID.unwrap(id)));
         }
         return shards;
     }

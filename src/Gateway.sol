@@ -83,6 +83,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     bytes32 private constant GMP_CREATED_EVENT_SELECTOR =
         0x0114885f90b5168242aa31b7afb9c2e9f88e90ce329c893d3e6c56021c4c03a5;
 
+    /**
+     * @dev The address of the `UniversalFactory` contract, must be the same on all networks.
+     */
+    address internal constant FACTORY = 0x0000000000001C4Bf962dF86e38F0c10c7972C6E;
+
     // GMP message status
     mapping(bytes32 => GmpInfo) private _messages;
 
@@ -92,6 +97,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Replay protection mechanism, stores the hash of the executed messages
     // messageHash => shardId
     mapping(bytes32 => bytes32) private _executedMessages;
+    
 
     /**
      * @dev GMP info stored in the Gateway Contract
@@ -140,7 +146,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     // EIP-712 typed hash
     function initialize(address proxyAdmin, TssKey[] calldata keys, Network[] calldata networks) external {
-        require(PROXY_ADDRESS == address(this), "only proxy can be initialize");
+        require(PROXY_ADDRESS == address(this) || msg.sender == FACTORY, "only proxy can be initialize");
         require(prevMessageHash == 0, "already initialized");
         ERC1967.setAdmin(proxyAdmin);
 
@@ -476,7 +482,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     function shardAt(uint256 index) external view returns (TssKey memory) {
         (ShardStore.ShardID xCoord, ShardStore.ShardInfo storage shard) = ShardStore.getMainStorage().at(index);
-        return TssKey({xCoord: uint256(ShardStore.ShardID.unwrap(xCoord)), yParity: shard.yParity});
+        return TssKey({xCoord: uint256(ShardStore.ShardID.unwrap(xCoord)), yParity: shard.yParity + 2});
     }
 
     /**
