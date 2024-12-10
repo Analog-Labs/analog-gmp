@@ -494,7 +494,8 @@ contract MigrateGateway is Script {
             bytes memory initializer = abi.encodeCall(Gateway.initialize, (config.proxyAdmin, emptyShards, emptyNetworks));
 
             vm.startBroadcast(deployer);
-            address deployed = address(new GatewayProxy(implementation, initializer));
+            // address deployed = address(new GatewayProxy(implementation, initializer));
+            address deployed = address(new GatewayProxy(config.proxyAdmin));  // TODO: fix me
             vm.stopBroadcast();
             console.log("     PROXY ADDRESS", deployed);
             console.log(" DEPLOYMENT STATUS", deployed == config.proxy ? "Success" : "Address Mismatch");

@@ -8,6 +8,21 @@ import {console} from "forge-std/console.sol";
 import {Schnorr} from "@frost-evm/Schnorr.sol";
 import {SECP256K1} from "@frost-evm/SECP256K1.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
+import {IUniversalFactory} from "@universal-factory/IUniversalFactory.sol";
+import {FactoryUtils} from "@universal-factory/FactoryUtils.sol";
+import {IGateway} from "../src/interfaces/IGateway.sol";
+import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
+import {GatewayProxy} from "../src/GatewayProxy.sol";
+import {
+    GmpMessage,
+    UpdateKeysMessage,
+    Signature,
+    TssKey,
+    Network,
+    GmpStatus,
+    PrimitiveUtils,
+    GmpSender
+} from "../src/Primitives.sol";
 
 struct VerifyingKey {
     uint256 px;
@@ -24,11 +39,26 @@ struct SigningKey {
  */
 library TestUtils {
     using BranchlessMath for uint256;
+    using FactoryUtils for IUniversalFactory;
 
     // Cheat code address, 0x7109709ECfa91a80626fF3989D68f67F5b1DD12D.
     address internal constant VM_ADDRESS = address(uint160(uint256(keccak256("hevm cheat code"))));
-
     Vm internal constant vm = Vm(VM_ADDRESS);
+
+    /**
+     * @dev The address of the `UniversalFactory` contract, must be the same on all networks.
+     */
+    address internal constant FACTORY_DEPLOYER = 0x908064dE91a32edaC91393FEc3308E6624b85941;
+
+    /**
+     * @dev The codehash of the `UniversalFactory` contract, must be the same on all networks.
+     */
+    bytes32 internal constant FACTORY_CODEHASH = 0x0dac89b851eaa2369ef725788f1aa9e2094bc7819f5951e3eeaa28420f202b50;
+
+    /**
+     * @dev The address of the `UniversalFactory` contract, must be the same on all networks.
+     */
+    IUniversalFactory internal constant FACTORY = IUniversalFactory(0x0000000000001C4Bf962dF86e38F0c10c7972C6E);
 
     /**
      * @dev Deploys a contract with the given bytecode
@@ -382,6 +412,155 @@ library TestUtils {
             console.log("will return", lower, upper);
             return (lower, upper);
         }
+    }
+
+    function deployFactory() internal returns (IUniversalFactory) {
+        // Check if the factory is already deployed
+        if (address(FACTORY).code.length > 0) {
+            bytes32 codehash;
+            address addr = address(FACTORY);
+            assembly {
+                codehash := extcodehash(addr)
+            }
+            require(codehash == FACTORY_CODEHASH, "Invalid factory codehash");
+            return FACTORY;
+        }
+
+        uint256 nonce = vm.getNonce(FACTORY_DEPLOYER);
+        require(nonce == 0, "Factory deployer account has already been used");
+
+        bytes memory creationCode = vm.getCode("./lib/universal-factory/abi/UniversalFactory.json");
+        vm.deal(FACTORY_DEPLOYER, 100 ether);
+        vm.prank(FACTORY_DEPLOYER, FACTORY_DEPLOYER);
+        address factory;
+        assembly {
+            factory := create(0, add(creationCode, 32), mload(creationCode))
+        }
+        require(factory == address(FACTORY), "Factory address mismatch");
+        require(keccak256(factory.code) == FACTORY_CODEHASH, "Factory codehash mismatch");
+        return FACTORY;
+    }
+
+    /*
+     * @dev Computes the EIP-712 domain separador
+     */
+    function computeDomainSeparator(uint256 networkId, address addr) internal pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256("Analog Gateway Contract"),
+                keccak256("0.1.0"),
+                uint256(networkId),
+                address(addr)
+            )
+        );
+    }
+
+    /**
+     * @dev Deploy a new Gateway and GatewayProxy contracts.
+     */
+    function computeGatewayProxyAddress(address admin, bytes32 salt) internal pure returns (address) {
+        // 1.1 Compute the `GatewayProxy` address
+        bytes memory proxyCreationCode = abi.encodePacked(type(GatewayProxy).creationCode, abi.encode(admin));
+        return FACTORY.computeCreate2Address(salt, proxyCreationCode);
+    }
+
+    /**
+     * @dev Deploy a new Gateway and GatewayProxy contracts.
+     */
+    function setupGateway(VmSafe.Wallet memory admin, bytes32 salt, uint16 routeId, TssKey[] memory keys, Network[] memory networks) internal returns (IGateway gateway) {
+        require(FACTORY == TestUtils.deployFactory(), "UniversalFactory not deployed");
+
+        ///////////////////////////////////////////
+        // 1. Deploy the implementation contract //
+        ///////////////////////////////////////////
+        // 1.1 Compute the `GatewayProxy` address
+        address proxyAddr = computeGatewayProxyAddress(admin.addr, salt);
+
+        // 1.2 Deploy the `Gateway` implementation contract
+        bytes memory implementationCreationCode = abi.encodePacked(type(Gateway).creationCode, abi.encode(routeId, proxyAddr));
+        address implementation = FACTORY.create2(salt, implementationCreationCode, abi.encode(routeId));
+
+        ////////////////////////////////////////////////////////
+        // 2. ProxyAdmin approves the implementation contract //
+        ////////////////////////////////////////////////////////
+        bytes memory authorization;
+        {
+            // This allows anyone to deploy the Proxy.
+            bytes32 digest = keccak256(abi.encode(proxyAddr, address(implementation)));
+            (uint8 v, bytes32 r, bytes32 s) = vm.sign(admin.privateKey, digest);
+            authorization = abi.encode(v, r, s, address(implementation));
+        }
+
+        ////////////////////////////////////////////////////////////////
+        // 3 - Deploy the `GatewayProxy` using the `UniversalFactory` //
+        ////////////////////////////////////////////////////////////////
+        // Initializer, used to initialize the Gateway contract
+        bytes memory initializer = abi.encodeCall(Gateway.initialize, (admin.addr, keys, networks));
+        bytes memory proxyCreationCode = abi.encodePacked(type(GatewayProxy).creationCode, abi.encode(admin.addr));
+        gateway = Gateway(FACTORY.create2(salt, proxyCreationCode, authorization, initializer));
+
+        // Send funds to the gateway contract
+        vm.deal(address(gateway), 100 ether);
+    }
+
+    /**
+     * @dev Deploy a new Gateway and GatewayProxy contracts.
+     */
+    function setupGateway(VmSafe.Wallet memory admin, bytes32 salt, uint16 srcRoute, uint16 dstRoute) internal returns (IGateway gateway) {
+        require(FACTORY == TestUtils.deployFactory(), "UniversalFactory not deployed");
+        SigningKey memory signer = TestUtils.createSigner(admin.privateKey);
+        TssKey[] memory keys = new TssKey[](1);
+        keys[0] = TssKey({yParity: SigningUtils.yParity(signer) == 28 ? 1 : 0, xCoord: SigningUtils.xCoord(signer)}); // Shard key
+        Network[] memory networks = new Network[](2);
+        address proxyAddr = computeGatewayProxyAddress(admin.addr, salt);
+        networks[0].id = srcRoute; // sepolia network id
+        networks[0].gateway = proxyAddr; // sepolia proxy address
+        networks[1].id = dstRoute; // shibuya network id
+        networks[1].gateway = proxyAddr; // shibuya proxy address
+        return setupGateway(admin, salt, dstRoute, keys, networks);
+        /*
+        ///////////////////////////////////////////
+        // 1. Deploy the implementation contract //
+        ///////////////////////////////////////////
+        // 1.1 Compute the `GatewayProxy` address
+        bytes memory proxyCreationCode = abi.encodePacked(type(GatewayProxy).creationCode, abi.encode(admin.addr));
+        address proxyAddr = FACTORY.computeCreate2Address(salt, proxyCreationCode);
+
+        // 1.2 Deploy the `Gateway` implementation contract
+        bytes memory implementationCreationCode = abi.encodePacked(type(Gateway).creationCode, abi.encode(dstRoute, proxyAddr));
+        address implementation = FACTORY.create2(salt, implementationCreationCode, abi.encode(dstRoute));
+
+        ////////////////////////////////////////////////////////
+        // 2. ProxyAdmin approves the implementation contract //
+        ////////////////////////////////////////////////////////
+        bytes memory authorization;
+        {
+            // This allows anyone to deploy the Proxy.
+            bytes32 digest = keccak256(abi.encode(proxyAddr, address(implementation)));
+            (uint8 v, bytes32 r, bytes32 s) = vm.sign(admin.privateKey, digest);
+            authorization = abi.encode(v, r, s, address(implementation));
+        }
+
+        ////////////////////////////////////////////////////////////////
+        // 3 - Deploy the `GatewayProxy` using the `UniversalFactory` //
+        ////////////////////////////////////////////////////////////////
+        SigningKey memory signer = TestUtils.createSigner(admin.privateKey);
+        TssKey[] memory keys = new TssKey[](1);
+        keys[0] = TssKey({yParity: SigningUtils.yParity(signer) == 28 ? 1 : 0, xCoord: SigningUtils.xCoord(signer)}); // Shard key
+        Network[] memory networks = new Network[](2);
+        networks[0].id = srcRoute; // sepolia network id
+        networks[0].gateway = proxyAddr; // sepolia proxy address
+        networks[1].id = dstRoute; // shibuya network id
+        networks[1].gateway = proxyAddr; // shibuya proxy address
+
+        // Initializer, used to initialize the Gateway contract
+        bytes memory initializer = abi.encodeCall(Gateway.initialize, (admin.addr, keys, networks));
+        gateway = Gateway(FACTORY.create2(salt, proxyCreationCode, authorization, initializer));
+
+        // Send funds to the gateway contract
+        vm.deal(address(gateway), 100 ether);
+        */
     }
 }
 

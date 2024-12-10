@@ -163,33 +163,14 @@ contract GatewayBase is Test {
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
 
-    address internal constant ADMIN = address(uint160(uint256(keccak256("proxy.admin"))));
+    address internal constant ADMIN = 0x6f4c950442e1Af093BcfF730381E63Ae9171b87a;
 
     constructor() {
-        SigningKey memory signer = TestUtils.createSigner(SECRET);
-        vm.deal(ADMIN, 100 ether);
-        vm.startPrank(ADMIN, ADMIN);
-
-        // 1 - Deploy the implementation contract
-        address proxyAddr = vm.computeCreateAddress(ADMIN, vm.getNonce(ADMIN) + 1);
-        Gateway implementation = new Gateway(DEST_NETWORK_ID, proxyAddr);
-
-        // 2 - Deploy the Proxy Contract
-        TssKey[] memory keys = new TssKey[](1);
-        keys[0] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()}); // Shard key
-        Network[] memory networks = new Network[](2);
-        networks[0].id = SRC_NETWORK_ID; // sepolia network id
-        networks[0].gateway = proxyAddr; // sepolia proxy address
-        networks[1].id = DEST_NETWORK_ID; // shibuya network id
-        networks[1].gateway = proxyAddr; // shibuya proxy address
-        bytes memory initializer = abi.encodeCall(Gateway.initialize, (ADMIN, keys, networks));
-        gateway = Gateway(address(new GatewayProxy(address(implementation), initializer)));
-        vm.deal(address(gateway), 100 ether);
-
+        VmSafe.Wallet memory admin = vm.createWallet(SECRET);
+        assertEq(ADMIN, admin.addr, "admin address mismatch");
+        gateway = Gateway(address(TestUtils.setupGateway(admin, bytes32(uint256(1234)), SRC_NETWORK_ID, DEST_NETWORK_ID)));
         _srcDomainSeparator = GatewayUtils.computeDomainSeparator(SRC_NETWORK_ID, address(gateway));
         _dstDomainSeparator = GatewayUtils.computeDomainSeparator(DEST_NETWORK_ID, address(gateway));
-
-        vm.stopPrank();
     }
 
     function setUp() public {

@@ -1,9 +1,11 @@
 [profile.default]
 src = "src"
-test = "test2"            # TODO: change back to test before merge
+test = "test"            # TODO: change back to test before merge
 out = "out"
 libs = ["lib"]
 match_contract = ".+Test"
+# Permissions
+fs_permissions = [{ access = "read", path = "./lib/universal-factory/abi" }]
 
 ########
 # Lint #

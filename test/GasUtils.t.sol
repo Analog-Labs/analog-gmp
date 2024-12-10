@@ -65,27 +65,16 @@ contract GasUtilsBase is Test {
     uint16 internal constant DEST_NETWORK_ID = 1337;
 
     constructor() {
+        // Create the Shard and Admin accounts
         signer = new Signer(secret);
-        address deployer = TestUtils.createTestAccount(100 ether);
-        vm.startPrank(deployer, deployer);
+        VmSafe.Wallet memory deployer = vm.createWallet(secret);
+        vm.deal(deployer.addr, 100 ether);
 
         // Deploy the GasUtilsMock contract
         mock = new GasUtilsMock();
 
-        // 1 - Deploy the implementation contract
-        address proxyAddr = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
-        Gateway implementation = new Gateway(DEST_NETWORK_ID, proxyAddr);
-
-        // 2 - Deploy the Proxy Contract
-        TssKey[] memory keys = new TssKey[](1);
-        keys[0] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()}); // Shard key
-        Network[] memory networks = new Network[](2);
-        networks[0].id = SRC_NETWORK_ID; // sepolia network id
-        networks[0].gateway = proxyAddr; // sepolia proxy address
-        networks[1].id = DEST_NETWORK_ID; // shibuya network id
-        networks[1].gateway = proxyAddr; // shibuya proxy address
-        bytes memory initializer = abi.encodeCall(Gateway.initialize, (msg.sender, keys, networks));
-        gateway = Gateway(address(new GatewayProxy(address(implementation), initializer)));
+        // Deploy the GatewayProxy
+        gateway = Gateway(address(TestUtils.setupGateway(deployer, bytes32(uint256(0)), SRC_NETWORK_ID, DEST_NETWORK_ID)));
         vm.deal(address(gateway), 100 ether);
 
         _srcDomainSeparator = GatewayUtils.computeDomainSeparator(SRC_NETWORK_ID, address(gateway));
@@ -98,8 +87,6 @@ contract GasUtilsBase is Test {
                 hex"603c80600a5f395ff3fe5a600201803d523d60209160643560240135146018575bfd5b60365a116018575a604903565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bf3";
             receiver = IGmpReceiver(TestUtils.deployContract(bytecode));
         }
-
-        vm.stopPrank();
     }
 
     function sign(GmpMessage memory gmp) internal view returns (Signature memory) {

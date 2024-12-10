@@ -13,10 +13,11 @@ contract GatewayProxy {
     IUniversalFactory internal constant FACTORY = IUniversalFactory(0x0000000000001C4Bf962dF86e38F0c10c7972C6E);
 
     /**
-     * @dev Minimal ERC-1967 proxy bytecode.
+     * @dev EIP-1967 storage slot with the address of the current implementation.
+     * This is the keccak-256 hash of "eip1967.proxy.implementation" subtracted by 1.
+     * Ref: https://eips.ethereum.org/EIPS/eip-1967
      */
-    bytes private constant PROXY_BYTECODE =
-        hex"363d3d373d3d3d363d7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc545af43d82803e903d91603857fd5bf3";
+    bytes32 private constant IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
 
     constructor(address admin) payable {
         // This contract must be deployed by the `UniversalFactory`
@@ -44,14 +45,24 @@ contract GatewayProxy {
 
         // Set the ERC1967 implementation.
         ERC1967.setImplementation(implementation);
+    }
 
-        // Copy Proxy bytecode to memory
-        bytes memory bytecode = PROXY_BYTECODE;
+    fallback() external payable {
+        assembly ("memory-safe") {
+            // Copy the calldata to memory
+            calldatacopy(0, 0, calldatasize())
 
-        // Return the `PROXY_BYTECODE`.
-        /// @solidity memory-safe-assembly
-        assembly {
-            return(add(bytecode, 32), mload(bytecode))
+            // Delegate call to the implementation contract
+            let success := delegatecall(gas(), sload(IMPLEMENTATION_SLOT), 0, calldatasize(), 0, 0)
+
+            // Copy the return data to memory
+            returndatacopy(0, 0, returndatasize())
+
+            // Return if the call succeeded
+            if success { return(0, returndatasize()) }
+
+            // Revert if the call failed
+            revert(0, returndatasize())
         }
     }
 }
