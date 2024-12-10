@@ -102,7 +102,7 @@ contract ExampleTest is Test {
         srcToken = new MockERC20("Source Token", "A", srcGateway, dstToken, dstGateway.networkId(), ALICE, 1000);
 
         // Step 3: Send GMP message
-        GmpSender source = address(srcToken).toSender(true);
+        GmpSender source = address(srcToken).toSender(false);
         GmpMessage memory gmp = GmpMessage({
             source: source,
             srcNetwork: SRC_NETWORK_ID,
