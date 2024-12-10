@@ -71,8 +71,6 @@ struct UpdateKeysMessage {
     TssKey[] register;
 }
 
-
-
 /**
  * @dev A Route represents a communication channel between two networks.
  * @param networkId The id of the provided network.

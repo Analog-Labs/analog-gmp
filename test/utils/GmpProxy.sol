@@ -8,21 +8,20 @@ import {IGmpReceiver} from "../../src/interfaces/IGmpReceiver.sol";
 import {IGateway} from "../../src/interfaces/IGateway.sol";
 import {BranchlessMath} from "../../src/utils/BranchlessMath.sol";
 
-
 contract GatewayProxy is IGmpReceiver {
     using BranchlessMath for uint256;
 
     event MessageReceived(bytes32 indexed id, GmpMessage msg);
 
-	struct GmpMessage {
-		bytes32 foreign;
-		uint16 foreign_network;
-		address local;
-		uint128 gasLimit;
-		uint128 gasCost;
-		uint64 nonce;
-		bytes data;
-	}
+    struct GmpMessage {
+        bytes32 foreign;
+        uint16 foreign_network;
+        address local;
+        uint128 gasLimit;
+        uint128 gasCost;
+        uint64 nonce;
+        bytes data;
+    }
 
     IGateway public immutable GATEWAY;
     uint16 public immutable NETWORK_ID;

@@ -247,7 +247,10 @@ library ShardStore {
      * Requirements:
      * - The `keys` should not be already registered.
      */
-    function replaceTssKeys(MainStorage storage store, TssKey[] calldata keys) internal returns(TssKey[] memory created, TssKey[] memory revoked) {
+    function replaceTssKeys(MainStorage storage store, TssKey[] calldata keys)
+        internal
+        returns (TssKey[] memory created, TssKey[] memory revoked)
+    {
         unchecked {
             revoked = listShards(store);
             created = new TssKey[](keys.length);
@@ -255,23 +258,22 @@ library ShardStore {
             // Make sure the tss keys are correctly ordered, this makes easier to prevent repeated keys, and
             // allows binary search.
             uint256 createdCount = 0;
-            for (uint256 i=0; i<keys.length; i++) {
+            for (uint256 i = 0; i < keys.length; i++) {
                 TssKey calldata key = keys[i];
                 if (i > 0) {
-                    TssKey calldata previousKey = keys[i-1];
-                    require(previousKey.xCoord < key.xCoord, "tss keys must be orderd by 'key.xCoord' in asceding order");
+                    TssKey calldata previousKey = keys[i - 1];
+                    require(
+                        previousKey.xCoord < key.xCoord, "tss keys must be orderd by 'key.xCoord' in asceding order"
+                    );
                 }
-                
+
                 if (register(store, key)) {
                     // Shard registered
-                    created[createdCount++] = TssKey({
-                        yParity: key.yParity + 2,
-                        xCoord: key.xCoord
-                    });
+                    created[createdCount++] = TssKey({yParity: key.yParity + 2, xCoord: key.xCoord});
                 } else {
                     // Shard already registered, remove it from the revoke list.
                     uint256 len = revoked.length;
-                    for (uint256 j=0; j<len; j++) {
+                    for (uint256 j = 0; j < len; j++) {
                         TssKey memory current = revoked[j];
                         if (current.xCoord == key.xCoord) {
                             revoked[j] = revoked[len - 1];
@@ -291,7 +293,7 @@ library ShardStore {
             }
 
             // Revoke Shards
-            for (uint256 i = 0; i<revoked.length; i++) {
+            for (uint256 i = 0; i < revoked.length; i++) {
                 TssKey memory key = revoked[i];
                 _revoke(store, ShardID.wrap(bytes32(key.xCoord)));
             }
@@ -333,9 +335,7 @@ library ShardStore {
         }
     }
 
-    function _t(MainStorage storage store) internal view returns (TssKey[] memory) {
-
-    }
+    function _t(MainStorage storage store) internal view returns (TssKey[] memory) {}
 
     /**
      * @dev Return all shards registered currently registered.

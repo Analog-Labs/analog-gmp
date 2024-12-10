@@ -95,7 +95,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Replay protection mechanism, stores the hash of the executed messages
     // messageHash => shardId
     mapping(bytes32 => bytes32) private _executedMessages;
-    
 
     /**
      * @dev GMP info stored in the Gateway Contract
@@ -277,7 +276,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint256 initialGas = gasleft();
         // Add the solidity selector overhead to the initial gas, this way we guarantee that
         // the `initialGas` represents the actual gas that was available to this contract.
-        initialGas = initialGas.saturatingAdd(496);
+        initialGas = initialGas.saturatingAdd(GasUtils.EXECUTION_SELECTOR_OVERHEAD);
 
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.

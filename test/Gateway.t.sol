@@ -221,8 +221,8 @@ contract GatewayBase is Test {
 
     function _shortTssKeys(TssKey[] memory keys) private pure {
         // sort keys by xCoord
-        for (uint256 i=0; i<keys.length; i++) {
-            for (uint256 j=i+1; j<keys.length; j++) {
+        for (uint256 i = 0; i < keys.length; i++) {
+            for (uint256 j = i + 1; j < keys.length; j++) {
                 if (keys[i].xCoord > keys[j].xCoord) {
                     TssKey memory temp = keys[i];
                     keys[i] = keys[j];
@@ -242,7 +242,6 @@ contract GatewayBase is Test {
             keys[i] = TssKey({yParity: signer.yParity() == 28 ? 3 : 2, xCoord: signer.xCoord()});
         }
         _shortTssKeys(keys);
-        
 
         // Only admin can set shards keys
         vm.expectRevert("unauthorized");
@@ -298,7 +297,7 @@ contract GatewayBase is Test {
     function test_estimateMessageCost() external {
         vm.txGasPrice(1);
         uint256 cost = gateway.estimateMessageCost(DEST_NETWORK_ID, 96, 100000);
-        assertEq(cost, GasUtils.EXECUTION_BASE_COST + 133815);
+        assertEq(cost, GasUtils.EXECUTION_BASE_COST + 133821);
     }
 
     function test_checkPayloadSize() external {

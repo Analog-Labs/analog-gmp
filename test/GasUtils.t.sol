@@ -243,22 +243,22 @@ contract GasUtilsBase is Test {
 
     function test_gasUtils() external pure {
         uint256 baseCost = GasUtils.EXECUTION_BASE_COST;
-        assertEq(GasUtils.estimateGas(0, 0, 0), 31522 + baseCost);
-        assertEq(GasUtils.estimateGas(0, 33, 0), 31895 + baseCost);
-        assertEq(GasUtils.estimateGas(33, 0, 0), 32555 + baseCost);
-        assertEq(GasUtils.estimateGas(20, 13, 0), 32295 + baseCost);
+        assertEq(GasUtils.estimateGas(0, 0, 0), 31528 + baseCost);
+        assertEq(GasUtils.estimateGas(0, 33, 0), 31901 + baseCost);
+        assertEq(GasUtils.estimateGas(33, 0, 0), 32561 + baseCost);
+        assertEq(GasUtils.estimateGas(20, 13, 0), 32301 + baseCost);
 
         UFloat9x56 one = UFloatMath.ONE;
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 31522 + baseCost);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 31895 + baseCost);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 32555 + baseCost);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 32295 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 31528 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 31901 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 32561 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 32301 + baseCost);
 
         UFloat9x56 two = UFloat9x56.wrap(0x8080000000000000);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), (31522 + baseCost) * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), (31895 + baseCost) * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), (32555 + baseCost) * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), (32295 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), (31528 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), (31901 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), (32561 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), (32301 + baseCost) * 2);
     }
 }
 

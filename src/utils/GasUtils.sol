@@ -13,14 +13,19 @@ library GasUtils {
     using BranchlessMath for uint256;
 
     /**
+     * @dev How much gas is used until the first `gasleft()` instruction is executed.
+     */
+    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 496;
+
+    /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = 46167;
+    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 45593;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 25845 - 22;
+    uint256 internal constant SUBMIT_BASE_COST = 25818;
 
     /**
      * @dev Compute the gas cost of memory expansion.
@@ -40,11 +45,12 @@ library GasUtils {
     function proxyOverheadGasCost(uint256 calldataLen, uint256 returnLen) internal pure returns (uint256) {
         unchecked {
             // Convert the calldata and return data length to words
-            calldataLen = calldataLen.saturatingAdd(31) >> 5;
-            returnLen = returnLen.saturatingAdd(31) >> 5;
+            calldataLen = _toWord(calldataLen);
+            returnLen = _toWord(returnLen);
 
-            // Base cost: OPCODES + COLD SLOAD + COLD DELEGATECALL
-            uint256 gasCost = 57 + 2100 + 2600;
+            // Base cost: OPCODES + COLD SLOAD + COLD DELEGATECALL + RETURNDATACOPY
+            // uint256 gasCost = 57 + 2100 + 2600;
+            uint256 gasCost = 31 + 2100 + 2600 + 32;
 
             // CALLDATACOPY
             gasCost = gasCost.saturatingAdd(calldataLen * 3);
@@ -52,8 +58,8 @@ library GasUtils {
             // RETURNDATACOPY
             gasCost = gasCost.saturatingAdd(returnLen * 3);
 
-            // MEMORY EXPANSION
-            uint256 words = BranchlessMath.max(calldataLen, returnLen);
+            // MEMORY EXPANSION (minimal 3 due mstore(0x40, 0x80))
+            uint256 words = calldataLen.max(returnLen).max(3);
             gasCost = gasCost.saturatingAdd(memoryExpansionGasCost(words));
             return gasCost;
         }
@@ -180,99 +186,118 @@ library GasUtils {
         }
     }
 
-    function _executionGasCost(uint256 messageSize, uint256 gasUsed) internal pure returns (uint256) {
-        // Safety: The operations below can't overflow because the message size can't be greater than 2**16
+    function _debugExecutionGasCost(uint256 messageSize, uint256 gasUsed) internal pure returns (uint256) {
         unchecked {
             // Selector overhead
-            // uint256 baseCost = 420;
+            // -- First GAS opcode
+            uint256 baseCost = EXECUTION_SELECTOR_OVERHEAD - 9;
             uint256 memoryExpansion = 0x60;
+            // -- First GAS opcode
 
             // all opcodes until message.intoCallback(DOMAIN_SEPARATOR)
-            // baseCost += 449;
+            baseCost += 449;
 
             // -- message.intoCallback() --
-            // baseCost += 438;
+            baseCost += 438;
             memoryExpansion = 0x80 + 0x01c4;
-
+            uint256 gas = 0;
             // CALLDATACOPY 3 + (3 * words) + memory_expansion
-            // baseCost += 3;
-            uint256 gas = _toWord(messageSize) * 3;
+            baseCost += 3;
+            gas = _toWord(messageSize) * 3;
             memoryExpansion += messageSize;
             memoryExpansion = memoryExpansion.align32();
 
             // opcodes until keccak256
-            // baseCost += 31;
+            baseCost += 31;
 
             // keccak256 30 + 6 gas per word
-            // baseCost += 30;
+            baseCost += 30;
             gas = gas.saturatingAdd(_toWord(messageSize) * 6);
-            // baseCost += 424;
-
+            //
+            baseCost += 424;
             // -- message.intoCallback() --
 
-            // baseCost += 34;
+            baseCost += 34;
 
             // -- _verifySignature --
-            // baseCost += 7933;
+            baseCost += 7933;
             // -- _verifySignature --
 
-            // baseCost += 18;
+            baseCost += 18;
 
             // _execute
-            // baseCost += 22551;
-            // baseCost += 2; // GAS
+            baseCost += 22551;
+            baseCost += 2; // GAS
 
-            // baseCost += 97;
+            baseCost += 97;
             //  ------  CALL ------
 
-            // baseCost += 2600;
+            baseCost += 2600;
             gas = gas.saturatingAdd(gasUsed);
             memoryExpansion = (messageSize.align32() + 0x80 + 0x0120 + 164).align32();
 
             //  ------  CALL ------
-            // baseCost += 67;
-            // baseCost += 100; // SLOAD
-            // baseCost += 69;
-            // baseCost += 100; // SSTORE
+            baseCost += 67;
+            baseCost += 100; // SLOAD
+            baseCost += 69;
+            baseCost += 100; // SSTORE
 
             // -- emit GmpExecuted --
-            // baseCost += 141;
+            baseCost += 141;
             memoryExpansion += 0x20; // MSTORE
-            // baseCost += 24;
+            baseCost += 24;
             memoryExpansion += 0x20; // MSTORE
-            // baseCost += 39;
-            // baseCost += 2387; // LOG4
-            // baseCost += 26;
+            baseCost += 39;
+            baseCost += 2387; // LOG4
+            baseCost += 26;
             // -- emit GmpExecuted --
             // end _execute
 
-            // baseCost += 34;
+            baseCost += 34;
 
             // GasUtils.txBaseCost()
             {
-                // baseCost += 64; // base cost
+                baseCost += 64; // base cost
 
                 // chunk start cost
-                // baseCost += 66;
+                baseCost += 66;
 
                 // Selector + Signature + GmpMessage
                 uint256 words = messageSize.align32().saturatingAdd(388 + 31) >> 5;
                 words = (words * 106) + (((words.saturatingSub(255) + 254) / 255) * 214);
                 gas = gas.saturatingAdd(words);
 
-                // baseCost += 171; // End countNonZeros
-                // baseCost += 70; // End txBaseCost
+                baseCost += 171; // End countNonZeros
+                baseCost += 70; // End txBaseCost
             }
             // end GasUtils.txBaseCost()
 
-            // baseCost += 560;
+            baseCost += 482;
             // ----- GAS -------
 
-            // baseCost += 168; // GAS
-            // baseCost += 6800; // REFUND CALL
-            // baseCost += 184; // RETURN
+            baseCost += 168; // GAS
+            baseCost += 6800; // REFUND CALL
+            baseCost += 184; // RETURN
 
-            // gas = gas.saturatingAdd(baseCost);
+            gas = gas.saturatingAdd(baseCost);
+            gas = gas.saturatingAdd(memoryExpansionGasCost(_toWord(memoryExpansion)));
+            return gas;
+        }
+    }
+
+    function _executionGasCost(uint256 messageSize, uint256 gasUsed) internal pure returns (uint256) {
+        // Safety: The operations below can't overflow because the message size can't be greater than 2**16
+        unchecked {
+            uint256 gas = _toWord(messageSize) * 3;
+            gas = gas.saturatingAdd(_toWord(messageSize) * 6);
+            gas = gas.saturatingAdd(gasUsed);
+            uint256 memoryExpansion = (messageSize.align32() + 0x80 + 0x0120 + 164).align32() + 0x40;
+            {
+                // Selector + Signature + GmpMessage
+                uint256 words = messageSize.align32().saturatingAdd(388 + 31) >> 5;
+                words = (words * 106) + (((words.saturatingSub(255) + 254) / 255) * 214);
+                gas = gas.saturatingAdd(words);
+            }
             gas = gas.saturatingAdd(EXECUTION_BASE_COST);
             gas = gas.saturatingAdd(memoryExpansionGasCost(_toWord(memoryExpansion)));
             return gas;
@@ -304,7 +329,8 @@ library GasUtils {
             gasNeeded = inverseOfAllButOne64th(gasNeeded);
             messageSize = messageSize.align32().saturatingAdd(388);
             gasNeeded = gasNeeded.saturatingAdd(proxyOverheadGasCost(messageSize, 64));
-            gasNeeded = gasNeeded.saturatingSub(39);
+            // Remove the proxy final overhead, once the message requires (2300 - 184) extra gas.
+            gasNeeded = gasNeeded.saturatingSub(38);
         }
     }
 
