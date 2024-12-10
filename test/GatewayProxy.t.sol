@@ -77,7 +77,6 @@ contract GatewayProxyTest is Test {
     }
 
     function _setup(VmSafe.Wallet memory admin, bytes32 salt, uint16 routeID) private returns (Gateway gateway) {
-
         ///////////////////////////////////////////
         // 1. Deploy the implementation contract //
         ///////////////////////////////////////////
@@ -86,7 +85,8 @@ contract GatewayProxyTest is Test {
         address proxyAddr = FACTORY.computeCreate2Address(salt, proxyCreationCode);
 
         // 1.2 Deploy the `Gateway` implementation contract
-        bytes memory implementationCreationCode = abi.encodePacked(type(Gateway).creationCode, abi.encode(routeID, proxyAddr));
+        bytes memory implementationCreationCode =
+            abi.encodePacked(type(Gateway).creationCode, abi.encode(routeID, proxyAddr));
         address implementation = FACTORY.create2(salt, implementationCreationCode, abi.encode(routeID));
         assertEq(Gateway(implementation).networkId(), routeID);
 

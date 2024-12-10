@@ -468,7 +468,13 @@ library TestUtils {
     /**
      * @dev Deploy a new Gateway and GatewayProxy contracts.
      */
-    function setupGateway(VmSafe.Wallet memory admin, bytes32 salt, uint16 routeId, TssKey[] memory keys, Network[] memory networks) internal returns (IGateway gateway) {
+    function setupGateway(
+        VmSafe.Wallet memory admin,
+        bytes32 salt,
+        uint16 routeId,
+        TssKey[] memory keys,
+        Network[] memory networks
+    ) internal returns (IGateway gateway) {
         require(FACTORY == TestUtils.deployFactory(), "UniversalFactory not deployed");
 
         ///////////////////////////////////////////
@@ -478,7 +484,8 @@ library TestUtils {
         address proxyAddr = computeGatewayProxyAddress(admin.addr, salt);
 
         // 1.2 Deploy the `Gateway` implementation contract
-        bytes memory implementationCreationCode = abi.encodePacked(type(Gateway).creationCode, abi.encode(routeId, proxyAddr));
+        bytes memory implementationCreationCode =
+            abi.encodePacked(type(Gateway).creationCode, abi.encode(routeId, proxyAddr));
         address implementation = FACTORY.create2(salt, implementationCreationCode, abi.encode(routeId));
 
         ////////////////////////////////////////////////////////
@@ -507,7 +514,10 @@ library TestUtils {
     /**
      * @dev Deploy a new Gateway and GatewayProxy contracts.
      */
-    function setupGateway(VmSafe.Wallet memory admin, bytes32 salt, uint16 srcRoute, uint16 dstRoute) internal returns (IGateway gateway) {
+    function setupGateway(VmSafe.Wallet memory admin, bytes32 salt, uint16 srcRoute, uint16 dstRoute)
+        internal
+        returns (IGateway gateway)
+    {
         require(FACTORY == TestUtils.deployFactory(), "UniversalFactory not deployed");
         SigningKey memory signer = TestUtils.createSigner(admin.privateKey);
         TssKey[] memory keys = new TssKey[](1);

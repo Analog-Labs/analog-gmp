@@ -61,7 +61,8 @@ contract ExampleTest is Test {
 
         // bytes memory initializer = abi.encodeCall(Gateway.initialize, (msg.sender, keys, networks));
         for (uint256 i = 0; i < networks.length; i++) {
-            address proxy = address(TestUtils.setupGateway(admin, bytes32(uint256(networks[i].id)), networks[i].id, keys, networks));
+            address proxy =
+                address(TestUtils.setupGateway(admin, bytes32(uint256(networks[i].id)), networks[i].id, keys, networks));
             assertEq(proxy, networks[i].gateway, "GatewayProxy address mismatch");
             vm.deal(proxy, 100 ether);
         }

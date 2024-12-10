@@ -74,7 +74,8 @@ contract GasUtilsBase is Test {
         mock = new GasUtilsMock();
 
         // Deploy the GatewayProxy
-        gateway = Gateway(address(TestUtils.setupGateway(deployer, bytes32(uint256(0)), SRC_NETWORK_ID, DEST_NETWORK_ID)));
+        gateway =
+            Gateway(address(TestUtils.setupGateway(deployer, bytes32(uint256(0)), SRC_NETWORK_ID, DEST_NETWORK_ID)));
         vm.deal(address(gateway), 100 ether);
 
         _srcDomainSeparator = GatewayUtils.computeDomainSeparator(SRC_NETWORK_ID, address(gateway));
