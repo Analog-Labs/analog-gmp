@@ -8,18 +8,19 @@ import {IGmpReceiver} from "../../src/interfaces/IGmpReceiver.sol";
 import {IGateway} from "../../src/interfaces/IGateway.sol";
 import {BranchlessMath} from "../../src/utils/BranchlessMath.sol";
 
-contract GatewayProxy is IGmpReceiver {
+contract GmpProxy is IGmpReceiver {
     using BranchlessMath for uint256;
 
     event MessageReceived(bytes32 indexed id, GmpMessage msg);
 
     struct GmpMessage {
-        bytes32 foreign;
-        uint16 foreign_network;
-        address local;
+        uint16 srcNetwork;
+        uint16 destNetwork;
+        bytes32 src;
+        bytes32 dest;
+        uint64 nonce;
         uint128 gasLimit;
         uint128 gasCost;
-        uint64 nonce;
         bytes data;
     }
 
@@ -32,28 +33,46 @@ contract GatewayProxy is IGmpReceiver {
     }
 
     function sendMessage(GmpMessage calldata message) external payable {
-        require(message.foreign == bytes32(uint256(uint160(address(this)))), "Invalid foreign address");
-        require(message.foreign_network == NETWORK_ID, "Invalid foreign network");
-        require(message.local == address(this), "Invalid local address");
         uint256 value = address(this).balance.min(msg.value);
-        address destination = address(uint160(uint256(message.foreign)));
-        GATEWAY.submitMessage{value: value}(destination, message.foreign_network, message.gasLimit, message.data);
+        address destination = address(uint160(uint256(message.dest)));
+        GATEWAY.submitMessage{value: value}(destination, message.destNetwork, message.gasLimit, message.data);
     }
 
-    function onGmpReceived(bytes32 id, uint128 network, bytes32 source, bytes calldata payload)
+
+	function estimateMessageCost(uint256 messageSize, uint256 gasLimit) external view returns (uint256){
+        return GATEWAY.estimateMessageCost(NETWORK_ID, messageSize, gasLimit);
+    }
+
+    function onGmpReceived(bytes32 id, uint128, bytes32, bytes calldata payload)
         external
         payable
         returns (bytes32)
     {
+        // For testing purpose 
+        // we keep the original struct in payload so we dont depend on OnGmpReceived call since it doesnt provide everything.
+        (
+            uint16 srcNetwork,
+            uint16 destNetwork,
+            bytes32 src,
+            bytes32 dest,
+            uint64 nonce,
+            uint128 gasLimit,
+            uint128 gasCost,
+            bytes memory data
+        ) = abi.decode(payload, (uint16, uint16, bytes32, bytes32, uint64, uint128, uint128, bytes));
+
         GmpMessage memory message = GmpMessage({
-            foreign: source,
-            foreign_network: uint16(network),
-            local: address(this),
-            gasLimit: uint128(gasleft()),
-            gasCost: uint128(tx.gasprice),
-            nonce: 0,
-            data: payload
+            srcNetwork: srcNetwork,
+            destNetwork: destNetwork,
+            src: src,
+            dest: dest,
+            nonce: nonce,
+            gasLimit: gasLimit,
+            gasCost: gasCost,
+            data: data
         });
+        message.data = payload;
+
         emit MessageReceived(id, message);
         return id;
     }
