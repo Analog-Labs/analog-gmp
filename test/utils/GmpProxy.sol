@@ -13,16 +13,16 @@ contract GmpProxy is IGmpReceiver {
 
     event MessageReceived(bytes32 indexed id, GmpMessage msg);
 
-	struct GmpMessage {
-		uint16 srcNetwork;
-		uint16 destNetwork;
-		bytes32 src;
-		bytes32 dest;
-		uint64 nonce;
-		uint128 gasLimit;
-		uint128 gasCost;
-		bytes data;
-	}
+    struct GmpMessage {
+        uint16 srcNetwork;
+        uint16 destNetwork;
+        bytes32 src;
+        bytes32 dest;
+        uint64 nonce;
+        uint128 gasLimit;
+        uint128 gasCost;
+        bytes data;
+    }
 
     IGateway public immutable GATEWAY;
     uint16 public immutable NETWORK_ID;
