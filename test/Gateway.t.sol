@@ -420,7 +420,7 @@ contract GatewayBase is Test {
             dest: address(bytes20(keccak256("dummy_address"))),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 0,
-            salt: 0,
+            salt: 1,
             data: new bytes(messageSize)
         });
 
@@ -631,13 +631,13 @@ contract GatewayBase is Test {
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 100_000,
-            salt: 0,
+            salt: 1,
             data: abi.encodePacked(uint256(100_000))
         });
         bytes32 id = gmp.eip712hash();
 
         // Check the previous message hash
-        assertEq(gateway.prevMessageHash(), bytes32(uint256(2 ** 256 - 1)), "wrong previous message hash");
+        assertEq(gateway.prevMessageHash(), 1, "wrong previous message hash");
 
         CallOptions memory ctx = CallOptions({
             from: gmpSender.toAddress(),
@@ -675,7 +675,7 @@ contract GatewayBase is Test {
         assertEq(ctx.executionCost, expectedCost, "unexpected execution gas cost in first call");
 
         // Now the second GMP message should have the salt equals to previous gmp hash
-        gmp.salt = uint256(id);
+        gmp.salt += 1;
         id = gmp.eip712hash();
 
         // Expect event
