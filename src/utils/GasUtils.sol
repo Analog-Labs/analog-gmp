@@ -20,12 +20,12 @@ library GasUtils {
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 45503;
+    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46342;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 25692;
+    uint256 internal constant SUBMIT_BASE_COST = 25608;
 
     /**
      * @dev Compute the gas cost of memory expansion.
@@ -291,7 +291,8 @@ library GasUtils {
             uint256 gas = _toWord(messageSize) * 3;
             gas = gas.saturatingAdd(_toWord(messageSize) * 6);
             gas = gas.saturatingAdd(gasUsed);
-            uint256 memoryExpansion = (messageSize.align32() + 0x80 + 0x0120 + 164).align32() + 0x40;
+            // uint256 memoryExpansion = (messageSize.align32() + 0x80 + 0x0120 + 164).align32() + 0x40;
+            uint256 memoryExpansion = messageSize.align32() + 0x80 + 0x0120 + 164 + 0x40;
             {
                 // Selector + Signature + GmpMessage
                 uint256 words = messageSize.align32().saturatingAdd(388 + 31) >> 5;
