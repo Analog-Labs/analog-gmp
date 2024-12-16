@@ -28,13 +28,11 @@ library RouteStore {
 
     /**
      * @dev Network info stored in the Gateway Contract
-     * @param domainSeparator Domain EIP-712 - Replay Protection Mechanism.
      * @param gasLimit The maximum amount of gas we allow on this particular network.
      * @param relativeGasPrice Gas price of destination chain, in terms of the source chain token.
      * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
      */
     struct NetworkInfo {
-        bytes32 domainSeparator;
         uint64 gasLimit;
         UFloat9x56 relativeGasPrice;
         uint128 baseFee;
@@ -43,14 +41,12 @@ library RouteStore {
     /**
      * @dev Emitted when a route is updated.
      * @param networkId Network identifier.
-     * @param domainSeparator Domain EIP-712 - Replay Protection Mechanism.
      * @param relativeGasPrice Gas price of destination chain, in terms of the source chain token.
      * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
      * @param gasLimit The maximum amount of gas we allow on this particular network.
      */
     event RouteUpdated(
         uint16 indexed networkId,
-        bytes32 indexed domainSeparator,
         UFloat9x56 relativeGasPrice,
         uint128 baseFee,
         uint64 gasLimit
@@ -170,11 +166,6 @@ library RouteStore {
         (bool created, NetworkInfo storage stored) = getOrAdd(store, route.networkId);
         require((created && route.gateway != bytes32(0)) || !created, "domain separator cannot be zero");
 
-        // Verify and update domain separator if it's not zero
-        if (route.gateway != bytes32(0)) {
-            stored.domainSeparator = route.gateway;
-        }
-
         // Update gas limit if it's not zero
         if (route.gasLimit > 0) {
             stored.gasLimit = route.gasLimit;
@@ -189,7 +180,7 @@ library RouteStore {
         }
 
         emit RouteUpdated(
-            route.networkId.asUint(), stored.domainSeparator, stored.relativeGasPrice, stored.baseFee, stored.gasLimit
+            route.networkId.asUint(), stored.relativeGasPrice, stored.baseFee, stored.gasLimit
         );
     }
 
@@ -198,20 +189,17 @@ library RouteStore {
      * @param store Storage location.
      * @param networks List of networks to initialize.
      * @param networkdID The network id of this chain.
-     * @param computeDomainSeparator Function to compute the domain separator.
      */
     function initialize(
         MainStorage storage store,
         Network[] calldata networks,
-        NetworkID networkdID,
-        function(NetworkID, address) internal pure returns (bytes32) computeDomainSeparator
+        NetworkID networkdID
     ) internal {
         for (uint256 i = 0; i < networks.length; i++) {
             Network calldata network = networks[i];
             (bool created, NetworkInfo storage info) = getOrAdd(store, NetworkID.wrap(network.id));
             require(created, "network already initialized");
             require(network.id != networkdID.asUint() || network.gateway == address(this), "wrong gateway address");
-            info.domainSeparator = computeDomainSeparator(NetworkID.wrap(network.id), network.gateway);
             info.gasLimit = 15_000_000; // Default to 15M gas
             info.relativeGasPrice = UFloatMath.ONE;
             info.baseFee = 0;
@@ -237,7 +225,7 @@ library RouteStore {
                 networkId: NetworkID.wrap(uint16(uint256(idx[i]))),
                 gasLimit: route.gasLimit,
                 baseFee: route.baseFee,
-                gateway: route.domainSeparator,
+                gateway: bytes32(uint256(uint160(address(this)))),
                 relativeGasPriceNumerator: uint128(numerator),
                 relativeGasPriceDenominator: uint128(denominator)
             });
@@ -250,7 +238,6 @@ library RouteStore {
      */
     function _checkPreconditions(NetworkInfo memory route, uint256 messageSize, uint256 gasLimit) private pure {
         // Verify if the network exists
-        require(route.domainSeparator != bytes32(0), "unsupported route");
         require(route.baseFee > 0 || UFloat9x56.unwrap(route.relativeGasPrice) > 0, "route is temporarily disabled");
 
         // Verify if the gas limit and message size are within the limits

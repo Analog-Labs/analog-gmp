@@ -161,19 +161,6 @@ library GmpTestTools {
         vm.deal(account, newBalance);
     }
 
-    /// @notice Compute the EIP-712 domain separator
-    function computeDomainSeparator(uint16 networkId, address gateway) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256("Analog Gateway Contract"),
-                keccak256("0.1.0"),
-                uint256(networkId),
-                address(gateway)
-            )
-        );
-    }
-
     /**
      * @dev Execute all pending GMP messages.
      */

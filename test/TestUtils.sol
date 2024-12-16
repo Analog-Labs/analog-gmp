@@ -376,21 +376,6 @@ library TestUtils {
         return FACTORY;
     }
 
-    /*
-     * @dev Computes the EIP-712 domain separador
-     */
-    function computeDomainSeparator(uint256 networkId, address addr) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256("Analog Gateway Contract"),
-                keccak256("0.1.0"),
-                uint256(networkId),
-                address(addr)
-            )
-        );
-    }
-
     /**
      * @dev Deploy a new Gateway and GatewayProxy contracts.
      */

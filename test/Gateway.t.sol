@@ -132,19 +132,6 @@ library GatewayUtils {
         bytes memory encodedCall = abi.encodeCall(IExecutor.execute, (signature, message));
         baseCost = TestUtils.calculateBaseCost(encodedCall);
     }
-
-    // Computes the EIP-712 domain separador
-    function computeDomainSeparator(uint256 networkId, address addr) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256("Analog Gateway Contract"),
-                keccak256("0.1.0"),
-                uint256(networkId),
-                address(addr)
-            )
-        );
-    }
 }
 
 contract GatewayBase is Test {
@@ -165,10 +152,6 @@ contract GatewayBase is Test {
     // Receiver Contract, the will waste the exact amount of gas you sent to it in the data field
     IGmpReceiver internal receiver;
 
-    // Domain Separators
-    bytes32 private _srcDomainSeparator;
-    bytes32 private _dstDomainSeparator;
-
     // Netowrk ids
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
@@ -180,8 +163,6 @@ contract GatewayBase is Test {
         assertEq(ADMIN, admin.addr, "admin address mismatch");
         gateway =
             Gateway(address(TestUtils.setupGateway(admin, bytes32(uint256(1234)), SRC_NETWORK_ID, DEST_NETWORK_ID)));
-        _srcDomainSeparator = GatewayUtils.computeDomainSeparator(SRC_NETWORK_ID, address(gateway));
-        _dstDomainSeparator = GatewayUtils.computeDomainSeparator(DEST_NETWORK_ID, address(gateway));
     }
 
     function setUp() public {
@@ -691,7 +672,7 @@ contract GatewayBase is Test {
 
         // Verify the gas cost
         uint256 expectedCost = GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 6500;
-        assertEq(ctx.executionCost, expectedCost, "unexpected execution gas cost");
+        assertEq(ctx.executionCost, expectedCost, "unexpected execution gas cost in first call");
 
         // Now the second GMP message should have the salt equals to previous gmp hash
         gmp.salt = uint256(id);
@@ -703,7 +684,7 @@ contract GatewayBase is Test {
             id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
         );
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
-        assertEq(ctx.executionCost, expectedCost - 8800, "unexpected execution gas cost");
+        assertEq(ctx.executionCost, expectedCost - 6800, "unexpected execution gas cost in second call");
     }
 }
 

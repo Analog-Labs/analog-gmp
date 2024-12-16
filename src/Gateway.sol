@@ -36,25 +36,10 @@ abstract contract GatewayEIP712 {
     // https://eips.ethereum.org/EIPS/eip-712
     uint16 internal immutable NETWORK_ID;
     address internal immutable PROXY_ADDRESS;
-    bytes32 public immutable DOMAIN_SEPARATOR;
 
     constructor(uint16 networkId, address gateway) {
         NETWORK_ID = networkId;
         PROXY_ADDRESS = gateway;
-        DOMAIN_SEPARATOR = computeDomainSeparator(NetworkID.wrap(networkId), gateway);
-    }
-
-    // Computes the EIP-712 domain separador
-    function computeDomainSeparator(NetworkID networkId, address addr) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256("Analog Gateway Contract"),
-                keccak256("0.1.0"),
-                uint256(networkId.asUint()),
-                address(addr)
-            )
-        );
     }
 }
 
@@ -107,24 +92,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint64 blockNumber; // block in which the message was processed
     }
 
-    /**
-     * @dev Network info stored in the Gateway Contract
-     * @param id Message unique id.
-     * @param networkId Network identifier.
-     * @param domainSeparator Domain EIP-712 - Replay Protection Mechanism.
-     * @param relativeGasPrice Gas price of destination chain, in terms of the source chain token.
-     * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
-     * @param gasLimit The maximum amount of gas we allow on this particular network.
-     */
-    event NetworkUpdated(
-        bytes32 indexed id,
-        uint16 indexed networkId,
-        bytes32 indexed domainSeparator,
-        UFloat9x56 relativeGasPrice,
-        uint128 baseFee,
-        uint64 gasLimit
-    );
-
     constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
 
     // EIP-712 typed hash
@@ -138,7 +105,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         prevMessageHash = FIRST_MESSAGE_PLACEHOLDER;
 
         // Register networks
-        RouteStore.getMainStorage().initialize(networks, NetworkID.wrap(NETWORK_ID), computeDomainSeparator);
+        RouteStore.getMainStorage().initialize(networks, NetworkID.wrap(NETWORK_ID));
 
         // Register keys
         ShardStore.getMainStorage().registerTssKeys(keys);
