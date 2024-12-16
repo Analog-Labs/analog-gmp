@@ -6,7 +6,6 @@ pragma solidity >=0.8.0;
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {UFloatMath, UFloat9x56} from "./utils/Float9x56.sol";
 import {NetworkID} from "./NetworkID.sol";
-import {console} from "forge-std/Test.sol";
 
 /**
   * @dev GMP message EIP-712 Type Hash.
