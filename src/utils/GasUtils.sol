@@ -38,6 +38,16 @@ library GasUtils {
     }
 
     /**
+     * @dev Compute the gas cost of memory expansion.
+     * @param words number of words, where a word is 32 bytes
+     */
+    function memoryExpansionGasCost(uint256 words) internal pure returns (uint256) {
+        unchecked {
+            return (words.saturatingMul(words) >> 9).saturatingAdd(words.saturatingMul(3));
+        }
+    }
+
+    /**
      * @dev Compute the amount of gas used by the `GatewayProxy`.
      * @param calldataLen The length of the calldata in bytes
      * @param returnLen The length of the return data in bytes
