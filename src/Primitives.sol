@@ -247,21 +247,31 @@ library PrimitiveUtils {
         _intoCallback(ptr, true, callback);
     }
 
-    function _computeMessageID(GmpCallback memory callback, bytes32 dataHash) private pure returns (bytes32) {
+    /**
+     * @dev Computes the message ID from the provided `GmpCallback` struct.
+     */
+    function _computeMessageID(GmpCallback memory callback) private pure {
+        bytes memory payload = callback.callback;
+        assembly ("memory-safe") {
+            payload := add(payload, 0xa4)
+        }
+        bytes32 dataHash = keccak256(payload);
+        payload = callback.callback;
         callback.eip712hash = bytes32(GMP_VERSION);
         assembly ("memory-safe") {
-            // temporarily store the result at `0x00e0..0x0100`, which is the end of
-            // the `GmpMessage` struct.
-            mstore(add(callback, 0x00e0), dataHash)
+            // temporarily store the result at `0x00e0..0x0100`, which is the `GmpCallback.callback.offset` field.
+            mstore(add(callback, 0xe0), dataHash)
 
             // Compute `keccak256(abi.encode(GMP_VERSION, message.source, ..., keccak256(message.data)))`
             dataHash := keccak256(callback, 0x0100)
 
             // Replace the `eip712hash` by the `callback.data.offset`.
-            mstore(add(callback, 0x00e0), add(callback, 0x0100))
+            mstore(add(callback, 0xe0), add(callback, 0x0100))
+
+            // Replace the `id` in `onGmpReceived(uint256 id,...)` in the callback.
+            mstore(add(payload, 0x24), dataHash) // eip712hash (32 bytes)
         }
         callback.eip712hash = dataHash;
-        return dataHash;
     }
 
     /**
@@ -284,7 +294,7 @@ library PrimitiveUtils {
         private
         pure
     {
-        // |  MEMORY OFFSET  |             RESERVED FIELD               |
+        // |  MEMORY OFFSET  |     RESERVED FIELD     |
         // | 0x0000..0x0020 <- GmpCallback.eip712hash
         // | 0x0020..0x0040 <- GmpCallback.source
         // | 0x0040..0x0060 <- GmpCallback.srcNetwork
@@ -300,14 +310,7 @@ library PrimitiveUtils {
         // | 0x0164..0x0184 <- onGmpReceived.source
         // | 0x0184..0x01a4 <- onGmpReceived.data.offset
         // | 0x01a4..0x01c4 <- onGmpReceived.data.length
-        // | 0x01c4..?????? <- onGmpReceived.data
-        bytes memory messageDATA;
-        assembly {
-            // Make sure the `GmpCallback.callback` will start at memory offset `0x01a4`
-            // mstore(0x40, add(callback, 0x01a4))
-            messageDATA := add(callback, 0x01a4)
-            mstore(0x40, add(callback, 0x0100))
-        }
+        // | 0x01c4........ <- onGmpReceived.data
         if (isCalldata) {
             GmpMessage calldata m = _intoCalldataPointer(message);
             callback.source = m.source;
@@ -333,9 +336,7 @@ library PrimitiveUtils {
                 callback.eip712hash, callback.srcNetwork, callback.source, m.data
             );
         }
-        bytes32 messageHash = _computeMessageID(callback, keccak256(messageDATA));
-        assembly ("memory-safe") {
-            mstore(add(callback, 0x0124), messageHash) // eip712hash (32 bytes)
-        }
+        // Compute the message ID
+        _computeMessageID(callback);
     }
 }

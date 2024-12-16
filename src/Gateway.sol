@@ -327,7 +327,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         returns (bytes32)
     {
         // Check if the message data is too large
-        require(data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
+        require(data.length <= MAX_PAYLOAD_SIZE, "msg data is too big");
 
         // Check if the provided parameters are valid
         // See `RouteStorage.estimateWeiCost` at `storage/Routes.sol` for more details.
