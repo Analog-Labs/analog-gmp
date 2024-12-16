@@ -1,6 +1,6 @@
 [profile.default]
 src = "src"
-test = "test"            # TODO: change back to test before merge
+test = "test"
 out = "out"
 libs = ["lib"]
 match_contract = ".+Test"
@@ -10,7 +10,7 @@ fs_permissions = [{ access = "read", path = "./lib/universal-factory/abi" }]
 ########
 # Lint #
 ########
-# deny_warnings = true
+deny_warnings = true
 
 ################
 # Solc options #
@@ -61,7 +61,7 @@ simple_counter_for_loop_unchecked_increment = true
 runs = 2500
 
 # When debuging fuzz tests, uncomment this seed to make tests reproducible.
-seed = "0xdeadbeefdeadbeefdeadbeefdeadbeef"
+# seed = "0xdeadbeefdeadbeefdeadbeefdeadbeef"
 
 # RPC endpoints
 [rpc_endpoints]

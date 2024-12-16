@@ -89,23 +89,6 @@ struct Route {
 }
 
 /**
- * @dev A Route represents a communication channel between two networks.
- * @param networkId The id of the provided network.
- * @param gasLimit The maximum amount of gas we allow on this particular network.
- * @param gateway Destination chain gateway address.
- * @param relativeGasPriceNumerator Gas price numerator in terms of the source chain token.
- * @param relativeGasPriceDenominator Gas price denominator in terms of the source chain token.
- */
-struct Route {
-    NetworkID networkId;
-    uint64 gasLimit;
-    uint128 baseFee;
-    bytes32 gateway;
-    uint256 relativeGasPriceNumerator;
-    uint256 relativeGasPriceDenominator;
-}
-
-/**
  * @dev Message payload used to revoke or/and register new shards
  * @param revoke Shard's keys to revoke
  * @param register Shard's keys to register
