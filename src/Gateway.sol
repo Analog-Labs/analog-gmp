@@ -186,7 +186,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Register/Revoke TSS keys using shard TSS signature
     function updateKeys(Signature calldata signature, UpdateKeysMessage calldata message) external {
         // Check if the message was already executed to prevent replay attacks
-        bytes32 messageHash = message.eip712TypedHash(DOMAIN_SEPARATOR);
+        bytes32 messageHash = message.eip712hash();
         require(_executedMessages[messageHash] == bytes32(0), "message already executed");
 
         // Verify the signature and store the message hash
@@ -287,7 +287,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
         // see `src/Primitives.sol` for more details.
-        GmpCallback memory callback = message.intoCallback(DOMAIN_SEPARATOR);
+        GmpCallback memory callback = message.intoCallback();
 
         // Verify the TSS Schnorr Signature
         _verifySignature(signature, callback.eip712hash);
@@ -348,7 +348,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         {
             GmpMessage memory message =
                 GmpMessage(source, NETWORK_ID, destinationAddress, routeId, executionGasLimit, salt, data);
-            prevHash = message.eip712TypedHash(route.domainSeparator);
+            prevHash = message.eip712hash();
             prevMessageHash = prevHash;
             payload = message.data;
         }

@@ -20,12 +20,12 @@ library GasUtils {
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 45593;
+    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 45503;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 25818 - 20;
+    uint256 internal constant SUBMIT_BASE_COST = 25692;
 
     /**
      * @dev Compute the gas cost of memory expansion.
@@ -194,7 +194,7 @@ library GasUtils {
             uint256 memoryExpansion = 0x60;
             // -- First GAS opcode
 
-            // all opcodes until message.intoCallback(DOMAIN_SEPARATOR)
+            // all opcodes until message.intoCallback()
             baseCost += 449;
 
             // -- message.intoCallback() --

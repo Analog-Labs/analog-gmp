@@ -314,14 +314,13 @@ library GmpTestTools {
         private
     {
         switchNetwork(network);
-        bytes32 domainSeparator = computeDomainSeparator(network, address(gateway));
         SigningKey memory signer = TestUtils.signerFromEntropy(secret);
 
         for (uint256 i = 0; i < gmpMessages.length; i++) {
             GmpMessage memory message = gmpMessages[i];
 
             // Compute the message ID
-            bytes32 messageID = PrimitiveUtils.eip712TypedHash(message, domainSeparator);
+            bytes32 messageID = PrimitiveUtils.eip712hash(message);
 
             // Skip if the message is not intended for this network
             if (message.destNetwork != network) {

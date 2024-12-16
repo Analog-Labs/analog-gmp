@@ -22,7 +22,8 @@ import {
     Network,
     GmpStatus,
     PrimitiveUtils,
-    GmpSender
+    GmpSender,
+    GMP_VERSION
 } from "../src/Primitives.sol";
 
 contract SigUtilsTest is GatewayEIP712, Test {
@@ -30,7 +31,7 @@ contract SigUtilsTest is GatewayEIP712, Test {
 
     constructor() GatewayEIP712(69, address(0)) {}
 
-    function testPayload() public view {
+    function testPayload() public pure {
         GmpMessage memory gmp = GmpMessage({
             source: GmpSender.wrap(0x0),
             srcNetwork: 42,
@@ -40,9 +41,18 @@ contract SigUtilsTest is GatewayEIP712, Test {
             salt: 0,
             data: ""
         });
-        bytes32 typedHash = gmp.eip712TypedHash(DOMAIN_SEPARATOR);
+        bytes32 typedHash = gmp.eip712hash();
         bytes32 expected = keccak256(
-            hex"19013e3afdf794f679fcbf97eba49dbe6b67cec6c7d029f1ad9a5e1a8ffefa8db2724ed044f24764343e77b5677d43585d5d6f1b7618eeddf59280858c68350af1cd"
+            abi.encode(
+                GMP_VERSION,
+                gmp.source,
+                gmp.srcNetwork,
+                gmp.dest,
+                gmp.destNetwork,
+                gmp.gasLimit,
+                gmp.salt,
+                keccak256(gmp.data)
+            )
         );
         assertEq(typedHash, expected);
     }
@@ -188,14 +198,8 @@ contract GatewayBase is Test {
         }
     }
 
-    function sign(GmpMessage memory gmp) internal view returns (Signature memory) {
-        bytes32 domainSeparator;
-        if (gmp.destNetwork == SRC_NETWORK_ID) {
-            domainSeparator = _srcDomainSeparator;
-        } else {
-            domainSeparator = _dstDomainSeparator;
-        }
-        bytes32 hash = gmp.eip712TypedHash(domainSeparator);
+    function sign(GmpMessage memory gmp) internal pure returns (Signature memory) {
+        bytes32 hash = gmp.eip712hash();
         SigningKey memory signer = TestUtils.createSigner(SECRET);
         (uint256 e, uint256 s) = signer.signPrehashed(hash, SIGNING_NONCE);
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
@@ -468,7 +472,7 @@ contract GatewayBase is Test {
 
         uint256 snapshot = vm.snapshotState();
         // Must work if the funds and gas limit are sufficient
-        bytes32 id = gmp.eip712TypedHash(_dstDomainSeparator);
+        bytes32 id = gmp.eip712hash();
         vm.expectEmit(true, true, true, true);
         emit IGateway.GmpCreated(
             id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
@@ -532,7 +536,7 @@ contract GatewayBase is Test {
 
             // Verify the GMP message status
             assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "Unexpected GMP status");
-            Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.eip712TypedHash(_dstDomainSeparator));
+            Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.eip712hash());
             assertEq(
                 uint256(info.status), uint256(GmpStatus.SUCCESS), "GMP status stored doesn't match the returned status"
             );
@@ -649,7 +653,7 @@ contract GatewayBase is Test {
             salt: 0,
             data: abi.encodePacked(uint256(100_000))
         });
-        bytes32 id = gmp.eip712TypedHash(_dstDomainSeparator);
+        bytes32 id = gmp.eip712hash();
 
         // Check the previous message hash
         assertEq(gateway.prevMessageHash(), bytes32(uint256(2 ** 256 - 1)), "wrong previous message hash");
@@ -691,7 +695,7 @@ contract GatewayBase is Test {
 
         // Now the second GMP message should have the salt equals to previous gmp hash
         gmp.salt = uint256(id);
-        id = gmp.eip712TypedHash(_dstDomainSeparator);
+        id = gmp.eip712hash();
 
         // Expect event
         vm.expectEmit(true, true, true, true);
