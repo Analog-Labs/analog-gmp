@@ -16,6 +16,10 @@ deny_warnings = true
 # Solc options #
 ################
 solc = '0.8.28'
+# Keep `shanghai` once blockchains such as `Astar/Shibuya` and
+# `Ethereum Classic` doesn't support `cancun` yet.
+# - https://github.com/rust-ethereum/evm/issues/290
+# - https://ethereumclassic.org/knowledge/history
 evm_version = 'shanghai'
 optimizer = true
 optimizer_runs = 200000
