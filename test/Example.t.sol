@@ -109,7 +109,7 @@ contract ExampleTest is Test {
             dest: address(dstToken),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 100_000,
-            salt: 1,
+            salt: 0,
             data: abi.encode(MockERC20.CrossChainTransfer({from: ALICE, to: BOB, amount: 100}))
         });
 

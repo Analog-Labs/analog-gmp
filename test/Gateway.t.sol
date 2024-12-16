@@ -403,7 +403,7 @@ contract GatewayBase is Test {
 
         assertEq(
             ctx.executionCost,
-            GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 4500,
+            GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 4500 + 17100,
             "unexpected submit message gas cost"
         );
     }
@@ -420,7 +420,7 @@ contract GatewayBase is Test {
             dest: address(bytes20(keccak256("dummy_address"))),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 0,
-            salt: 1,
+            salt: 0,
             data: new bytes(messageSize)
         });
 
@@ -458,12 +458,13 @@ contract GatewayBase is Test {
         emit IGateway.GmpCreated(
             id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
         );
+        ctx.gasLimit += 17100;
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
 
         // Verify the execution cost
         assertEq(
             ctx.executionCost,
-            GasUtils.submitMessageGasCost(uint16(gmp.data.length)),
+            GasUtils.submitMessageGasCost(uint16(gmp.data.length)) + 17100,
             "unexpected submit message gas cost"
         );
 
@@ -622,7 +623,7 @@ contract GatewayBase is Test {
         ctx.execute(sig, gmp);
     }
 
-    function testSubmitGmpMessage() external {
+    function test_submitGmpMessage() external {
         vm.txGasPrice(1);
         GmpSender gmpSender = TestUtils.createTestAccount(1000 ether).toSender(false);
         GmpMessage memory gmp = GmpMessage({
@@ -631,13 +632,13 @@ contract GatewayBase is Test {
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 100_000,
-            salt: 1,
+            salt: 0,
             data: abi.encodePacked(uint256(100_000))
         });
         bytes32 id = gmp.eip712hash();
 
         // Check the previous message hash
-        assertEq(gateway.nonce(), 1, "wrong previous message hash");
+        assertEq(gateway.nonce(), 0, "wrong previous message hash");
 
         CallOptions memory ctx = CallOptions({
             from: gmpSender.toAddress(),
@@ -671,8 +672,8 @@ contract GatewayBase is Test {
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
 
         // Verify the gas cost
-        uint256 expectedCost = GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 6500;
-        assertEq(ctx.executionCost, expectedCost, "unexpected execution gas cost in first call");
+        uint256 expectedCost = GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 4500;
+        assertEq(ctx.executionCost, expectedCost + 17100, "unexpected execution gas cost in first call");
 
         // Now the second GMP message should have the salt equals to previous gmp hash
         gmp.salt += 1;
@@ -684,7 +685,7 @@ contract GatewayBase is Test {
             id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
         );
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
-        assertEq(ctx.executionCost, expectedCost - 6800, "unexpected execution gas cost in second call");
+        assertEq(ctx.executionCost, expectedCost - 8800, "unexpected execution gas cost in second call");
     }
 }
 

@@ -70,7 +70,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     mapping(bytes32 => GmpInfo) private _messages;
 
     // Hash of the previous GMP message submitted.
-    uint256 private _nonce;
+    mapping(address => uint256) private _nonces;
 
     // Replay protection mechanism, stores the hash of the executed messages
     // messageHash => shardId
@@ -92,12 +92,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // EIP-712 typed hash
     function initialize(address proxyAdmin, TssKey[] calldata keys, Network[] calldata networks) external {
         require(PROXY_ADDRESS == address(this) || msg.sender == FACTORY, "only proxy can be initialize");
-        require(_nonce == 0, "already initialized");
         ERC1967.setAdmin(proxyAdmin);
-
-        // Initialize the `nonce` as one to avoid the first GMP to spent more gas,
-        // once initialize the storage cost 21k gas, while alter it cost just 2800 gas.
-        _nonce = 1;
 
         // Register networks
         RouteStore.getMainStorage().initialize(networks, NetworkID.wrap(NETWORK_ID));
@@ -111,7 +106,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     function nonce() external view returns (uint256) {
-        return _nonce;
+        return _nonces[msg.sender];
     }
 
     function gmpInfo(bytes32 id) external view returns (GmpInfo memory) {
@@ -301,8 +296,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // We use 20 bytes for represent the address and 1 bit for the contract flag
         GmpSender source = msg.sender.toSender(false);
 
-        // Salt is equal to the previous message id (EIP-712 hash), this allows us to establish a sequence and eaily query the message history.
-        uint256 nextNonce = _nonce++;
+        // Nonce is per sender, it's incremented for every message sent.
+        uint256 nextNonce = _nonces[msg.sender]++;
 
         // Create GMP message and update nonce
         GmpMessage memory message =
