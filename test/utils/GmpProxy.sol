@@ -38,17 +38,12 @@ contract GmpProxy is IGmpReceiver {
         GATEWAY.submitMessage{value: value}(destination, message.destNetwork, message.gasLimit, message.data);
     }
 
-
-	function estimateMessageCost(uint256 messageSize, uint256 gasLimit) external view returns (uint256){
+    function estimateMessageCost(uint256 messageSize, uint256 gasLimit) external view returns (uint256) {
         return GATEWAY.estimateMessageCost(NETWORK_ID, messageSize, gasLimit);
     }
 
-    function onGmpReceived(bytes32 id, uint128, bytes32, bytes calldata payload)
-        external
-        payable
-        returns (bytes32)
-    {
-        // For testing purpose 
+    function onGmpReceived(bytes32 id, uint128, bytes32, bytes calldata payload) external payable returns (bytes32) {
+        // For testing purpose
         // we keep the original struct in payload so we dont depend on OnGmpReceived call since it doesnt provide everything.
         (
             uint16 srcNetwork,
