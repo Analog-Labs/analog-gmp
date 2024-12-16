@@ -3,10 +3,9 @@
 
 pragma solidity >=0.8.0;
 
-import {Signer} from "frost-evm/sol/Signer.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {TestUtils} from "./TestUtils.sol";
+import {TestUtils, SigningKey, SigningUtils} from "./TestUtils.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {GasUtils} from "../src/utils/GasUtils.sol";
@@ -25,9 +24,6 @@ import {
     PrimitiveUtils,
     GmpSender
 } from "../src/Primitives.sol";
-
-uint256 constant secret = 0x42;
-uint256 constant nonce = 0x69;
 
 contract SigUtilsTest is GatewayEIP712, Test {
     using PrimitiveUtils for GmpMessage;
@@ -62,6 +58,28 @@ struct CallOptions {
 }
 
 library GatewayUtils {
+    function tryExecute(CallOptions memory ctx, Signature memory signature, GmpMessage memory message)
+        internal
+        returns (bool success, GmpStatus status, bytes32 result)
+    {
+        bytes memory encodedCall = abi.encodeCall(IExecutor.execute, (signature, message));
+        bytes memory output;
+        (ctx.executionCost, ctx.baseCost, success, output) =
+            TestUtils.tryExecuteCall(ctx.from, ctx.to, ctx.gasLimit, ctx.value, encodedCall);
+
+        if (success) {
+            require(output.length == 64, "unexpected output length for IExecutor.execute method");
+            assembly {
+                let ptr := add(output, 32)
+                status := mload(ptr)
+                result := mload(add(ptr, 32))
+            }
+        } else {
+            status = GmpStatus.NOT_FOUND;
+            result = bytes32(0);
+        }
+    }
+
     function execute(CallOptions memory ctx, Signature memory signature, GmpMessage memory message)
         internal
         returns (GmpStatus status, bytes32 result)
@@ -126,9 +144,13 @@ contract GatewayBase is Test {
     using PrimitiveUtils for address;
     using GatewayUtils for CallOptions;
     using BranchlessMath for uint256;
+    using SigningUtils for SigningKey;
 
     Gateway internal gateway;
-    Signer internal signer;
+
+    // Chronicle TSS Secret
+    uint256 private constant SECRET = 0x42;
+    uint256 private constant SIGNING_NONCE = 0x69;
 
     // Receiver Contract, the will waste the exact amount of gas you sent to it in the data field
     IGmpReceiver internal receiver;
@@ -141,31 +163,15 @@ contract GatewayBase is Test {
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
 
+    address internal constant ADMIN = 0x6f4c950442e1Af093BcfF730381E63Ae9171b87a;
+
     constructor() {
-        signer = new Signer(secret);
-        address deployer = TestUtils.createTestAccount(100 ether);
-        vm.startPrank(deployer, deployer);
-
-        // 1 - Deploy the implementation contract
-        address proxyAddr = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
-        Gateway implementation = new Gateway(DEST_NETWORK_ID, proxyAddr);
-
-        // 2 - Deploy the Proxy Contract
-        TssKey[] memory keys = new TssKey[](1);
-        keys[0] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()}); // Shard key
-        Network[] memory networks = new Network[](2);
-        networks[0].id = SRC_NETWORK_ID; // sepolia network id
-        networks[0].gateway = proxyAddr; // sepolia proxy address
-        networks[1].id = DEST_NETWORK_ID; // shibuya network id
-        networks[1].gateway = proxyAddr; // shibuya proxy address
-        bytes memory initializer = abi.encodeCall(Gateway.initialize, (msg.sender, keys, networks));
-        gateway = Gateway(address(new GatewayProxy(address(implementation), initializer)));
-        vm.deal(address(gateway), 100 ether);
-
+        VmSafe.Wallet memory admin = vm.createWallet(SECRET);
+        assertEq(ADMIN, admin.addr, "admin address mismatch");
+        gateway =
+            Gateway(address(TestUtils.setupGateway(admin, bytes32(uint256(1234)), SRC_NETWORK_ID, DEST_NETWORK_ID)));
         _srcDomainSeparator = GatewayUtils.computeDomainSeparator(SRC_NETWORK_ID, address(gateway));
         _dstDomainSeparator = GatewayUtils.computeDomainSeparator(DEST_NETWORK_ID, address(gateway));
-
-        vm.stopPrank();
     }
 
     function setUp() public {
@@ -189,9 +195,67 @@ contract GatewayBase is Test {
         } else {
             domainSeparator = _dstDomainSeparator;
         }
-        uint256 hash = uint256(gmp.eip712TypedHash(domainSeparator));
-        (uint256 e, uint256 s) = signer.signPrehashed(hash, nonce);
+        bytes32 hash = gmp.eip712TypedHash(domainSeparator);
+        SigningKey memory signer = TestUtils.createSigner(SECRET);
+        (uint256 e, uint256 s) = signer.signPrehashed(hash, SIGNING_NONCE);
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
+    }
+
+    function _shortTssKeys(TssKey[] memory keys) private pure {
+        // sort keys by xCoord
+        for (uint256 i = 0; i < keys.length; i++) {
+            for (uint256 j = i + 1; j < keys.length; j++) {
+                if (keys[i].xCoord > keys[j].xCoord) {
+                    TssKey memory temp = keys[i];
+                    keys[i] = keys[j];
+                    keys[j] = temp;
+                }
+            }
+        }
+    }
+
+    function test_setShards() external {
+        TssKey[] memory keys = new TssKey[](10);
+
+        // create random shard keys
+        SigningKey memory signer;
+        for (uint256 i = 0; i < keys.length; i++) {
+            signer = TestUtils.signerFromEntropy(bytes32(i));
+            keys[i] = TssKey({yParity: signer.yParity() == 28 ? 3 : 2, xCoord: signer.xCoord()});
+        }
+        _shortTssKeys(keys);
+
+        // Only admin can set shards keys
+        vm.expectRevert("unauthorized");
+        gateway.setShards(keys);
+
+        // Set shards keys must work
+        vm.prank(ADMIN, ADMIN);
+        gateway.setShards(keys);
+
+        // Check shards keys
+        TssKey[] memory shards = gateway.shards();
+        _shortTssKeys(shards);
+        for (uint256 i = 0; i < shards.length; i++) {
+            assertEq(shards[i].xCoord, keys[i].xCoord);
+            assertEq(shards[i].yParity, keys[i].yParity);
+        }
+
+        // // Replace one shard key
+        signer = TestUtils.signerFromEntropy(bytes32(uint256(12345)));
+        keys[0].xCoord = signer.xCoord();
+        keys[0].yParity = signer.yParity() == 28 ? 3 : 2;
+        _shortTssKeys(keys);
+        vm.prank(ADMIN, ADMIN);
+        gateway.setShards(keys);
+
+        // Check shards keys
+        shards = gateway.shards();
+        _shortTssKeys(shards);
+        for (uint256 i = 0; i < shards.length; i++) {
+            assertEq(shards[i].xCoord, keys[i].xCoord);
+            assertEq(shards[i].yParity, keys[i].yParity);
+        }
     }
 
     function test_Receiver() external {
@@ -215,7 +279,7 @@ contract GatewayBase is Test {
     function test_estimateMessageCost() external {
         vm.txGasPrice(1);
         uint256 cost = gateway.estimateMessageCost(DEST_NETWORK_ID, 96, 100000);
-        assertEq(cost, GasUtils.EXECUTION_BASE_COST + 134075);
+        assertEq(cost, GasUtils.EXECUTION_BASE_COST + 133821);
     }
 
     function test_checkPayloadSize() external {
@@ -262,7 +326,7 @@ contract GatewayBase is Test {
      * @dev Test the gas metering for the `execute` function.
      */
     function test_gasMeter(uint16 messageSize) external {
-        vm.assume(messageSize <= 0x6000);
+        vm.assume(messageSize <= 0x6000 && messageSize >= 32);
         vm.txGasPrice(1);
         address sender = TestUtils.createTestAccount(100 ether);
 
@@ -270,16 +334,23 @@ contract GatewayBase is Test {
         GmpMessage memory gmp = GmpMessage({
             source: sender.toSender(false),
             srcNetwork: SRC_NETWORK_ID,
-            dest: address(bytes20(keccak256("dummy_address"))),
+            dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
-            gasLimit: 0,
+            gasLimit: 1000,
             salt: 0,
             data: new bytes(messageSize)
         });
+        {
+            bytes memory gmpData = gmp.data;
+            assembly {
+                mstore(add(gmpData, 0x20), 1000)
+            }
+        }
         Signature memory sig = sign(gmp);
 
         // Calculate memory expansion cost and base cost
         (uint256 baseCost, uint256 executionCost) = GatewayUtils.computeGmpGasCost(sig, gmp);
+        executionCost += gmp.gasLimit;
 
         // Transaction Parameters
         CallOptions memory ctx = CallOptions({
@@ -306,6 +377,8 @@ contract GatewayBase is Test {
 
         // Give sufficient gas
         ctx.gasLimit += 1;
+        ctx.executionCost = 0;
+        ctx.baseCost = 0;
         (status, returned) = ctx.execute(sig, gmp);
 
         assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "gmp execution failed");

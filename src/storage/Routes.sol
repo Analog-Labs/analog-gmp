@@ -2,7 +2,7 @@
 // Analog's Contracts (last updated v0.1.0) (src/storage/Routes.sol)
 pragma solidity ^0.8.20;
 
-import {UpdateNetworkInfo, Signature, Network, Route, MAX_PAYLOAD_SIZE} from "../Primitives.sol";
+import {Signature, Network, Route, MAX_PAYLOAD_SIZE} from "../Primitives.sol";
 import {NetworkIDHelpers, NetworkID} from "../NetworkID.sol";
 import {EnumerableSet, Pointer} from "../utils/EnumerableSet.sol";
 import {BranchlessMath} from "../utils/BranchlessMath.sol";
@@ -168,7 +168,7 @@ library RouteStore {
     function createOrUpdateRoute(MainStorage storage store, Route calldata route) internal {
         // Update network info
         (bool created, NetworkInfo storage stored) = getOrAdd(store, route.networkId);
-        require(!created || stored.domainSeparator != bytes32(0), "domain separator cannot be zero");
+        require((created && route.gateway != bytes32(0)) || !created, "domain separator cannot be zero");
 
         // Verify and update domain separator if it's not zero
         if (route.gateway != bytes32(0)) {
@@ -238,8 +238,8 @@ library RouteStore {
                 gasLimit: route.gasLimit,
                 baseFee: route.baseFee,
                 gateway: route.domainSeparator,
-                relativeGasPriceNumerator: numerator,
-                relativeGasPriceDenominator: denominator
+                relativeGasPriceNumerator: uint128(numerator),
+                relativeGasPriceDenominator: uint128(denominator)
             });
         }
         return routes;

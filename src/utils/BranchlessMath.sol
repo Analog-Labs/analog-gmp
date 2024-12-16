@@ -326,6 +326,15 @@ library BranchlessMath {
     }
 
     /**
+     * @dev Aligns `x` to 32 bytes.
+     */
+    function align32(uint256 x) internal pure returns (uint256 r) {
+        unchecked {
+            r = saturatingAdd(x, 31) & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0;
+        }
+    }
+
+    /**
      * @dev Computes `x * 2**exponent`, essentially shifting the value to the left when
      * `exp` is positive, or shift to the right when `exp` is negative.
      */

@@ -65,27 +65,17 @@ contract GasUtilsBase is Test {
     uint16 internal constant DEST_NETWORK_ID = 1337;
 
     constructor() {
+        // Create the Shard and Admin accounts
         signer = new Signer(secret);
-        address deployer = TestUtils.createTestAccount(100 ether);
-        vm.startPrank(deployer, deployer);
+        VmSafe.Wallet memory deployer = vm.createWallet(secret);
+        vm.deal(deployer.addr, 100 ether);
 
         // Deploy the GasUtilsMock contract
         mock = new GasUtilsMock();
 
-        // 1 - Deploy the implementation contract
-        address proxyAddr = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
-        Gateway implementation = new Gateway(DEST_NETWORK_ID, proxyAddr);
-
-        // 2 - Deploy the Proxy Contract
-        TssKey[] memory keys = new TssKey[](1);
-        keys[0] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()}); // Shard key
-        Network[] memory networks = new Network[](2);
-        networks[0].id = SRC_NETWORK_ID; // sepolia network id
-        networks[0].gateway = proxyAddr; // sepolia proxy address
-        networks[1].id = DEST_NETWORK_ID; // shibuya network id
-        networks[1].gateway = proxyAddr; // shibuya proxy address
-        bytes memory initializer = abi.encodeCall(Gateway.initialize, (msg.sender, keys, networks));
-        gateway = Gateway(address(new GatewayProxy(address(implementation), initializer)));
+        // Deploy the GatewayProxy
+        gateway =
+            Gateway(address(TestUtils.setupGateway(deployer, bytes32(uint256(0)), SRC_NETWORK_ID, DEST_NETWORK_ID)));
         vm.deal(address(gateway), 100 ether);
 
         _srcDomainSeparator = GatewayUtils.computeDomainSeparator(SRC_NETWORK_ID, address(gateway));
@@ -98,8 +88,6 @@ contract GasUtilsBase is Test {
                 hex"603c80600a5f395ff3fe5a600201803d523d60209160643560240135146018575bfd5b60365a116018575a604903565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bf3";
             receiver = IGmpReceiver(TestUtils.deployContract(bytecode));
         }
-
-        vm.stopPrank();
     }
 
     function sign(GmpMessage memory gmp) internal view returns (Signature memory) {
@@ -220,31 +208,45 @@ contract GasUtilsBase is Test {
             assertEq(balanceBefore, ctx.from.balance, "Balance should not change");
         }
 
+        emit log_named_uint("execution cost", GasUtils._executionGasCost(gmp.data.length, gmp.gasLimit));
+        uint256 executionCost = GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit);
+        assertEq(ctx.executionCost, executionCost, "execution cost mismatch");
+
         // Calculate the expected base cost
-        uint256 dynamicCost =
-            GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit) - GasUtils.EXECUTION_BASE_COST;
+        uint256 dynamicCost = executionCost - GasUtils.EXECUTION_BASE_COST;
         uint256 expectedBaseCost = ctx.executionCost - dynamicCost;
+        {
+            console.log("proxy: ", ctx.to);
+            console.logBytes(ctx.to.code);
+            address implementationAddr = address(
+                uint160(uint256(vm.load(ctx.to, 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc)))
+            );
+            console.log("implementation: ", implementationAddr);
+            console.logBytes(implementationAddr.code);
+            console.log("calldata:");
+            console.logBytes(abi.encodeCall(IExecutor.execute, (sig, gmp)));
+        }
         assertEq(expectedBaseCost, GasUtils.EXECUTION_BASE_COST, "Wrong EXECUTION_BASE_COST");
     }
 
     function test_gasUtils() external pure {
         uint256 baseCost = GasUtils.EXECUTION_BASE_COST;
-        assertEq(GasUtils.estimateGas(0, 0, 0), 31783 + baseCost);
-        assertEq(GasUtils.estimateGas(0, 33, 0), 32155 + baseCost);
-        assertEq(GasUtils.estimateGas(33, 0, 0), 32815 + baseCost);
-        assertEq(GasUtils.estimateGas(20, 13, 0), 32555 + baseCost);
+        assertEq(GasUtils.estimateGas(0, 0, 0), 31528 + baseCost);
+        assertEq(GasUtils.estimateGas(0, 33, 0), 31901 + baseCost);
+        assertEq(GasUtils.estimateGas(33, 0, 0), 32561 + baseCost);
+        assertEq(GasUtils.estimateGas(20, 13, 0), 32301 + baseCost);
 
         UFloat9x56 one = UFloatMath.ONE;
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 31783 + baseCost);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 32155 + baseCost);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 32815 + baseCost);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 32555 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0), 31528 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0), 31901 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0), 32561 + baseCost);
+        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0), 32301 + baseCost);
 
         UFloat9x56 two = UFloat9x56.wrap(0x8080000000000000);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), (31783 + baseCost) * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), (32155 + baseCost) * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), (32815 + baseCost) * 2);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), (32555 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0), (31528 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), (31901 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), (32561 + baseCost) * 2);
+        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), (32301 + baseCost) * 2);
     }
 }
 

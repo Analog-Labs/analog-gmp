@@ -9,7 +9,7 @@ import {console} from "forge-std/console.sol";
 import {Random} from "./Random.sol";
 import {MockERC20} from "./MockERC20.sol";
 import {GmpTestTools} from "./GmpTestTools.sol";
-import {TestUtils, SigningKey, VerifyingKey, SigningUtils} from "./TestUtils.sol";
+import {TestUtils, SigningKey, VerifyingKey, SigningUtils, VerifyingUtils} from "./TestUtils.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
@@ -28,12 +28,13 @@ import {
 
 contract ExampleTest is Test {
     using SigningUtils for SigningKey;
-    using SigningUtils for VerifyingKey;
+    using VerifyingUtils for VerifyingKey;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for address;
 
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 private constant DEST_NETWORK_ID = 1337;
+    uint256 private constant SENDER_SECRET = uint248(uint256(keccak256("secret")));
     address private _sender;
 
     address private constant ALICE = address(bytes20(keccak256("Alice")));
@@ -44,23 +45,24 @@ contract ExampleTest is Test {
         vm.deal(BOB, 100 ether);
     }
 
-    function deployGateway(VerifyingKey memory pubkey, uint16[] memory networkIds)
+    function deployGateway(VmSafe.Wallet memory admin, SigningKey memory signer, uint16[] memory networkIds)
         private
         returns (Network[] memory networks)
     {
         TssKey[] memory keys = new TssKey[](1);
-        keys[0] = TssKey({yParity: pubkey.yParity() == 28 ? 1 : 0, xCoord: pubkey.px});
+        keys[0] = TssKey({yParity: signer.pubkey.yParity() == 28 ? 1 : 0, xCoord: signer.pubkey.px});
 
         networks = new Network[](networkIds.length);
         for (uint256 i = 0; i < networks.length; i++) {
             networks[i].id = networkIds[i];
-            networks[i].gateway = vm.computeCreateAddress(_sender, vm.getNonce(_sender) + 1 + (i * 2));
+            networks[i].gateway = TestUtils.computeGatewayProxyAddress(admin.addr, bytes32(uint256(networks[i].id)));
+            vm.deal(networks[i].gateway, 100 ether);
         }
 
-        bytes memory initializer = abi.encodeCall(Gateway.initialize, (msg.sender, keys, networks));
+        // bytes memory initializer = abi.encodeCall(Gateway.initialize, (msg.sender, keys, networks));
         for (uint256 i = 0; i < networks.length; i++) {
-            address implementation = address(new Gateway(networks[i].id, networks[i].gateway));
-            address proxy = address(new GatewayProxy(implementation, initializer));
+            address proxy =
+                address(TestUtils.setupGateway(admin, bytes32(uint256(networks[i].id)), networks[i].id, keys, networks));
             assertEq(proxy, networks[i].gateway, "GatewayProxy address mismatch");
             vm.deal(proxy, 100 ether);
         }
@@ -75,8 +77,9 @@ contract ExampleTest is Test {
 
     function testTeleportTokens() external {
         vm.txGasPrice(1);
-        _sender = TestUtils.createTestAccount(100 ether);
-        vm.startPrank(_sender, _sender);
+        VmSafe.Wallet memory senderWallet = vm.createWallet(SENDER_SECRET);
+        _sender = senderWallet.addr;
+        vm.deal(_sender, 100 ether);
 
         // Step 1: Deploy the Gateway contract
         SigningKey memory signer = TestUtils.createSigner();
@@ -86,19 +89,20 @@ contract ExampleTest is Test {
             uint16[] memory networkIds = new uint16[](2);
             networkIds[0] = SRC_NETWORK_ID;
             networkIds[1] = DEST_NETWORK_ID;
-            Network[] memory networks = deployGateway(signer.pubkey, networkIds);
+            Network[] memory networks = deployGateway(senderWallet, signer, networkIds);
             srcGateway = Gateway(networks[0].gateway);
             dstGateway = Gateway(networks[1].gateway);
         }
 
         // Step 2: Deploy the sender and recipient contracts
+        vm.startPrank(_sender, _sender);
         MockERC20 srcToken = MockERC20(vm.computeCreateAddress(_sender, vm.getNonce(_sender) + 1));
         MockERC20 dstToken =
             new MockERC20("Destination Token", "B", dstGateway, srcToken, srcGateway.networkId(), ALICE, 0);
         srcToken = new MockERC20("Source Token", "A", srcGateway, dstToken, dstGateway.networkId(), ALICE, 1000);
 
         // Step 3: Send GMP message
-        GmpSender source = address(srcToken).toSender(true);
+        GmpSender source = address(srcToken).toSender(false);
         GmpMessage memory gmp = GmpMessage({
             source: source,
             srcNetwork: SRC_NETWORK_ID,

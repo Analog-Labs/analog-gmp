@@ -4,15 +4,7 @@
 pragma solidity >=0.8.0;
 
 import {
-    Signature,
-    GmpMessage,
-    TssKey,
-    GmpStatus,
-    GmpStatus,
-    UpdateKeysMessage,
-    UpdateNetworkInfo,
-    GmpSender,
-    Route
+    Signature, GmpMessage, TssKey, GmpStatus, GmpStatus, UpdateKeysMessage, GmpSender, Route
 } from "../Primitives.sol";
 
 /**
@@ -44,10 +36,29 @@ interface IExecutor {
      */
     function shards() external returns (TssKey[] memory);
 
+    function setShard(TssKey calldata publicKey) external;
+
+    /**
+     * @dev Register Shards in batch.
+     */
+    function setShards(TssKey[] calldata publicKeys) external;
+
+    /**
+     * @dev Revoke a single shard TSS Key.
+     */
+    function revokeShard(TssKey calldata publicKey) external;
+
     /**
      * @dev List all shards currently registered in the gateway.
      */
     function routes() external returns (Route[] memory);
+
+    function setRoute(Route calldata info) external;
+
+    /**
+     * @dev Create or update an array of routes
+     */
+    function setRoutes(Route[] calldata values) external;
 
     /**
      * Execute GMP message
