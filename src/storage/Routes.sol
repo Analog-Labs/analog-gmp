@@ -45,12 +45,7 @@ library RouteStore {
      * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
      * @param gasLimit The maximum amount of gas we allow on this particular network.
      */
-    event RouteUpdated(
-        uint16 indexed networkId,
-        UFloat9x56 relativeGasPrice,
-        uint128 baseFee,
-        uint64 gasLimit
-    );
+    event RouteUpdated(uint16 indexed networkId, UFloat9x56 relativeGasPrice, uint128 baseFee, uint64 gasLimit);
 
     /**
      * @dev Shard info stored in the Gateway Contract
@@ -179,9 +174,7 @@ library RouteStore {
             stored.baseFee = route.baseFee;
         }
 
-        emit RouteUpdated(
-            route.networkId.asUint(), stored.relativeGasPrice, stored.baseFee, stored.gasLimit
-        );
+        emit RouteUpdated(route.networkId.asUint(), stored.relativeGasPrice, stored.baseFee, stored.gasLimit);
     }
 
     /**
@@ -190,11 +183,7 @@ library RouteStore {
      * @param networks List of networks to initialize.
      * @param networkdID The network id of this chain.
      */
-    function initialize(
-        MainStorage storage store,
-        Network[] calldata networks,
-        NetworkID networkdID
-    ) internal {
+    function initialize(MainStorage storage store, Network[] calldata networks, NetworkID networkdID) internal {
         for (uint256 i = 0; i < networks.length; i++) {
             Network calldata network = networks[i];
             (bool created, NetworkInfo storage info) = getOrAdd(store, NetworkID.wrap(network.id));

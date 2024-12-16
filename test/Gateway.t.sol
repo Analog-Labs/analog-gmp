@@ -637,7 +637,7 @@ contract GatewayBase is Test {
         bytes32 id = gmp.eip712hash();
 
         // Check the previous message hash
-        assertEq(gateway.prevMessageHash(), 1, "wrong previous message hash");
+        assertEq(gateway.nonce(), 1, "wrong previous message hash");
 
         CallOptions memory ctx = CallOptions({
             from: gmpSender.toAddress(),

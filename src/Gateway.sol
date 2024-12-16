@@ -70,7 +70,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     mapping(bytes32 => GmpInfo) private _messages;
 
     // Hash of the previous GMP message submitted.
-    uint256 internal nonce;
+    uint256 private _nonce;
 
     // Replay protection mechanism, stores the hash of the executed messages
     // messageHash => shardId
@@ -92,12 +92,12 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // EIP-712 typed hash
     function initialize(address proxyAdmin, TssKey[] calldata keys, Network[] calldata networks) external {
         require(PROXY_ADDRESS == address(this) || msg.sender == FACTORY, "only proxy can be initialize");
-        require(nonce == 0, "already initialized");
+        require(_nonce == 0, "already initialized");
         ERC1967.setAdmin(proxyAdmin);
 
         // Initialize the `nonce` as one to avoid the first GMP to spent more gas,
         // once initialize the storage cost 21k gas, while alter it cost just 2800 gas.
-        nonce = 1;
+        _nonce = 1;
 
         // Register networks
         RouteStore.getMainStorage().initialize(networks, NetworkID.wrap(NETWORK_ID));
@@ -110,8 +110,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         emit KeySetChanged(bytes32(0), revoked, keys);
     }
 
-    function prevMessageHash() external view returns (uint256) {
-        return nonce;
+    function nonce() external view returns (uint256) {
+        return _nonce;
     }
 
     function gmpInfo(bytes32 id) external view returns (GmpInfo memory) {
@@ -302,14 +302,16 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         GmpSender source = msg.sender.toSender(false);
 
         // Salt is equal to the previous message id (EIP-712 hash), this allows us to establish a sequence and eaily query the message history.
-        uint256 nextNonce = nonce++;
+        uint256 nextNonce = _nonce++;
 
         // Create GMP message and update nonce
         GmpMessage memory message =
-                GmpMessage(source, NETWORK_ID, destinationAddress, routeId, executionGasLimit, nextNonce, data);
+            GmpMessage(source, NETWORK_ID, destinationAddress, routeId, executionGasLimit, nextNonce, data);
 
         // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
-        _emitGmpCreated(message.eip712hash(), source, destinationAddress, routeId, executionGasLimit, nextNonce, message.data);
+        _emitGmpCreated(
+            message.eip712hash(), source, destinationAddress, routeId, executionGasLimit, nextNonce, message.data
+        );
     }
 
     /**

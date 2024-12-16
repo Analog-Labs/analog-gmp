@@ -15,7 +15,7 @@ library GasUtils {
     /**
      * @dev How much gas is used until the first `gasleft()` instruction is executed.
      */
-    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 496;
+    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 429;
 
     /**
      * @dev Base cost of the `IExecutor.execute` method.
