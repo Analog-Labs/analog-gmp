@@ -258,8 +258,7 @@ library GmpTestTools {
      * @dev Derive the location of a mapping element from the key.
      */
     function _deriveMapping(bytes32 slot, uint256 key) private pure returns (bytes32 result) {
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             mstore(0x00, key)
             mstore(0x20, slot)
             result := keccak256(0x00, 0x40)

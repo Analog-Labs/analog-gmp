@@ -360,8 +360,7 @@ library GasUtils {
      * gas cost = 217 + (words * 112) + ((words - 1) * 193)
      */
     function countNonZeros(bytes memory data) internal pure returns (uint256 nonZeros) {
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             // Efficient algorithm for counting non-zero bytes in parallel
             let size := mload(data)
 
@@ -407,8 +406,7 @@ library GasUtils {
      * gas cost = 224 + (words * 106) + (((words + 254) / 255) * 214)
      */
     function countNonZerosCalldata(bytes calldata data) internal pure returns (uint256 nonZeros) {
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             nonZeros := 0
             for {
                 let ptr := data.offset

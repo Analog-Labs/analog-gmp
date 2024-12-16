@@ -750,8 +750,7 @@ contract GatewayTest is GatewayBase {
         bytes memory runtimeCode = type(GatewayBase).runtimeCode;
 
         // Replaces the first occurence of `0x7E7E..` in the runtime code by the `INLINE_BYTECODE`
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             let size := mload(runtimeCode)
             let i := add(runtimeCode, 32)
 

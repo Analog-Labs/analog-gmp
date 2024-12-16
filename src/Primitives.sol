@@ -8,10 +8,10 @@ import {UFloatMath, UFloat9x56} from "./utils/Float9x56.sol";
 import {NetworkID} from "./NetworkID.sol";
 
 /**
-  * @dev GMP message EIP-712 Type Hash.
-  * Declared as raw value to enable it to be used in inline assembly
-  * keccak256("GmpMessage(bytes32 source,uint16 srcNetwork,address dest,uint16 destNetwork,uint256 gasLimit,uint256 salt,bytes data)")
-  */
+ * @dev GMP message EIP-712 Type Hash.
+ * Declared as raw value to enable it to be used in inline assembly
+ * keccak256("GmpMessage(bytes32 source,uint16 srcNetwork,address dest,uint16 destNetwork,uint256 gasLimit,uint256 salt,bytes data)")
+ */
 uint256 constant GMP_VERSION = 0;
 
 /**
@@ -186,8 +186,7 @@ library PrimitiveUtils {
 
     function eip712hash(GmpMessage memory message) internal pure returns (bytes32 id) {
         bytes memory data = message.data;
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             // keccak256(message.data)
             id := keccak256(add(data, 32), mload(data))
 

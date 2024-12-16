@@ -234,8 +234,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         address dest = message.dest;
 
         bytes memory callback = message.callback;
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             // Using low-level assembly because the GMP is considered executed
             // regardless if the call reverts or not.
             mstore(0, 0)
@@ -306,8 +305,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             // Compute refund amount
             uint256 refund = BranchlessMath.min(gasUsed.saturatingMul(tx.gasprice), address(this).balance);
 
-            /// @solidity memory-safe-assembly
-            assembly {
+            assembly ("memory-safe") {
                 // Refund the gas used
                 pop(call(gas(), caller(), refund, 0, 0, 0, 0))
             }
@@ -430,8 +428,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             bool success;
             (success, output) = recipient.call{value: amount, gas: gasleft()}(data);
             if (!success) {
-                /// @solidity memory-safe-assembly
-                assembly {
+                assembly ("memory-safe") {
                     revert(add(output, 32), mload(output))
                 }
             }
@@ -606,8 +603,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Revert if the initialization failed
         if (!success) {
-            /// @solidity memory-safe-assembly
-            assembly {
+            assembly ("memory-safe") {
                 revert(add(returndata, 32), mload(returndata))
             }
         }

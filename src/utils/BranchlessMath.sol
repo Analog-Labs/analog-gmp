@@ -251,8 +251,7 @@ library BranchlessMath {
      * @dev Cast a boolean (false or true) to a uint256 (0 or 1) with no jump.
      */
     function toUint(bool b) internal pure returns (uint256 u) {
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             u := iszero(iszero(b))
         }
     }
@@ -261,8 +260,7 @@ library BranchlessMath {
      * @dev Cast a boolean (false or true) to a int256 (0 or 1) with no jump.
      */
     function toInt(bool b) internal pure returns (int256 i) {
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             i := iszero(iszero(b))
         }
     }

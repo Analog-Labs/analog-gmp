@@ -65,8 +65,7 @@ library TestUtils {
      */
     function deployContract(bytes memory bytecode) internal returns (address addr) {
         require(bytecode.length > 0, "Error: deploy code is empty");
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             let ptr := add(bytecode, 32)
             let size := mload(bytecode)
             addr := create(0, ptr, size)
@@ -83,8 +82,7 @@ library TestUtils {
         returns (bool success, bytes memory output)
     {
         require(contractAddr.code.length > 0, "Error: provided address is not a contract");
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             success :=
                 delegatecall(
                     gas(), // call gas limit
@@ -114,8 +112,7 @@ library TestUtils {
      * Reference: https://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
      */
     function countNonZeros(bytes memory data) internal pure returns (uint256 nonZeros) {
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             // Efficient algorithm for counting non-zero bytes in parallel
             nonZeros := 0
             for {
@@ -239,8 +236,7 @@ library TestUtils {
     {
         require(gasleft() > gasLimit.saturatingAdd(5000), "insufficient gas");
         require(addr.code.length > 0, "Not a contract address");
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             success :=
                 call(
                     0x7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E7E, // Code Injection TAG
