@@ -20,12 +20,12 @@ library GasUtils {
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 45593;
+    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46312;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 25818 - 20;
+    uint256 internal constant SUBMIT_BASE_COST = 23449;
 
     /**
      * @dev Compute the gas cost of memory expansion.
@@ -87,7 +87,7 @@ library GasUtils {
             gasCost += words << 8;
 
             // Memory expansion cost
-            words += 17;
+            words += 17 - 1;
             gasCost += ((words * words) >> 9) + (words * 3);
 
             return gasCost;
@@ -194,7 +194,7 @@ library GasUtils {
             uint256 memoryExpansion = 0x60;
             // -- First GAS opcode
 
-            // all opcodes until message.intoCallback(DOMAIN_SEPARATOR)
+            // all opcodes until message.intoCallback()
             baseCost += 449;
 
             // -- message.intoCallback() --
@@ -291,7 +291,7 @@ library GasUtils {
             uint256 gas = _toWord(messageSize) * 3;
             gas = gas.saturatingAdd(_toWord(messageSize) * 6);
             gas = gas.saturatingAdd(gasUsed);
-            uint256 memoryExpansion = (messageSize.align32() + 0x80 + 0x0120 + 164).align32() + 0x40;
+            uint256 memoryExpansion = messageSize.align32() + 0x80 + 0x0120 + 164 + 0x40;
             {
                 // Selector + Signature + GmpMessage
                 uint256 words = messageSize.align32().saturatingAdd(388 + 31) >> 5;
@@ -360,8 +360,7 @@ library GasUtils {
      * gas cost = 217 + (words * 112) + ((words - 1) * 193)
      */
     function countNonZeros(bytes memory data) internal pure returns (uint256 nonZeros) {
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             // Efficient algorithm for counting non-zero bytes in parallel
             let size := mload(data)
 
@@ -407,8 +406,7 @@ library GasUtils {
      * gas cost = 224 + (words * 106) + (((words + 254) / 255) * 214)
      */
     function countNonZerosCalldata(bytes calldata data) internal pure returns (uint256 nonZeros) {
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             nonZeros := 0
             for {
                 let ptr := data.offset

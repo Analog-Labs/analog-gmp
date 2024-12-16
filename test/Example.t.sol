@@ -114,7 +114,7 @@ contract ExampleTest is Test {
         });
 
         // Expect `GmpCreated` to be emitted
-        bytes32 messageID = gmp.eip712TypedHash(dstGateway.DOMAIN_SEPARATOR());
+        bytes32 messageID = gmp.eip712hash();
         vm.expectEmit(true, true, true, true, address(srcGateway));
         emit IGateway.GmpCreated(
             messageID, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data

@@ -36,25 +36,10 @@ abstract contract GatewayEIP712 {
     // https://eips.ethereum.org/EIPS/eip-712
     uint16 internal immutable NETWORK_ID;
     address internal immutable PROXY_ADDRESS;
-    bytes32 public immutable DOMAIN_SEPARATOR;
 
     constructor(uint16 networkId, address gateway) {
         NETWORK_ID = networkId;
         PROXY_ADDRESS = gateway;
-        DOMAIN_SEPARATOR = computeDomainSeparator(NetworkID.wrap(networkId), gateway);
-    }
-
-    // Computes the EIP-712 domain separador
-    function computeDomainSeparator(NetworkID networkId, address addr) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256("Analog Gateway Contract"),
-                keccak256("0.1.0"),
-                uint256(networkId.asUint()),
-                address(addr)
-            )
-        );
     }
 }
 
@@ -107,24 +92,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint64 blockNumber; // block in which the message was processed
     }
 
-    /**
-     * @dev Network info stored in the Gateway Contract
-     * @param id Message unique id.
-     * @param networkId Network identifier.
-     * @param domainSeparator Domain EIP-712 - Replay Protection Mechanism.
-     * @param relativeGasPrice Gas price of destination chain, in terms of the source chain token.
-     * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
-     * @param gasLimit The maximum amount of gas we allow on this particular network.
-     */
-    event NetworkUpdated(
-        bytes32 indexed id,
-        uint16 indexed networkId,
-        bytes32 indexed domainSeparator,
-        UFloat9x56 relativeGasPrice,
-        uint128 baseFee,
-        uint64 gasLimit
-    );
-
     constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
 
     // EIP-712 typed hash
@@ -138,7 +105,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         prevMessageHash = FIRST_MESSAGE_PLACEHOLDER;
 
         // Register networks
-        RouteStore.getMainStorage().initialize(networks, NetworkID.wrap(NETWORK_ID), computeDomainSeparator);
+        RouteStore.getMainStorage().initialize(networks, NetworkID.wrap(NETWORK_ID));
 
         // Register keys
         ShardStore.getMainStorage().registerTssKeys(keys);
@@ -186,7 +153,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // Register/Revoke TSS keys using shard TSS signature
     function updateKeys(Signature calldata signature, UpdateKeysMessage calldata message) external {
         // Check if the message was already executed to prevent replay attacks
-        bytes32 messageHash = message.eip712TypedHash(DOMAIN_SEPARATOR);
+        bytes32 messageHash = message.eip712hash();
         require(_executedMessages[messageHash] == bytes32(0), "message already executed");
 
         // Verify the signature and store the message hash
@@ -234,8 +201,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         address dest = message.dest;
 
         bytes memory callback = message.callback;
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             // Using low-level assembly because the GMP is considered executed
             // regardless if the call reverts or not.
             mstore(0, 0)
@@ -287,7 +253,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
         // see `src/Primitives.sol` for more details.
-        GmpCallback memory callback = message.intoCallback(DOMAIN_SEPARATOR);
+        GmpCallback memory callback = message.intoCallback();
 
         // Verify the TSS Schnorr Signature
         _verifySignature(signature, callback.eip712hash);
@@ -306,8 +272,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             // Compute refund amount
             uint256 refund = BranchlessMath.min(gasUsed.saturatingMul(tx.gasprice), address(this).balance);
 
-            /// @solidity memory-safe-assembly
-            assembly {
+            assembly ("memory-safe") {
                 // Refund the gas used
                 pop(call(gas(), caller(), refund, 0, 0, 0, 0))
             }
@@ -327,7 +292,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         returns (bytes32)
     {
         // Check if the message data is too large
-        require(data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
+        require(data.length <= MAX_PAYLOAD_SIZE, "msg data is too big");
 
         // Check if the provided parameters are valid
         // See `RouteStorage.estimateWeiCost` at `storage/Routes.sol` for more details.
@@ -348,7 +313,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         {
             GmpMessage memory message =
                 GmpMessage(source, NETWORK_ID, destinationAddress, routeId, executionGasLimit, salt, data);
-            prevHash = message.eip712TypedHash(route.domainSeparator);
+            prevHash = message.eip712hash();
             prevMessageHash = prevHash;
             payload = message.data;
         }
@@ -430,8 +395,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             bool success;
             (success, output) = recipient.call{value: amount, gas: gasleft()}(data);
             if (!success) {
-                /// @solidity memory-safe-assembly
-                assembly {
+                assembly ("memory-safe") {
                     revert(add(output, 32), mload(output))
                 }
             }
@@ -606,8 +570,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Revert if the initialization failed
         if (!success) {
-            /// @solidity memory-safe-assembly
-            assembly {
+            assembly ("memory-safe") {
                 revert(add(returndata, 32), mload(returndata))
             }
         }

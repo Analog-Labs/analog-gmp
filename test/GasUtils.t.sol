@@ -57,14 +57,12 @@ contract GasUtilsBase is Test {
     // Receiver Contract, the will waste the exact amount of gas you sent to it in the data field
     IGmpReceiver internal receiver;
 
-    // Domain Separators
-    bytes32 private _srcDomainSeparator;
-    bytes32 private _dstDomainSeparator;
-
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
 
     constructor() {
+        TestUtils.deployFactory();
+
         // Create the Shard and Admin accounts
         signer = new Signer(secret);
         VmSafe.Wallet memory deployer = vm.createWallet(secret);
@@ -78,9 +76,6 @@ contract GasUtilsBase is Test {
             Gateway(address(TestUtils.setupGateway(deployer, bytes32(uint256(0)), SRC_NETWORK_ID, DEST_NETWORK_ID)));
         vm.deal(address(gateway), 100 ether);
 
-        _srcDomainSeparator = GatewayUtils.computeDomainSeparator(SRC_NETWORK_ID, address(gateway));
-        _dstDomainSeparator = GatewayUtils.computeDomainSeparator(DEST_NETWORK_ID, address(gateway));
-
         // Obs: This is a special contract that wastes an exact amount of gas you send to it, helpful for testing GMP refunds and gas limits.
         // See the file `HelperContract.opcode` for more details.
         {
@@ -91,13 +86,7 @@ contract GasUtilsBase is Test {
     }
 
     function sign(GmpMessage memory gmp) internal view returns (Signature memory) {
-        bytes32 domainSeparator;
-        if (gmp.destNetwork == SRC_NETWORK_ID) {
-            domainSeparator = _srcDomainSeparator;
-        } else {
-            domainSeparator = _dstDomainSeparator;
-        }
-        uint256 hash = uint256(gmp.eip712TypedHash(domainSeparator));
+        uint256 hash = uint256(gmp.eip712hash());
         (uint256 e, uint256 s) = signer.signPrehashed(hash, nonce);
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
     }
@@ -169,6 +158,9 @@ contract GasUtilsBase is Test {
             data: hex"00"
         });
         Signature memory sig = sign(gmp);
+        sig.xCoord = type(uint256).max;
+        sig.e = type(uint256).max;
+        sig.s = type(uint256).max;
 
         // Check if `IExecutor.execute` match the expected base cost
         (uint256 baseCost, uint256 nonZeros, uint256 zeros) = mock.execute(sig, gmp);
@@ -198,7 +190,7 @@ contract GasUtilsBase is Test {
 
         // Execute the GMP message
         {
-            bytes32 gmpId = gmp.eip712TypedHash(_dstDomainSeparator);
+            bytes32 gmpId = gmp.eip712hash();
             vm.expectEmit(true, true, true, true);
             emit IExecutor.GmpExecuted(gmpId, gmp.source, gmp.dest, GmpStatus.SUCCESS, bytes32(uint256(gasLimit)));
             uint256 balanceBefore = ctx.from.balance;

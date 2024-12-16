@@ -8,6 +8,13 @@ import {UFloatMath, UFloat9x56} from "./utils/Float9x56.sol";
 import {NetworkID} from "./NetworkID.sol";
 
 /**
+ * @dev GMP message EIP-712 Type Hash.
+ * Declared as raw value to enable it to be used in inline assembly
+ * keccak256("GmpMessage(bytes32 source,uint16 srcNetwork,address dest,uint16 destNetwork,uint256 gasLimit,uint256 salt,bytes data)")
+ */
+uint256 constant GMP_VERSION = 0;
+
+/**
  * @dev Maximum size of the GMP payload
  */
 uint256 constant MAX_PAYLOAD_SIZE = 0x6000;
@@ -135,13 +142,6 @@ struct GmpCallback {
  * @dev EIP-712 utility functions for primitives
  */
 library PrimitiveUtils {
-    /**
-     * @dev GMP message EIP-712 Type Hash.
-     * Declared as raw value to enable it to be used in inline assembly
-     * keccak256("GmpMessage(bytes32 source,uint16 srcNetwork,address dest,uint16 destNetwork,uint256 gasLimit,uint256 salt,bytes data)")
-     */
-    bytes32 internal constant GMP_MESSAGE_TYPE_HASH = 0xeb1e0a6b8c4db87ab3beb15e5ae24e7c880703e1b9ee466077096eaeba83623b;
-
     function toAddress(GmpSender sender) internal pure returns (address) {
         return address(uint160(uint256(GmpSender.unwrap(sender))));
     }
@@ -184,18 +184,9 @@ library PrimitiveUtils {
         );
     }
 
-    function eip712TypedHash(UpdateKeysMessage memory message, bytes32 domainSeparator)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return _computeTypedHash(domainSeparator, eip712hash(message));
-    }
-
     function eip712hash(GmpMessage memory message) internal pure returns (bytes32 id) {
         bytes memory data = message.data;
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             // keccak256(message.data)
             id := keccak256(add(data, 32), mload(data))
 
@@ -203,7 +194,7 @@ library PrimitiveUtils {
             let offset := sub(message, 32)
             let backup := mload(offset)
             {
-                mstore(offset, GMP_MESSAGE_TYPE_HASH)
+                mstore(offset, GMP_VERSION)
                 {
                     let offset2 := add(offset, 0xe0)
                     let backup2 := mload(offset2)
@@ -218,28 +209,67 @@ library PrimitiveUtils {
 
     type MessagePtr is uint256;
 
-    function memToCallback(GmpMessage memory message, bytes32 domainSeparator)
-        internal
-        view
-        returns (GmpCallback memory callback)
-    {
-        MessagePtr ptr;
+    function _intoMemoryPointer(MessagePtr ptr) private pure returns (GmpMessage memory r) {
         assembly {
-            ptr := message
+            r := ptr
         }
-        _intoCallback(ptr, domainSeparator, false, callback);
     }
 
-    function intoCallback(GmpMessage calldata message, bytes32 domainSeparator)
+    function _intoCalldataPointer(MessagePtr ptr) private pure returns (GmpMessage calldata r) {
+        assembly {
+            r := ptr
+        }
+    }
+
+    function memToCallback(GmpMessage memory message)
         internal
-        view
+        pure
         returns (GmpCallback memory callback)
     {
         MessagePtr ptr;
         assembly {
             ptr := message
         }
-        _intoCallback(ptr, domainSeparator, true, callback);
+        _intoCallback(ptr, false, callback);
+    }
+
+    function intoCallback(GmpMessage calldata message)
+        internal
+        pure
+        returns (GmpCallback memory callback)
+    {
+        MessagePtr ptr;
+        assembly {
+            ptr := message
+        }
+        _intoCallback(ptr, true, callback);
+    }
+
+    /**
+     * @dev Computes the message ID from the provided `GmpCallback` struct.
+     */
+    function _computeMessageID(GmpCallback memory callback) private pure {
+        bytes memory onGmpReceived = callback.callback;
+        bytes32 dataHash;
+        assembly ("memory-safe") {
+            let offset := add(onGmpReceived, 0xa4)
+            dataHash := keccak256(add(offset, 0x20), mload(offset))
+        }
+        callback.eip712hash = bytes32(GMP_VERSION);
+        assembly ("memory-safe") {
+            // temporarily store the result at `0x00e0..0x0100`, which is the `GmpCallback.callback.offset` field.
+            mstore(add(callback, 0xe0), dataHash)
+
+            // Compute `keccak256(abi.encode(GMP_VERSION, message.source, ..., keccak256(message.data)))`
+            dataHash := keccak256(callback, 0x0100)
+
+            // Replace the `eip712hash` by the `callback.data.offset`.
+            mstore(add(callback, 0xe0), onGmpReceived)
+
+            // Replace the `id` in `onGmpReceived(uint256 id,...)` in the callback.
+            mstore(add(onGmpReceived, 0x24), dataHash)
+        }
+        callback.eip712hash = dataHash;
     }
 
     /**
@@ -256,141 +286,55 @@ library PrimitiveUtils {
      * create he `IGmpReceiver.onGmpReceived` callback, unfortunately this requires inline assembly.
      *
      * @param message GmpMessage from calldata to be encoded
-     * @param domainSeparator EIP-712 domain separator
      * @param callback `GmpCallback` struct
      */
-    function _intoCallback(MessagePtr message, bytes32 domainSeparator, bool isCalldata, GmpCallback memory callback)
+    function _intoCallback(MessagePtr message, bool isCalldata, GmpCallback memory callback)
         private
-        view
-    {
-        assembly ("memory-safe") {
-            // |  MEMORY OFFSET  |             RESERVED FIELD               |
-            // | 0x00e0..0x0100 <- `callback.data` pointer
-            // | 0x0100..0x0120 <- `callback.data.length` field.
-            // | 0x0120..0x0124 <- `onGmpReceived.selector` field (4 bytes).
-            // | 0x0124..0x0144 <- `onGmpReceived.id` param.
-            // | 0x0144..0x0164 <- `onGmpReceived.network` param.
-            // | 0x0164..0x0184 <- `onGmpReceived.source` param.
-            // | 0x0184..0x01a4 <- `onGmpReceived.data.offset` param (calldata pointer).
-            // | 0x01a4..0x01c4 <- `onGmpReceived.data.length` param.
-            // | 0x01c4..?????? <- `onGmpReceived.data` bytes.
-            //
-            //////////////////////////////////////////////////////////
-            // First need compute to `GmpMessage` EIP-712 Type Hash //
-            //////////////////////////////////////////////////////////
-
-            // Store the `GMP_MESSAGE_TYPE_HASH` in the first 32 bytes of the callback.
-            mstore(add(callback, 0x0000), GMP_MESSAGE_TYPE_HASH) // callback.eip712hash
-
-            // Then we copy all `GmpMessage` fields to memory, except the `data` field.
-            let size
-            {
-                switch isCalldata
-                case 0 {
-                    mstore(add(callback, 0x20), mload(add(message, 0x00))) // callback.source
-                    mstore(add(callback, 0x40), mload(add(message, 0x20))) // callback.srcNetwork
-                    mstore(add(callback, 0x60), mload(add(message, 0x40))) // callback.dest
-                    mstore(add(callback, 0x80), mload(add(message, 0x60))) // callback.destNetwork
-                    mstore(add(callback, 0xa0), mload(add(message, 0x80))) // callback.gasLimit
-                    mstore(add(callback, 0xc0), mload(add(message, 0xa0))) // callback.salt
-
-                    // Store `onGmpReceived.data.length` at `0x01a4..0x01c4`.
-                    let offset := mload(add(message, 0xc0))
-                    size := mload(offset)
-                    mstore(add(callback, 0x01a4), size)
-
-                    if iszero(staticcall(gas(), 0x04, add(offset, 0x20), size, add(callback, 0x01c4), size)) {
-                        revert(0, 0)
-                    }
-                }
-                default {
-                    mstore(add(callback, 0x20), calldataload(add(message, 0x00))) // callback.source
-                    mstore(add(callback, 0x40), calldataload(add(message, 0x20))) // callback.srcNetwork
-                    mstore(add(callback, 0x60), calldataload(add(message, 0x40))) // callback.dest
-                    mstore(add(callback, 0x80), calldataload(add(message, 0x60))) // callback.destNetwork
-                    mstore(add(callback, 0xa0), calldataload(add(message, 0x80))) // callback.gasLimit
-                    mstore(add(callback, 0xc0), calldataload(add(message, 0xa0))) // callback.salt
-
-                    // Store `onGmpReceived.data.length` at `0x01a4..0x01c4`.
-                    let offset := add(calldataload(add(message, 0xc0)), message)
-                    size := calldataload(offset)
-                    mstore(add(callback, 0x01a4), size)
-
-                    // Copy `message.data` to memory at `0x01c4`, as described above.
-                    calldatacopy(add(callback, 0x01c4), add(offset, 0x20), size)
-                }
-            }
-
-            // Compute `keccak256(message.data)`
-            let messageHash := keccak256(add(callback, 0x01c4), size)
-
-            // temporarily store the result at `0x00e0..0x0100`, which is the end of
-            // the `GmpMessage` struct.
-            mstore(add(callback, 0x00e0), messageHash)
-
-            // Compute `keccak256(abi.encode(GMP_MESSAGE_TYPE_HASH, message.source, ..., keccak256(message.data)))`
-            messageHash := keccak256(callback, 0x0100)
-
-            // Compute the final EIP-712 Signature Hash
-            mstore(0, 0x1901)
-            mstore(0x20, domainSeparator)
-            mstore(0x40, messageHash) // this will be restored at the end of this function
-            messageHash := keccak256(0x1e, 0x42) // GMP Typed Hash
-
-            // Replace the `GMP_MESSAGE_TYPE_HASH` by the `eip712hash`.
-            mstore(callback, messageHash)
-
-            // Replace the `eip712hash` by the `callback.data.offset`.
-            mstore(add(callback, 0x00e0), add(callback, 0x0100))
-
-            // Compute the callback size, which is equivalent to compute the following:
-            // ```solidity
-            // abi.encodeCall(IGmpReceiver.onGmpReceived, (eip712hash, network, sender, data)).length;
-            // ```
-            // So essentially is the size of `message.data` 32 byte aligned + 164 bytes for the other fields.
-            size := add(and(add(size, 31), 0xffffffe0), 164)
-
-            // Add the missing fields between `0x0100..0x01a4` to the callback.
-            // The fields between `0x01a4..0x01c4` are already set.
-            mstore(add(callback, 0x0104), 0x01900937) // selector (4 bytes)
-            mstore(add(callback, 0x0124), messageHash) // eip712hash (32 bytes)
-            {
-                switch isCalldata
-                case 0 {
-                    mstore(add(callback, 0x0144), mload(add(message, 0x20))) // network (32 bytes)
-                    mstore(add(callback, 0x0164), mload(add(message, 0x00))) // source (32 bytes)
-                }
-                default {
-                    mstore(add(callback, 0x0144), calldataload(add(message, 0x20))) // network (32 bytes)
-                    mstore(add(callback, 0x0164), calldataload(add(message, 0x00))) // source (32 bytes)
-                }
-            }
-            mstore(add(callback, 0x0184), 0x80) // payload.offset (32 bytes)
-            mstore(add(callback, 0x0100), size) // callback.data.length (32 bytes)
-            {
-                // Update free memory pointer to the end of the callback (0x0120 + data.length)
-                mstore(0x40, and(add(add(callback, 0x013f), size), 0xffffffe0))
-            }
-        }
-    }
-
-    function eip712TypedHash(GmpMessage memory message, bytes32 domainSeparator)
-        internal
         pure
-        returns (bytes32 messageHash)
     {
-        messageHash = eip712hash(message);
-        messageHash = _computeTypedHash(domainSeparator, messageHash);
-    }
-
-    function _computeTypedHash(bytes32 domainSeparator, bytes32 messageHash) private pure returns (bytes32 r) {
-        /// @solidity memory-safe-assembly
-        assembly {
-            mstore(0, 0x1901000000000000000000000000000000000000000000000000000000000000)
-            mstore(0x02, domainSeparator)
-            mstore(0x22, messageHash)
-            r := keccak256(0, 0x42)
-            mstore(0x22, 0)
+        // |  MEMORY OFFSET  |     RESERVED FIELD     |
+        // | 0x0000..0x0020 <- GmpCallback.eip712hash
+        // | 0x0020..0x0040 <- GmpCallback.source
+        // | 0x0040..0x0060 <- GmpCallback.srcNetwork
+        // | 0x0060..0x0080 <- GmpCallback.dest
+        // | 0x0080..0x00a0 <- GmpCallback.destNetwork
+        // | 0x00a0..0x00c0 <- GmpCallback.gasLimit
+        // | 0x00c0..0x00e0 <- GmpCallback.salt
+        // | 0x00e0..0x0100 <- GmpCallback.callback.offset
+        // | 0x0100..0x0120 <- GmpCallback.callback.length
+        // | 0x0120..0x0124 <- onGmpReceived.selector (4 bytes)
+        // | 0x0124..0x0144 <- onGmpReceived.id
+        // | 0x0144..0x0164 <- onGmpReceived.network
+        // | 0x0164..0x0184 <- onGmpReceived.source
+        // | 0x0184..0x01a4 <- onGmpReceived.data.offset
+        // | 0x01a4..0x01c4 <- onGmpReceived.data.length
+        // | 0x01c4........ <- onGmpReceived.data
+        if (isCalldata) {
+            GmpMessage calldata m = _intoCalldataPointer(message);
+            callback.source = m.source;
+            callback.srcNetwork = m.srcNetwork;
+            callback.dest = m.dest;
+            callback.destNetwork = m.destNetwork;
+            callback.gasLimit = m.gasLimit;
+            callback.salt = m.salt;
+            callback.callback = abi.encodeWithSignature(
+                "onGmpReceived(bytes32,uint128,bytes32,bytes)",
+                callback.eip712hash, callback.srcNetwork, callback.source, m.data
+            );
+        } else {
+            GmpMessage memory m = _intoMemoryPointer(message);
+            callback.source = m.source;
+            callback.srcNetwork = m.srcNetwork;
+            callback.dest = m.dest;
+            callback.destNetwork = m.destNetwork;
+            callback.gasLimit = m.gasLimit;
+            callback.salt = m.salt;
+            callback.callback = abi.encodeWithSignature(
+                "onGmpReceived(bytes32,uint128,bytes32,bytes)",
+                callback.eip712hash, callback.srcNetwork, callback.source, m.data
+            );
         }
+        // Compute the message ID
+        _computeMessageID(callback);
     }
 }

@@ -8,8 +8,7 @@ pragma solidity >=0.8.0;
  */
 library Random {
     function _next() private pure returns (uint256 rand) {
-        /// @solidity memory-safe-assembly
-        assembly {
+        assembly ("memory-safe") {
             rand := keccak256(0x00, 0x60)
             let ptr := mload(0x40)
             mstore(0x00, xor(rand, calldataload(0)))
