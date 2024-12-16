@@ -251,12 +251,12 @@ library PrimitiveUtils {
      * @dev Computes the message ID from the provided `GmpCallback` struct.
      */
     function _computeMessageID(GmpCallback memory callback) private pure {
-        bytes memory payload = callback.callback;
+        bytes memory data = callback.callback;
         assembly ("memory-safe") {
-            payload := add(payload, 0xa4)
+            data := add(data, 0xa4)
         }
-        bytes32 dataHash = keccak256(payload);
-        payload = callback.callback;
+        bytes32 dataHash = keccak256(data);
+        data = callback.callback;
         callback.eip712hash = bytes32(GMP_VERSION);
         assembly ("memory-safe") {
             // temporarily store the result at `0x00e0..0x0100`, which is the `GmpCallback.callback.offset` field.
@@ -266,10 +266,10 @@ library PrimitiveUtils {
             dataHash := keccak256(callback, 0x0100)
 
             // Replace the `eip712hash` by the `callback.data.offset`.
-            mstore(add(callback, 0xe0), add(callback, 0x0100))
+            mstore(add(callback, 0xe0), data)
 
             // Replace the `id` in `onGmpReceived(uint256 id,...)` in the callback.
-            mstore(add(payload, 0x24), dataHash) // eip712hash (32 bytes)
+            mstore(add(data, 0x24), dataHash)
         }
         callback.eip712hash = dataHash;
     }
