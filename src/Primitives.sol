@@ -221,11 +221,7 @@ library PrimitiveUtils {
         }
     }
 
-    function memToCallback(GmpMessage memory message)
-        internal
-        pure
-        returns (GmpCallback memory callback)
-    {
+    function memToCallback(GmpMessage memory message) internal pure returns (GmpCallback memory callback) {
         MessagePtr ptr;
         assembly {
             ptr := message
@@ -233,11 +229,7 @@ library PrimitiveUtils {
         _intoCallback(ptr, false, callback);
     }
 
-    function intoCallback(GmpMessage calldata message)
-        internal
-        pure
-        returns (GmpCallback memory callback)
-    {
+    function intoCallback(GmpMessage calldata message) internal pure returns (GmpCallback memory callback) {
         MessagePtr ptr;
         assembly {
             ptr := message
@@ -288,10 +280,7 @@ library PrimitiveUtils {
      * @param message GmpMessage from calldata to be encoded
      * @param callback `GmpCallback` struct
      */
-    function _intoCallback(MessagePtr message, bool isCalldata, GmpCallback memory callback)
-        private
-        pure
-    {
+    function _intoCallback(MessagePtr message, bool isCalldata, GmpCallback memory callback) private pure {
         // |  MEMORY OFFSET  |     RESERVED FIELD     |
         // | 0x0000..0x0020 <- GmpCallback.eip712hash
         // | 0x0020..0x0040 <- GmpCallback.source
@@ -319,7 +308,10 @@ library PrimitiveUtils {
             callback.salt = m.salt;
             callback.callback = abi.encodeWithSignature(
                 "onGmpReceived(bytes32,uint128,bytes32,bytes)",
-                callback.eip712hash, callback.srcNetwork, callback.source, m.data
+                callback.eip712hash,
+                callback.srcNetwork,
+                callback.source,
+                m.data
             );
         } else {
             GmpMessage memory m = _intoMemoryPointer(message);
@@ -331,7 +323,10 @@ library PrimitiveUtils {
             callback.salt = m.salt;
             callback.callback = abi.encodeWithSignature(
                 "onGmpReceived(bytes32,uint128,bytes32,bytes)",
-                callback.eip712hash, callback.srcNetwork, callback.source, m.data
+                callback.eip712hash,
+                callback.srcNetwork,
+                callback.source,
+                m.data
             );
         }
         // Compute the message ID

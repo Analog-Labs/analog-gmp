@@ -403,7 +403,7 @@ contract GatewayBase is Test {
 
         assertEq(
             ctx.executionCost,
-            GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 4500,
+            GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 4500 + 17100,
             "unexpected submit message gas cost"
         );
     }
@@ -458,12 +458,13 @@ contract GatewayBase is Test {
         emit IGateway.GmpCreated(
             id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
         );
+        ctx.gasLimit += 17100;
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
 
         // Verify the execution cost
         assertEq(
             ctx.executionCost,
-            GasUtils.submitMessageGasCost(uint16(gmp.data.length)),
+            GasUtils.submitMessageGasCost(uint16(gmp.data.length)) + 17100,
             "unexpected submit message gas cost"
         );
 
@@ -622,7 +623,7 @@ contract GatewayBase is Test {
         ctx.execute(sig, gmp);
     }
 
-    function testSubmitGmpMessage() external {
+    function test_submitGmpMessage() external {
         vm.txGasPrice(1);
         GmpSender gmpSender = TestUtils.createTestAccount(1000 ether).toSender(false);
         GmpMessage memory gmp = GmpMessage({
@@ -637,7 +638,7 @@ contract GatewayBase is Test {
         bytes32 id = gmp.eip712hash();
 
         // Check the previous message hash
-        assertEq(gateway.prevMessageHash(), bytes32(uint256(2 ** 256 - 1)), "wrong previous message hash");
+        assertEq(gateway.nonceOf(gmp.source.toAddress()), 0, "wrong previous message hash");
 
         CallOptions memory ctx = CallOptions({
             from: gmpSender.toAddress(),
@@ -672,10 +673,10 @@ contract GatewayBase is Test {
 
         // Verify the gas cost
         uint256 expectedCost = GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 6500;
-        assertEq(ctx.executionCost, expectedCost, "unexpected execution gas cost in first call");
+        assertEq(ctx.executionCost, expectedCost + 17100, "unexpected execution gas cost in first call");
 
         // Now the second GMP message should have the salt equals to previous gmp hash
-        gmp.salt = uint256(id);
+        gmp.salt = gateway.nonceOf(gmp.source.toAddress());
         id = gmp.eip712hash();
 
         // Expect event

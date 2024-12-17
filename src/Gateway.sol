@@ -55,11 +55,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     using NetworkIDHelpers for NetworkID;
 
     /**
-     * @dev Non-zero value used to initialize the `prevMessageHash` storage
-     */
-    bytes32 internal constant FIRST_MESSAGE_PLACEHOLDER = bytes32(uint256(2 ** 256 - 1));
-
-    /**
      * @dev Selector of `GmpCreated` event.
      * keccak256("GmpCreated(bytes32,bytes32,address,uint16,uint256,uint256,bytes)");
      */
@@ -75,7 +70,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     mapping(bytes32 => GmpInfo) private _messages;
 
     // Hash of the previous GMP message submitted.
-    bytes32 public prevMessageHash;
+    mapping(address => uint256) private _nonces;
 
     // Replay protection mechanism, stores the hash of the executed messages
     // messageHash => shardId
@@ -97,12 +92,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     // EIP-712 typed hash
     function initialize(address proxyAdmin, TssKey[] calldata keys, Network[] calldata networks) external {
         require(PROXY_ADDRESS == address(this) || msg.sender == FACTORY, "only proxy can be initialize");
-        require(prevMessageHash == 0, "already initialized");
         ERC1967.setAdmin(proxyAdmin);
-
-        // Initialize the prevMessageHash with a non-zero value to avoid the first GMP to spent more gas,
-        // once initialize the storage cost 21k gas, while alter it cost just 2800 gas.
-        prevMessageHash = FIRST_MESSAGE_PLACEHOLDER;
 
         // Register networks
         RouteStore.getMainStorage().initialize(networks, NetworkID.wrap(NETWORK_ID));
@@ -113,6 +103,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // emit event
         TssKey[] memory revoked = new TssKey[](0);
         emit KeySetChanged(bytes32(0), revoked, keys);
+    }
+
+    function nonceOf(address account) external view returns (uint256) {
+        return _nonces[account];
     }
 
     function gmpInfo(bytes32 id) external view returns (GmpInfo memory) {
@@ -302,31 +296,24 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // We use 20 bytes for represent the address and 1 bit for the contract flag
         GmpSender source = msg.sender.toSender(false);
 
-        // Salt is equal to the previous message id (EIP-712 hash), this allows us to establish a sequence and eaily query the message history.
-        bytes32 prevHash = prevMessageHash;
+        // Nonce is per sender, it's incremented for every message sent.
+        uint256 nextNonce = _nonces[msg.sender]++;
 
-        // if the messageHash is the first message, we use a zero salt
-        uint256 salt = BranchlessMath.ternary(prevHash == FIRST_MESSAGE_PLACEHOLDER, 0, uint256(prevHash));
-
-        // Create GMP message and update prevMessageHash
-        bytes memory payload;
-        {
-            GmpMessage memory message =
-                GmpMessage(source, NETWORK_ID, destinationAddress, routeId, executionGasLimit, salt, data);
-            prevHash = message.eip712hash();
-            prevMessageHash = prevHash;
-            payload = message.data;
-        }
+        // Create GMP message and update nonce
+        GmpMessage memory message =
+            GmpMessage(source, NETWORK_ID, destinationAddress, routeId, executionGasLimit, nextNonce, data);
 
         // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
-        _emitGmpCreated(prevHash, source, destinationAddress, routeId, executionGasLimit, salt, payload);
+        _emitGmpCreated(
+            message.eip712hash(), source, destinationAddress, routeId, executionGasLimit, nextNonce, message.data
+        );
     }
 
     /**
      * @dev Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
      */
     function _emitGmpCreated(
-        bytes32 prevHash,
+        bytes32 messageID,
         GmpSender source,
         address destinationAddress,
         uint16 destinationNetwork,
@@ -348,8 +335,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             mstore(add(ptr, 0x60), 0x80) // data offset
             let size := and(add(mload(payload), 31), 0xffffffe0)
             size := add(size, 160)
-            log4(ptr, size, GMP_CREATED_EVENT_SELECTOR, prevHash, source, destinationAddress)
-            mstore(0, prevHash)
+            log4(ptr, size, GMP_CREATED_EVENT_SELECTOR, messageID, source, destinationAddress)
+            mstore(0, messageID)
             return(0, 32)
         }
     }
