@@ -638,7 +638,7 @@ contract GatewayBase is Test {
         bytes32 id = gmp.eip712hash();
 
         // Check the previous message hash
-        assertEq(gateway.nonce(), 0, "wrong previous message hash");
+        assertEq(gateway.nonceOf(gmp.source.toAddress()), 0, "wrong previous message hash");
 
         CallOptions memory ctx = CallOptions({
             from: gmpSender.toAddress(),
@@ -672,11 +672,11 @@ contract GatewayBase is Test {
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
 
         // Verify the gas cost
-        uint256 expectedCost = GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 4500;
+        uint256 expectedCost = GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 6500;
         assertEq(ctx.executionCost, expectedCost + 17100, "unexpected execution gas cost in first call");
 
         // Now the second GMP message should have the salt equals to previous gmp hash
-        gmp.salt += 1;
+        gmp.salt = gateway.nonceOf(gmp.source.toAddress());
         id = gmp.eip712hash();
 
         // Expect event
@@ -685,7 +685,7 @@ contract GatewayBase is Test {
             id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
         );
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
-        assertEq(ctx.executionCost, expectedCost - 8800, "unexpected execution gas cost in second call");
+        assertEq(ctx.executionCost, expectedCost - 6800, "unexpected execution gas cost in second call");
     }
 }
 

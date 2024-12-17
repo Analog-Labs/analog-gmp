@@ -105,8 +105,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         emit KeySetChanged(bytes32(0), revoked, keys);
     }
 
-    function nonce() external view returns (uint256) {
-        return _nonces[msg.sender];
+    function nonceOf(address account) external view returns (uint256) {
+        return _nonces[account];
     }
 
     function gmpInfo(bytes32 id) external view returns (GmpInfo memory) {
