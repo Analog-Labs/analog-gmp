@@ -11,16 +11,15 @@ import {BranchlessMath} from "../../src/utils/BranchlessMath.sol";
 contract GmpProxy is IGmpReceiver {
     using BranchlessMath for uint256;
 
-    event MessageReceived(bytes32 indexed id, GmpMessage msg);
+    event MessageReceived(GmpMessage msg);
 
     struct GmpMessage {
+        bytes32 source;
         uint16 srcNetwork;
+        address dest;
         uint16 destNetwork;
-        bytes32 src;
-        bytes32 dest;
-        uint64 nonce;
-        uint128 gasLimit;
-        uint128 gasCost;
+        uint256 gasLimit;
+        uint256 salt;
         bytes data;
     }
 
@@ -34,8 +33,7 @@ contract GmpProxy is IGmpReceiver {
 
     function sendMessage(GmpMessage calldata message) external payable {
         uint256 value = address(this).balance.min(msg.value);
-        address destination = address(uint160(uint256(message.dest)));
-        GATEWAY.submitMessage{value: value}(destination, message.destNetwork, message.gasLimit, message.data);
+        GATEWAY.submitMessage{value: value}(message.dest, message.destNetwork, message.gasLimit, message.data);
     }
 
     function estimateMessageCost(uint256 messageSize, uint256 gasLimit) external view returns (uint256) {
@@ -45,30 +43,10 @@ contract GmpProxy is IGmpReceiver {
     function onGmpReceived(bytes32 id, uint128, bytes32, bytes calldata payload) external payable returns (bytes32) {
         // For testing purpose
         // we keep the original struct in payload so we dont depend on OnGmpReceived call since it doesnt provide everything.
-        (
-            uint16 srcNetwork,
-            uint16 destNetwork,
-            bytes32 src,
-            bytes32 dest,
-            uint64 nonce,
-            uint128 gasLimit,
-            uint128 gasCost,
-            bytes memory data
-        ) = abi.decode(payload, (uint16, uint16, bytes32, bytes32, uint64, uint128, uint128, bytes));
-
-        GmpMessage memory message = GmpMessage({
-            srcNetwork: srcNetwork,
-            destNetwork: destNetwork,
-            src: src,
-            dest: dest,
-            nonce: nonce,
-            gasLimit: gasLimit,
-            gasCost: gasCost,
-            data: data
-        });
+        (GmpMessage memory message) = abi.decode(payload, (GmpMessage));
         message.data = payload;
 
-        emit MessageReceived(id, message);
+        emit MessageReceived(message);
         return id;
     }
 }
