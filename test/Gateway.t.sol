@@ -186,7 +186,7 @@ contract GatewayBase is Test {
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
     }
 
-    function _shortTssKeys(TssKey[] memory keys) private pure {
+    function _sortTssKeys(TssKey[] memory keys) private pure {
         // sort keys by xCoord
         for (uint256 i = 0; i < keys.length; i++) {
             for (uint256 j = i + 1; j < keys.length; j++) {
@@ -208,7 +208,7 @@ contract GatewayBase is Test {
             signer = TestUtils.signerFromEntropy(bytes32(i));
             keys[i] = TssKey({yParity: signer.yParity() == 28 ? 3 : 2, xCoord: signer.xCoord()});
         }
-        _shortTssKeys(keys);
+        _sortTssKeys(keys);
 
         // Only admin can set shards keys
         vm.expectRevert("unauthorized");
@@ -220,7 +220,7 @@ contract GatewayBase is Test {
 
         // Check shards keys
         TssKey[] memory shards = gateway.shards();
-        _shortTssKeys(shards);
+        _sortTssKeys(shards);
         for (uint256 i = 0; i < shards.length; i++) {
             assertEq(shards[i].xCoord, keys[i].xCoord);
             assertEq(shards[i].yParity, keys[i].yParity);
@@ -230,13 +230,13 @@ contract GatewayBase is Test {
         signer = TestUtils.signerFromEntropy(bytes32(uint256(12345)));
         keys[0].xCoord = signer.xCoord();
         keys[0].yParity = signer.yParity() == 28 ? 3 : 2;
-        _shortTssKeys(keys);
+        _sortTssKeys(keys);
         vm.prank(ADMIN, ADMIN);
         gateway.setShards(keys);
 
         // Check shards keys
         shards = gateway.shards();
-        _shortTssKeys(shards);
+        _sortTssKeys(shards);
         for (uint256 i = 0; i < shards.length; i++) {
             assertEq(shards[i].xCoord, keys[i].xCoord);
             assertEq(shards[i].yParity, keys[i].yParity);

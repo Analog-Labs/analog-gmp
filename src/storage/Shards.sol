@@ -245,7 +245,7 @@ library ShardStore {
     /**
      * @dev Replace TSS keys in batch.
      * Requirements:
-     * - The `keys` should not be already registered.
+     * - The `keys` may or may not be registered.
      */
     function replaceTssKeys(MainStorage storage store, TssKey[] calldata keys)
         internal
