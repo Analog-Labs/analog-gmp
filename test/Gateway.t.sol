@@ -3,7 +3,7 @@
 
 pragma solidity >=0.8.0;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test, console, Vm} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils, SigningKey, SigningUtils} from "./TestUtils.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
@@ -241,6 +241,79 @@ contract GatewayBase is Test {
             assertEq(shards[i].xCoord, keys[i].xCoord);
             assertEq(shards[i].yParity, keys[i].yParity);
         }
+    }
+
+    function test_shardEvents() external {
+        TssKey[] memory keys = new TssKey[](10);
+
+        // create random shard keys
+        SigningKey memory signer;
+        for (uint256 i = 0; i < keys.length; i++) {
+            signer = TestUtils.signerFromEntropy(bytes32(i));
+            keys[i] = TssKey({yParity: signer.yParity() == 28 ? 3 : 2, xCoord: signer.xCoord()});
+        }
+        _sortTssKeys(keys);
+
+        // set shards
+        vm.prank(ADMIN, ADMIN);
+        vm.expectEmit(false, false, false, true);
+        emit IExecutor.ShardsRegistered(keys);
+        gateway.setShards(keys);
+
+        // set a shard which is already registered and verify that is does not emit a event.
+        vm.prank(ADMIN, ADMIN);
+        vm.recordLogs();
+        gateway.setShard(keys[0]);
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        assertEq(entries.length, 0); 
+
+        // Revoke a registered shard thats not registered.
+        uint256 unregisteredSignerKey = 11;
+        signer = TestUtils.signerFromEntropy(bytes32(unregisteredSignerKey));
+        TssKey memory nonRegisteredKey = TssKey({yParity: signer.yParity() == 28 ? 3 : 2, xCoord: signer.xCoord()});
+        vm.prank(ADMIN, ADMIN);
+        vm.recordLogs();
+        gateway.revokeShard(nonRegisteredKey);
+        Vm.Log[] memory entries1 = vm.getRecordedLogs();
+        assertEq(entries1.length, 0); 
+
+        // Revoke a registered shard
+        vm.prank(ADMIN, ADMIN);
+        TssKey[] memory unregisteredShardKey = new TssKey[](1);
+        unregisteredShardKey[0] = keys[0];
+        vm.expectEmit(false, false, false, true);
+        emit IExecutor.ShardsUnregistered(unregisteredShardKey);
+        gateway.revokeShard(keys[0]);
+
+        // Register a revoked shard
+        vm.prank(ADMIN, ADMIN);
+        vm.expectEmit(false, false, false, true);
+        emit IExecutor.ShardsRegistered(unregisteredShardKey);
+        gateway.setShard(unregisteredShardKey[0]);
+
+        // Revoke half of the keys and verify event length
+        vm.prank(ADMIN, ADMIN);
+        uint256 halfKeysLength = keys.length / 2;
+        uint256 secondHalfLength = keys.length - halfKeysLength;
+        TssKey[] memory firstHalf = new TssKey[](halfKeysLength);
+        TssKey[] memory secondHalf = new TssKey[](secondHalfLength);
+        for (uint256 i = 0; i < keys.length; i++){
+            if (i < halfKeysLength) {
+                firstHalf[i] = keys[i];
+            } else {
+                secondHalf[i - halfKeysLength] = keys[i];
+            }
+        }
+        vm.expectEmit(false, false, false, true);
+        emit IExecutor.ShardsUnregistered(firstHalf);
+        gateway.revokeShards(firstHalf);
+
+        // register first half keys and check if the other half is unregistered
+        vm.prank(ADMIN, ADMIN);
+        vm.expectEmit(false, false, false, true);
+        emit IExecutor.ShardsRegistered(firstHalf);
+        emit IExecutor.ShardsUnregistered(secondHalf);
+        gateway.setShards(firstHalf);
     }
 
     function test_Receiver() external {

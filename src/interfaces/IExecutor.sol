@@ -53,6 +53,11 @@ interface IExecutor {
     function revokeShard(TssKey calldata publicKey) external;
 
     /**
+     * @dev Revoke a single shard TSS Key.
+     */
+    function revokeShards(TssKey[] calldata publicKey) external;
+
+    /**
      * @dev List all shards currently registered in the gateway.
      */
     function routes() external returns (Route[] memory);

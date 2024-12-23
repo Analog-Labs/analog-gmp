@@ -25,7 +25,7 @@ library GasUtils {
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 23525 - 22;
+    uint256 internal constant SUBMIT_BASE_COST = 23525;
 
     /**
      * @dev Extra gas cost of the first `IGateway.submitMessage` method.

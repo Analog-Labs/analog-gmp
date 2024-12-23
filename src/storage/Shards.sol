@@ -196,7 +196,7 @@ library ShardStore {
      */
     function register(MainStorage storage store, TssKey calldata newKey) internal returns (bool) {
         // Check y-parity
-        require(newKey.yParity == (newKey.yParity & 3), "y parity bit must be 2 or 3, cannot register shard");
+        require((newKey.yParity == 2 || newKey.yParity == 3), "y parity bit must be 2 or 3, cannot register shard");
 
         // Read shard from storage
         ShardID id = ShardID.wrap(bytes32(newKey.xCoord));
@@ -204,7 +204,7 @@ library ShardStore {
 
         // Check if the shard is already registered
         if (!created) {
-            require(stored.nonce == 1 || newKey.yParity == stored.yParity, "tsskey.yParity mismatch");
+            require(stored.nonce == 1 || newKey.yParity == (stored.yParity | 2), "tsskey.yParity mismatch");
             return false;
         }
 
@@ -212,7 +212,7 @@ library ShardStore {
         ShardInfo memory shard = stored;
 
         require(
-            shard.createdAtBlock == 0 || shard.yParity == newKey.yParity,
+            shard.createdAtBlock == 0 || (shard.yParity | 2) == newKey.yParity,
             "the provided y-parity doesn't match the existing y-parity, cannot register shard"
         );
 
@@ -269,7 +269,7 @@ library ShardStore {
 
                 if (register(store, key)) {
                     // Shard registered
-                    created[createdCount++] = TssKey({yParity: key.yParity + 2, xCoord: key.xCoord});
+                    created[createdCount++] = TssKey({yParity: key.yParity, xCoord: key.xCoord});
                 } else {
                     // Shard already registered, remove it from the revoke list.
                     uint256 len = revoked.length;
@@ -305,22 +305,26 @@ library ShardStore {
      * Requirements:
      * - The `keys` must be registered.
      */
-    function revoke(MainStorage storage store, TssKey calldata key) internal {
+    function revoke(MainStorage storage store, TssKey calldata key) internal returns (bool) {
         // Read shard from storage
         ShardID id = ShardID.wrap(bytes32(key.xCoord));
-        ShardInfo memory stored = get(store, id);
+        (bool exists, ShardInfo memory stored) = tryGet(store, id);
 
-        // Check y-parity
-        require(stored.yParity == (key.yParity & 1), "y parity mismatch, cannot revoke key");
-        _revoke(store, id);
+        if (exists) {
+            // Check y-parity
+            require(stored.yParity == (key.yParity & 1), "y parity mismatch, cannot revoke key");
+            return _revoke(store, id);
+        }
+        return false;
     }
 
     /**
      * @dev Revoke Shards keys.
      */
-    function _revoke(MainStorage storage store, ShardID id) private {
+    function _revoke(MainStorage storage store, ShardID id) private returns (bool) {
         // Remove from the set
-        store.shards.remove(ShardID.unwrap(id));
+        StoragePtr ptr = store.shards.remove(ShardID.unwrap(id));
+        return !ptr.isNull();
     }
 
     /**
@@ -328,11 +332,27 @@ library ShardStore {
      * Requirements:
      * - The `publicKeys` must be registered.
      */
-    function revokeKeys(MainStorage storage store, TssKey[] calldata publicKeys) internal {
+    function revokeKeys(MainStorage storage store, TssKey[] calldata publicKeys)
+        internal
+        returns (TssKey[] memory revokedKeys)
+    {
         // Revoke tss keys
+        uint256 keysLength = publicKeys.length;
+        revokedKeys = new TssKey[](keysLength);
+        uint256 revokedCount = 0;
+
         for (uint256 i = 0; i < publicKeys.length; i++) {
-            revoke(store, publicKeys[i]);
+            if (revoke(store, publicKeys[i])) {
+                revokedKeys[revokedCount++] = publicKeys[i];
+            }
         }
+
+        if (revokedKeys.length != keysLength) {
+            assembly {
+                mstore(revokedKeys, revokedCount)
+            }
+        }
+        return revokedKeys;
     }
 
     function _t(MainStorage storage store) internal view returns (TssKey[] memory) {}
