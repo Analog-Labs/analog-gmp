@@ -305,22 +305,27 @@ library ShardStore {
      * Requirements:
      * - The `keys` must be registered.
      */
-    function revoke(MainStorage storage store, TssKey calldata key) internal {
+    function revoke(MainStorage storage store, TssKey calldata key) internal returns (bool) {
         // Read shard from storage
         ShardID id = ShardID.wrap(bytes32(key.xCoord));
-        ShardInfo memory stored = get(store, id);
+        (bool exists, ShardInfo memory stored) = tryGet(store, id);
 
-        // Check y-parity
-        require(stored.yParity == (key.yParity & 1), "y parity mismatch, cannot revoke key");
-        _revoke(store, id);
+        if (exists) {
+            // Check y-parity
+            require(stored.yParity == (key.yParity & 1), "y parity mismatch, cannot revoke key");
+            return _revoke(store, id);
+        }
+
+        return exists;
     }
 
     /**
      * @dev Revoke Shards keys.
      */
-    function _revoke(MainStorage storage store, ShardID id) private {
+    function _revoke(MainStorage storage store, ShardID id) private returns (bool) {
         // Remove from the set
-        store.shards.remove(ShardID.unwrap(id));
+        StoragePtr ptr = store.shards.remove(ShardID.unwrap(id));
+        return ptr.isNull();
     }
 
     /**
@@ -328,11 +333,27 @@ library ShardStore {
      * Requirements:
      * - The `publicKeys` must be registered.
      */
-    function revokeKeys(MainStorage storage store, TssKey[] calldata publicKeys) internal {
+    function revokeKeys(MainStorage storage store, TssKey[] calldata publicKeys)
+        internal
+        returns (TssKey[] memory revokedKeys)
+    {
         // Revoke tss keys
+        uint256 keysLength = publicKeys.length;
+        revokedKeys = new TssKey[](keysLength);
+        uint256 revokedCount = 0;
+
         for (uint256 i = 0; i < publicKeys.length; i++) {
-            revoke(store, publicKeys[i]);
+            if (revoke(store, publicKeys[i])) {
+                revokedKeys[revokedCount++] = publicKeys[i];
+            }
         }
+
+        if (revokedKeys.length != keysLength) {
+            assembly {
+                mstore(revokedKeys, revokedCount)
+            }
+        }
+        return revokedKeys;
     }
 
     function _t(MainStorage storage store) internal view returns (TssKey[] memory) {}
