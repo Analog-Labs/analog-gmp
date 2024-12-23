@@ -50,7 +50,7 @@ contract ExampleTest is Test {
         returns (Network[] memory networks)
     {
         TssKey[] memory keys = new TssKey[](1);
-        keys[0] = TssKey({yParity: signer.pubkey.yParity() == 28 ? 1 : 0, xCoord: signer.pubkey.px});
+        keys[0] = TssKey({yParity: signer.pubkey.yParity() == 28 ? 3 : 2, xCoord: signer.pubkey.px});
 
         networks = new Network[](networkIds.length);
         for (uint256 i = 0; i < networks.length; i++) {

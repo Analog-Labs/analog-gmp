@@ -441,7 +441,7 @@ library TestUtils {
         require(FACTORY == TestUtils.deployFactory(), "UniversalFactory not deployed");
         SigningKey memory signer = TestUtils.createSigner(admin.privateKey);
         TssKey[] memory keys = new TssKey[](1);
-        keys[0] = TssKey({yParity: SigningUtils.yParity(signer) == 28 ? 1 : 0, xCoord: SigningUtils.xCoord(signer)}); // Shard key
+        keys[0] = TssKey({yParity: SigningUtils.yParity(signer) == 28 ? 3 : 2, xCoord: SigningUtils.xCoord(signer)}); // Shard key
         Network[] memory networks = new Network[](2);
         address proxyAddr = computeGatewayProxyAddress(admin.addr, salt);
         networks[0].id = srcRoute; // sepolia network id
