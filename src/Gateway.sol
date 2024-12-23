@@ -101,8 +101,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         ShardStore.getMainStorage().registerTssKeys(keys);
 
         // emit event
-        TssKey[] memory revoked = new TssKey[](0);
-        emit KeySetChanged(bytes32(0), revoked, keys);
+        emit ShardsRegistered(keys);
     }
 
     function nonceOf(address account) external view returns (uint256) {
@@ -164,7 +163,13 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         store.registerTssKeys(message.register);
 
         // Emit event
-        emit KeySetChanged(messageHash, message.revoke, message.register);
+        if (message.revoke.length > 0) {
+            emit ShardsUnregistered(message.revoke);
+        }
+
+        if (message.register.length > 0) {
+            emit ShardsRegistered(message.register);
+        }
     }
 
     // Execute GMP message
@@ -425,6 +430,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     function setShard(TssKey calldata publicKey) external {
         require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         ShardStore.getMainStorage().register(publicKey);
+        TssKey[] memory keys = new TssKey[](1);
+        keys[0] = publicKey;
+        emit ShardsRegistered(keys);
     }
 
     /**
@@ -432,7 +440,15 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     function setShards(TssKey[] calldata publicKeys) external {
         require(msg.sender == ERC1967.getAdmin(), "unauthorized");
-        ShardStore.getMainStorage().replaceTssKeys(publicKeys);
+        (TssKey[] memory created, TssKey[] memory revoked) = ShardStore.getMainStorage().replaceTssKeys(publicKeys);
+
+        if (created.length > 0) {
+            emit ShardsRegistered(created);
+        }
+
+        if (revoked.length > 0) {
+            emit ShardsUnregistered(revoked);
+        }
     }
 
     /**
@@ -441,6 +457,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     function revokeShard(TssKey calldata publicKey) external {
         require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         ShardStore.getMainStorage().revoke(publicKey);
+        TssKey[] memory keys = new TssKey[](1);
+        keys[0] = publicKey;
+        emit ShardsUnregistered(keys);
     }
 
     /**
@@ -449,6 +468,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     function revokeShard(TssKey[] calldata publicKeys) external {
         require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         ShardStore.getMainStorage().revokeKeys(publicKeys);
+        emit ShardsUnregistered(publicKeys);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -493,19 +513,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     function setAdmin(address newAdmin) external payable {
         require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         ERC1967.setAdmin(newAdmin);
-    }
-
-    // OBS: remove != revoke (when revoked, you cannot register again)
-    function sudoRemoveShards(TssKey[] calldata revokedKeys) external payable {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
-        ShardStore.getMainStorage().revokeKeys(revokedKeys);
-        emit KeySetChanged(bytes32(0), revokedKeys, new TssKey[](0));
-    }
-
-    function sudoAddShards(TssKey[] calldata newKeys) external payable {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
-        ShardStore.getMainStorage().registerTssKeys(newKeys);
-        emit KeySetChanged(bytes32(0), new TssKey[](0), newKeys);
     }
 
     // DANGER: This function is for migration purposes only, it allows the admin to set any storage slot.

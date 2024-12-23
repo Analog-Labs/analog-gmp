@@ -24,12 +24,16 @@ interface IExecutor {
     );
 
     /**
-     * @dev Emitted when `UpdateShardsMessage` is executed.
-     * @param id EIP-712 hash of the `UpdateShardsMessage`
-     * @param revoked shard's keys revoked
-     * @param registered shard's keys registered
+     * @dev Emitted when shards are registered.
+     * @param keys registered shard's keys
      */
-    event KeySetChanged(bytes32 indexed id, TssKey[] revoked, TssKey[] registered);
+    event ShardsRegistered(TssKey[] keys);
+
+    /**
+     * @dev Emitted when shards are unregistered.
+     * @param keys unregistered shard's keys
+     */
+    event ShardsUnregistered(TssKey[] keys);
 
     /**
      * @dev List all shards currently registered in the gateway.
