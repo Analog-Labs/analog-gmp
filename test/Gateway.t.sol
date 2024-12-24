@@ -6,6 +6,7 @@ pragma solidity >=0.8.0;
 import {Test, console, Vm} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils, SigningKey, SigningUtils} from "./TestUtils.sol";
+import {GasSpender} from "./utils/GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {GasUtils} from "../src/utils/GasUtils.sol";
@@ -163,20 +164,13 @@ contract GatewayBase is Test {
         assertEq(ADMIN, admin.addr, "admin address mismatch");
         gateway =
             Gateway(address(TestUtils.setupGateway(admin, bytes32(uint256(1234)), SRC_NETWORK_ID, DEST_NETWORK_ID)));
+        receiver = IGmpReceiver(new GasSpender());
     }
 
-    function setUp() public {
+    function setUp() external view {
         // check block gas limit as gas left
         assertEq(block.gaslimit, 30_000_000);
         assertTrue(gasleft() >= 10_000_000);
-
-        // Obs: This is a special contract that wastes an exact amount of gas you send to it, helpful for testing GMP refunds and gas limits.
-        // See the file `HelperContract.opcode` for more details.
-        {
-            bytes memory bytecode =
-                hex"603c80600a5f395ff3fe5a600201803d523d60209160643560240135146018575bfd5b60365a116018575a604903565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bf3";
-            receiver = IGmpReceiver(TestUtils.deployContract(bytecode));
-        }
     }
 
     function sign(GmpMessage memory gmp) internal pure returns (Signature memory) {
@@ -265,7 +259,7 @@ contract GatewayBase is Test {
         vm.recordLogs();
         gateway.setShard(keys[0]);
         Vm.Log[] memory entries = vm.getRecordedLogs();
-        assertEq(entries.length, 0); 
+        assertEq(entries.length, 0);
 
         // Revoke a registered shard thats not registered.
         uint256 unregisteredSignerKey = 11;
@@ -275,7 +269,7 @@ contract GatewayBase is Test {
         vm.recordLogs();
         gateway.revokeShard(nonRegisteredKey);
         Vm.Log[] memory entries1 = vm.getRecordedLogs();
-        assertEq(entries1.length, 0); 
+        assertEq(entries1.length, 0);
 
         // Revoke a registered shard
         vm.prank(ADMIN, ADMIN);
@@ -297,7 +291,7 @@ contract GatewayBase is Test {
         uint256 secondHalfLength = keys.length - halfKeysLength;
         TssKey[] memory firstHalf = new TssKey[](halfKeysLength);
         TssKey[] memory secondHalf = new TssKey[](secondHalfLength);
-        for (uint256 i = 0; i < keys.length; i++){
+        for (uint256 i = 0; i < keys.length; i++) {
             if (i < halfKeysLength) {
                 firstHalf[i] = keys[i];
             } else {

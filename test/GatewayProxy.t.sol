@@ -8,6 +8,7 @@ import {FactoryUtils} from "@universal-factory/FactoryUtils.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils, SigningKey, SigningUtils} from "./TestUtils.sol";
+import {GasSpender} from "./utils/GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {GasUtils} from "../src/utils/GasUtils.sol";
@@ -51,23 +52,16 @@ contract GatewayProxyTest is Test {
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 private constant DEST_NETWORK_ID = 1337;
 
-    // /**
-    //  * @dev The `GatewayProxy` contract admin.
-    //  */
-    // address private constant ADMIN = 0x6f4c950442e1Af093BcfF730381E63Ae9171b87a;
-
     /**
-     * @dev his is a special contract that wastes an exact amount of gas you send to it, helpful for testing GMP refunds and gas limits.
-     * See the file `HelperContract.opcode` for more details.
+     * @dev his is a special contract that implements the IGmpReceiver interface and wastes an exact amount of gas you send to it, helpful
+     * for testing GMP refunds and gas limits.
+     * See the file `GasSpender` contract for more details.
      */
-    bytes private constant RECEIVER_BYTECODE =
-        hex"603c80600a5f395ff3fe5a600201803d523d60209160643560240135146018575bfd5b60365a116018575a604903565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bf3";
-
-    // Receiver Contract, the will waste the exact amount of gas you sent to it in the data field
     IGmpReceiver internal receiver;
 
     constructor() {
         require(FACTORY == TestUtils.deployFactory(), "factory address mismatch");
+        receiver = IGmpReceiver(new GasSpender());
     }
 
     function setUp() external view {

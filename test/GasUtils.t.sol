@@ -7,6 +7,7 @@ import {Signer} from "frost-evm/sol/Signer.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils} from "./TestUtils.sol";
+import {GasSpender} from "./utils/GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {GasUtils} from "../src/utils/GasUtils.sol";
@@ -76,13 +77,8 @@ contract GasUtilsBase is Test {
             Gateway(address(TestUtils.setupGateway(deployer, bytes32(uint256(0)), SRC_NETWORK_ID, DEST_NETWORK_ID)));
         vm.deal(address(gateway), 100 ether);
 
-        // Obs: This is a special contract that wastes an exact amount of gas you send to it, helpful for testing GMP refunds and gas limits.
-        // See the file `HelperContract.opcode` for more details.
-        {
-            bytes memory bytecode =
-                hex"603c80600a5f395ff3fe5a600201803d523d60209160643560240135146018575bfd5b60365a116018575a604903565b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bf3";
-            receiver = IGmpReceiver(TestUtils.deployContract(bytecode));
-        }
+        // Deploy the GasSpender contract, which implements the IGmpReceiver interface.
+        receiver = IGmpReceiver(new GasSpender());
     }
 
     function sign(GmpMessage memory gmp) internal view returns (Signature memory) {
