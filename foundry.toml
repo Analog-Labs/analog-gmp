@@ -3,7 +3,6 @@ src = "src"
 test = "test"
 out = "out"
 libs = ["lib"]
-match_contract = ".+Test"
 # Permissions
 fs_permissions = [{ access = "read", path = "./lib/universal-factory/abi" }]
 

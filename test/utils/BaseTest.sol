@@ -81,7 +81,9 @@ abstract contract BaseTest is Test {
                 mstore(add(offset, 1), 0x5B)
                 mstore(offset, INLINE_BYTECODE)
 
-                for {} lt(offset, size) {} {
+                // Replace remaining occurences of `0x7E7E7E...` by the `INLINE_BYTECODE`
+
+                for { let end := add(size, 0x20) } lt(offset, end) {} {
                     let backup := mload(offset)
                     mstore(offset, tag)
                     success := staticcall(gas(), findBytes, offset, sub(add(size, 0x20), offset), 0x00, 0x20)
@@ -90,7 +92,6 @@ abstract contract BaseTest is Test {
                     offset := add(mload(0x00), 0x20)
                     mstore(add(offset, 1), 0x5B)
                     mstore(offset, INLINE_BYTECODE)
-                    break
                 }
 
                 return(0x20, size)
