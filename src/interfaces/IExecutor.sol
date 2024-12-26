@@ -4,7 +4,7 @@
 pragma solidity >=0.8.0;
 
 import {
-    Signature, GmpMessage, TssKey, GmpStatus, GmpStatus, UpdateKeysMessage, GmpSender, Route
+    InboundMessage, Signature, GmpMessage, TssKey, GmpStatus, GmpStatus, UpdateKeysMessage, GmpSender, Route
 } from "../Primitives.sol";
 
 /**
@@ -68,6 +68,13 @@ interface IExecutor {
      * @dev Create or update an array of routes
      */
     function setRoutes(Route[] calldata values) external;
+
+    /**
+     * Execute operatins in batch
+     * @param signature Schnorr signature
+     * @param message GMP message
+     */
+    function batchExecute(Signature calldata signature, InboundMessage calldata message) external;
 
     /**
      * Execute GMP message

@@ -79,6 +79,39 @@ struct UpdateKeysMessage {
 }
 
 /**
+ * @dev Messages from Timechain take the form of these commands.
+ */
+enum Command {
+    GMP,
+    SetShards,
+    SetRoute
+}
+
+struct GatewayOp {
+    /// @dev The command to execute
+    Command command;
+    /// @dev The Parameters for the command
+    bytes params;
+}
+
+/**
+ * @dev Inbound message from a Timechain
+ * @param revoke Shard's keys to revoke
+ * @param register Shard's keys to register
+ */
+struct InboundMessage {
+    uint8 version;
+    /// @dev The batch ID
+    uint64 batchID;
+    /// @dev The maximum gas allowed for message dispatch
+    uint64 maxDispatchGas;
+    /// @dev The maximum fee per gas
+    uint256 maxFeePerGas;
+    /// @dev 
+    GatewayOp[] ops;
+}
+
+/**
  * @dev A Route represents a communication channel between two networks.
  * @param networkId The id of the provided network.
  * @param gasLimit The maximum amount of gas we allow on this particular network.

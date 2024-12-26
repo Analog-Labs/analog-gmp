@@ -15,16 +15,19 @@ import {IUpgradable} from "./interfaces/IUpgradable.sol";
 import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
 import {
-    TssKey,
+    Command,
+    InboundMessage,
+    GatewayOp,
+    GmpCallback,
     GmpMessage,
-    UpdateKeysMessage,
-    Signature,
-    Network,
-    Route,
     GmpStatus,
     GmpSender,
-    GmpCallback,
+    Network,
+    Route,
     PrimitiveUtils,
+    UpdateKeysMessage,
+    Signature,
+    TssKey,
     MAX_PAYLOAD_SIZE
 } from "./Primitives.sol";
 import {NetworkID, NetworkIDHelpers} from "./NetworkID.sol";
@@ -227,6 +230,93 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Emit event
         emit GmpExecuted(message.eip712hash, message.source, message.dest, status, result);
+    }
+
+    function batchExecute(Signature calldata signature, InboundMessage calldata message) external {
+        uint256 initialGas = gasleft();
+
+        // Track the free memory pointer, to be able to reset it after the loop
+        uint256 freeMemPtr;
+        assembly {
+            freeMemPtr := mload(0x40)
+        }
+
+        bytes32 messageHash = bytes32(0);
+        GatewayOp[] calldata operations = message.ops;
+        for (uint256 i = 0; i < operations.length; i++) {
+            GatewayOp calldata op = operations[i];
+            bytes calldata params = op.params;
+
+            bytes32 operationHash;
+            if (op.command == Command.GMP) {
+                require(params.length >= 256, "invalid GmpMessage");
+                GmpMessage calldata gmp;
+                assembly {
+                    gmp := add(params.offset, 0x20)
+                }
+                operationHash = _inExecute(gmp);
+            } else if (op.command == Command.SetShards) {
+                require(params.length >= 64, "invalid TssKey[]");
+                TssKey[] calldata newShards;
+                assembly {
+                    newShards.offset := add(params.offset, 0x20)
+                }
+                operationHash = bytes32(0);
+                for (uint256 j = 0; j < newShards.length; j++) {
+                    operationHash |= bytes32(newShards[j].xCoord);
+                }
+                setShards(newShards); 
+            } else {
+                revert("unknown command");
+            }
+
+            assembly {
+                // Update the message hash
+                mstore(0x00, messageHash)
+                mstore(0x20, operationHash)
+                messageHash := keccak256(0x00, 0x40)
+
+                // Reset memory, to prevent the memory expansion costs to increase exponentially.
+                mstore(0x40, freeMemPtr)
+            }
+        }
+        messageHash = keccak256(abi.encode(message.version, message.batchID, message.maxDispatchGas, message.maxFeePerGas, messageHash));
+        _verifySignature(signature, messageHash);
+
+        // Refund the chronicle gas
+        unchecked {
+            // Compute GMP gas used
+            uint256 gasUsed = 7152;
+            gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseCost());
+            gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
+            gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
+
+            // Compute refund amount
+            uint256 refund = BranchlessMath.min(gasUsed.saturatingMul(tx.gasprice), address(this).balance);
+
+            assembly ("memory-safe") {
+                // Refund the gas used
+                pop(call(gas(), caller(), refund, 0, 0, 0, 0))
+            }
+        }
+    }
+
+    function _inExecute(GmpMessage calldata message) private returns (bytes32) {
+        // Theoretically we could remove the destination network field
+        // and fill it up with the network id of the contract, then the signature will fail.
+        require(message.destNetwork == NETWORK_ID, "invalid gmp network");
+
+        // Check if the message data is too large
+        require(message.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
+
+        // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
+        // see `src/Primitives.sol` for more details.
+        GmpCallback memory callback = message.intoCallback();
+
+        // Execute GMP message
+        _execute(callback);
+
+        return callback.eip712hash;
     }
 
     /**
@@ -440,7 +530,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     /**
      * @dev Register Shards in batch.
      */
-    function setShards(TssKey[] calldata publicKeys) external {
+    function setShards(TssKey[] calldata publicKeys) public {
         require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         (TssKey[] memory created, TssKey[] memory revoked) = ShardStore.getMainStorage().replaceTssKeys(publicKeys);
 
