@@ -7,6 +7,7 @@ import {Signer} from "frost-evm/sol/Signer.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils} from "./TestUtils.sol";
+import {BaseTest} from "./utils/BaseTest.sol";
 import {GasSpender} from "./utils/GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
@@ -43,7 +44,7 @@ contract GasUtilsMock {
     }
 }
 
-contract GasUtilsBase is Test {
+contract GasUtilsTest is BaseTest {
     using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpSender;
@@ -235,38 +236,5 @@ contract GasUtilsBase is Test {
         assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0), (31901 + baseCost) * 2);
         assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0), (32561 + baseCost) * 2);
         assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0), (32301 + baseCost) * 2);
-    }
-}
-
-contract GasUtilsTest is GasUtilsBase {
-    bytes32 private constant INLINE_BYTECODE = 0x6000823f505a96949290959391f15a607b019091036800000000000000000052;
-
-    constructor() payable {
-        bytes memory runtimeCode = type(GasUtilsBase).runtimeCode;
-        assembly {
-            let size := mload(runtimeCode)
-            let i := add(runtimeCode, 32)
-            for {
-                let chunk := 1
-                let end := add(i, size)
-            } gt(chunk, 0) { i := add(i, chunk) } {
-                chunk := xor(mload(i), 0x8181818181818181818181818181818181818181818181818181818181818181)
-                chunk := and(add(chunk, 1), not(chunk))
-                chunk := div(chunk, mod(chunk, 0xff))
-                chunk := shr(248, mul(0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201, chunk))
-                chunk := mul(chunk, lt(i, end))
-            }
-            if not(xor(mload(i), 0x8181818181818181818181818181818181818181818181818181818181818181)) {
-                let ptr := mload(0x40)
-                mstore(ptr, shl(224, 0x08c379a0))
-                mstore(add(ptr, 4), 32) // message offset
-                mstore(add(ptr, 36), 29) // message size
-                mstore(add(ptr, 68), "Failed to inject the bytecode")
-                revert(ptr, 100)
-            }
-            mstore(add(i, 1), 0x5B)
-            mstore(i, INLINE_BYTECODE)
-            return(add(runtimeCode, 32), mload(runtimeCode))
-        }
     }
 }
