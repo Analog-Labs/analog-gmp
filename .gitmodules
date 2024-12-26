@@ -10,3 +10,6 @@
 [submodule "lib/universal-factory"]
 	path = lib/universal-factory
 	url = https://github.com/Analog-Labs/universal-factory
+[submodule "lib/evm-interpreter"]
+	path = lib/evm-interpreter
+	url = https://github.com/Analog-Labs/evm-interpreter
