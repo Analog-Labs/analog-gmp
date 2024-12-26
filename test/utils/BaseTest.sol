@@ -12,19 +12,43 @@ import {VmSafe} from "forge-std/Vm.sol";
 abstract contract BaseTest is Test {
     using FactoryUtils for IUniversalFactory;
 
-    IUniversalFactory private constant FACTORY = IUniversalFactory(0x0000000000001C4Bf962dF86e38F0c10c7972C6E);
-    address private constant EVM_INTERPRETER = 0x0000000000001e3F4F615cd5e20c681Cf7d85e8D;
-    bytes32 private constant CREATE2_SALT = bytes32(uint256(1234));
-    bytes32 private constant INLINE_BYTECODE = 0x6000823f505a96949290959391f15a607b019091036800000000000000000052;
+    /**
+     * @dev Universal Factory used to deploy contracts at deterministic addresses.
+     * see: https://github.com/Analog-Labs/Universal-factory
+     */
+    IUniversalFactory internal constant FACTORY = IUniversalFactory(0x0000000000001C4Bf962dF86e38F0c10c7972C6E);
 
     /**
-     * @dev The address of the `UniversalFactory` contract, must be the same on all networks.
+     * @dev EVM Interpreter, used to extract the `type(Gateway).runtimeCode` from the `type(Gateway).creationCode`.
+     * see: https://github.com/analog-Labs/evm-interpreter
+     */
+    address internal constant EVM_INTERPRETER = 0x0000000000001e3F4F615cd5e20c681Cf7d85e8D;
+
+    /**
+     * @dev CREATE2 Salt used to deploy the `findBytes` contracts at deterministic addresses.
+     */
+    bytes32 private constant CREATE2_SALT = bytes32(uint256(1234));
+
+    /**
+     * @dev Address who must deploy the `UniversalFactory` contract, to guarantee the same address on all networks.
      */
     address internal constant FACTORY_DEPLOYER = 0x908064dE91a32edaC91393FEc3308E6624b85941;
 
+    /**
+     * @dev The `findBytes` contract bytecode, used to find byte sequences in a given bytecode.
+     */
     bytes private constant FIND_BYTES =
         hex"602e80600a5f395ff3fe60403610602a573d35601f5b6001018035821881361102600b576020813614602a5790033d5260203df35b3d3dfd";
+
+    /**
+     * @dev CODEHASH from the `findBytes` contract bytecode, used to compute the final CREATE2 address..
+     */
     bytes32 private constant FIND_BYTES_CODEHASH = keccak256(FIND_BYTES);
+
+    /**
+     * @dev All byte32 sequences in the form `0x7E7E7E7E7E7E...` will be replaced by the `INLINE_BYTECODE`.
+     */
+    bytes32 private constant INLINE_BYTECODE = 0x6000823f505a96949290959391f15a607b019091036800000000000000000052;
 
     constructor() {
         // Initialize the Universal Factory
