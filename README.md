@@ -11,26 +11,41 @@ Install instructions: https://book.getfoundry.sh/
 
 ### Build
 
-```shell
-$ forge build
+```sh
+forge build
 ```
 
 ### Test
 
-```shell
-$ forge test
+```sh
+forge test
 ```
 
 ### Format
 
-```shell
-$ forge fmt
+```sh
+forge fmt
 ```
 
 ### Gas Snapshots
 
-```shell
-$ forge snapshot
+```sh
+forge snapshot
+```
+
+## Documentation 
+
+Use the following command to generate project documentation: 
+
+```sh
+forge doc -b
+```
+
+You can now read the docs from the generated [mdbook](https://github.com/rust-lang/mdBook) as follows: 
+
+``` sh
+cd docs 
+mdbook serve --open
 ```
 
 ## License
