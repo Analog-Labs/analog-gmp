@@ -103,10 +103,6 @@ struct InboundMessage {
     uint8 version;
     /// @dev The batch ID
     uint64 batchID;
-    /// @dev The maximum gas allowed for message dispatch
-    uint64 maxDispatchGas;
-    /// @dev The maximum fee per gas
-    uint256 maxFeePerGas;
     /// @dev 
     GatewayOp[] ops;
 }

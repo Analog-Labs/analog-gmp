@@ -280,7 +280,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                 mstore(0x40, freeMemPtr)
             }
         }
-        messageHash = keccak256(abi.encode(message.version, message.batchID, message.maxDispatchGas, message.maxFeePerGas, messageHash));
+        messageHash = keccak256(abi.encode(message.version, message.batchID, messageHash));
         _verifySignature(signature, messageHash);
 
         // Refund the chronicle gas
