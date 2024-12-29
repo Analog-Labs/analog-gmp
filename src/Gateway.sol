@@ -548,7 +548,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     /**
      * @dev Register a single Shards with provided TSS public key.
      */
-    function setShard(TssKey calldata publicKey) public {
+    function setShard(TssKey calldata publicKey) external {
         require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         _setShard(publicKey);
     }
@@ -572,7 +572,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     /**
      * @dev Revoke a single shard TSS Key.
      */
-    function revokeShard(TssKey calldata publicKey) public {
+    function revokeShard(TssKey calldata publicKey) external {
         require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         _revokeShard(publicKey);
     }
