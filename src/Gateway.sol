@@ -262,7 +262,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                     newShard := params.offset
                 }
                 operationHash = bytes32(newShard.xCoord);
-                setShard(newShard);
+                _setShard(newShard);
             } else if (op.command == Command.UnregisterShard) {
                 require(params.length >= 64, "invalid TssKey");
                 TssKey calldata shard;
@@ -270,7 +270,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                     shard := params.offset
                 }
                 operationHash = bytes32(shard.xCoord);
-                revokeShard(shard);
+                _revokeShard(shard);
             } else {
                 revert("unknown command");
             }
@@ -499,6 +499,30 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     //////////////////////////////////////////////////////////////*/
 
     /**
+     * @dev Register a single Shards with provided TSS public key.
+     */
+    function _setShard(TssKey calldata publicKey) private {
+        bool isSuccess = ShardStore.getMainStorage().register(publicKey);
+        if (isSuccess) {
+            TssKey[] memory keys = new TssKey[](1);
+            keys[0] = publicKey;
+            emit ShardsRegistered(keys);
+        }
+    }
+
+    /**
+     * @dev Revoke a single shard TSS Key.
+     */
+    function _revokeShard(TssKey calldata publicKey) private {
+        bool isSuccess = ShardStore.getMainStorage().revoke(publicKey);
+        if (isSuccess) {
+            TssKey[] memory keys = new TssKey[](1);
+            keys[0] = publicKey;
+            emit ShardsUnregistered(keys);
+        }
+    }
+
+    /**
      * @dev List all shards.
      */
     function shards() external view returns (TssKey[] memory) {
@@ -526,12 +550,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     function setShard(TssKey calldata publicKey) public {
         require(msg.sender == ERC1967.getAdmin(), "unauthorized");
-        bool isSuccess = ShardStore.getMainStorage().register(publicKey);
-        if (isSuccess) {
-            TssKey[] memory keys = new TssKey[](1);
-            keys[0] = publicKey;
-            emit ShardsRegistered(keys);
-        }
+        _setShard(publicKey);
     }
 
     /**
@@ -555,12 +574,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     function revokeShard(TssKey calldata publicKey) public {
         require(msg.sender == ERC1967.getAdmin(), "unauthorized");
-        bool isSuccess = ShardStore.getMainStorage().revoke(publicKey);
-        if (isSuccess) {
-            TssKey[] memory keys = new TssKey[](1);
-            keys[0] = publicKey;
-            emit ShardsUnregistered(keys);
-        }
+        _revokeShard(publicKey);
     }
 
     /**
