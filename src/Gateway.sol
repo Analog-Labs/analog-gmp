@@ -175,63 +175,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         }
     }
 
-    // Execute GMP message
-    // function _execute(GmpCallback memory message) private returns (GmpStatus status, bytes32 result) {
-    //     // Verify if this GMP message was already executed
-    //     GmpInfo storage gmp = _messages[message.eip712hash];
-    //     require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
-
-    //     // Update status to `pending` to prevent reentrancy attacks.
-    //     gmp.status = GmpStatus.PENDING;
-    //     gmp.blockNumber = uint64(block.number);
-
-    //     // Cap the GMP gas limit to 50% of the block gas limit
-    //     // OBS: we assume the remaining 50% is enough for the Gateway execution, which is a safe assumption
-    //     // once most EVM blockchains have gas limits above 10M and don't need more than 60k gas for the Gateway execution.
-    //     uint256 gasLimit = BranchlessMath.min(message.gasLimit, block.gaslimit >> 1);
-    //     unchecked {
-    //         // Add `all but one 64th` to the gas needed, as the defined by EIP-150
-    //         // https://eips.ethereum.org/EIPS/eip-150
-    //         uint256 gasNeeded = gasLimit.saturatingMul(64).saturatingDiv(63);
-    //         // to guarantee it was provided enough gas to execute the GMP message
-    //         gasNeeded = gasNeeded.saturatingAdd(10000);
-    //         require(gasleft() >= gasNeeded, "insufficient gas to execute GMP message");
-    //     }
-
-    //     // Execute GMP call
-    //     bool success;
-    //     address dest = message.dest;
-
-    //     bytes memory callback = message.callback;
-    //     assembly ("memory-safe") {
-    //         // Using low-level assembly because the GMP is considered executed
-    //         // regardless if the call reverts or not.
-    //         mstore(0, 0)
-    //         success :=
-    //             call(
-    //                 gasLimit, // call gas limit defined in the GMP message or 50% of the block gas limit
-    //                 dest, // dest address
-    //                 0, // value in wei to transfer (always zero for GMP)
-    //                 add(callback, 32), // input memory pointer
-    //                 mload(callback), // input size
-    //                 0, // output memory pointer
-    //                 32 // output size (fixed 32 bytes)
-    //             )
-
-    //         // Get Result, reuse data to keep a predictable memory expansion
-    //         result := mload(0)
-    //     }
-
-    //     // Update GMP status
-    //     status = GmpStatus(BranchlessMath.ternary(success, uint256(GmpStatus.SUCCESS), uint256(GmpStatus.REVERT)));
-
-    //     // Persist gmp execution status on storage
-    //     gmp.status = status;
-
-    //     // Emit event
-    //     emit GmpExecuted(message.eip712hash, message.source, message.dest, status, result);
-    // }
-
     function batchExecute(Signature calldata signature, InboundMessage calldata message) external {
         uint256 initialGas = gasleft();
         // Add the solidity selector overhead to the initial gas, this way we guarantee that
