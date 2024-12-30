@@ -21,7 +21,7 @@ solc = '0.8.28'
 # - https://ethereumclassic.org/knowledge/history
 evm_version = 'shanghai'
 optimizer = true
-# optimizer_runs = 200000
+optimizer_runs = 200000
 
 ###############
 # EVM options #
@@ -48,7 +48,7 @@ jumpdest_remover = true
 # Sometimes re-orders literals in commutative operations.
 order_literals = true
 # Removes duplicate code blocks
-deduplicate = false
+deduplicate = true
 # Common subexpression elimination, this is the most complicated step but
 # can also provide the largest gain.
 cse = true

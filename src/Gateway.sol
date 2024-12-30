@@ -176,64 +176,67 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     // Execute GMP message
-    function _execute(GmpCallback memory message) private returns (GmpStatus status, bytes32 result) {
-        // Verify if this GMP message was already executed
-        GmpInfo storage gmp = _messages[message.eip712hash];
-        require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
+    // function _execute(GmpCallback memory message) private returns (GmpStatus status, bytes32 result) {
+    //     // Verify if this GMP message was already executed
+    //     GmpInfo storage gmp = _messages[message.eip712hash];
+    //     require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
 
-        // Update status to `pending` to prevent reentrancy attacks.
-        gmp.status = GmpStatus.PENDING;
-        gmp.blockNumber = uint64(block.number);
+    //     // Update status to `pending` to prevent reentrancy attacks.
+    //     gmp.status = GmpStatus.PENDING;
+    //     gmp.blockNumber = uint64(block.number);
 
-        // Cap the GMP gas limit to 50% of the block gas limit
-        // OBS: we assume the remaining 50% is enough for the Gateway execution, which is a safe assumption
-        // once most EVM blockchains have gas limits above 10M and don't need more than 60k gas for the Gateway execution.
-        uint256 gasLimit = BranchlessMath.min(message.gasLimit, block.gaslimit >> 1);
-        unchecked {
-            // Add `all but one 64th` to the gas needed, as the defined by EIP-150
-            // https://eips.ethereum.org/EIPS/eip-150
-            uint256 gasNeeded = gasLimit.saturatingMul(64).saturatingDiv(63);
-            // to guarantee it was provided enough gas to execute the GMP message
-            gasNeeded = gasNeeded.saturatingAdd(10000);
-            require(gasleft() >= gasNeeded, "insufficient gas to execute GMP message");
-        }
+    //     // Cap the GMP gas limit to 50% of the block gas limit
+    //     // OBS: we assume the remaining 50% is enough for the Gateway execution, which is a safe assumption
+    //     // once most EVM blockchains have gas limits above 10M and don't need more than 60k gas for the Gateway execution.
+    //     uint256 gasLimit = BranchlessMath.min(message.gasLimit, block.gaslimit >> 1);
+    //     unchecked {
+    //         // Add `all but one 64th` to the gas needed, as the defined by EIP-150
+    //         // https://eips.ethereum.org/EIPS/eip-150
+    //         uint256 gasNeeded = gasLimit.saturatingMul(64).saturatingDiv(63);
+    //         // to guarantee it was provided enough gas to execute the GMP message
+    //         gasNeeded = gasNeeded.saturatingAdd(10000);
+    //         require(gasleft() >= gasNeeded, "insufficient gas to execute GMP message");
+    //     }
 
-        // Execute GMP call
-        bool success;
-        address dest = message.dest;
+    //     // Execute GMP call
+    //     bool success;
+    //     address dest = message.dest;
 
-        bytes memory callback = message.callback;
-        assembly ("memory-safe") {
-            // Using low-level assembly because the GMP is considered executed
-            // regardless if the call reverts or not.
-            mstore(0, 0)
-            success :=
-                call(
-                    gasLimit, // call gas limit defined in the GMP message or 50% of the block gas limit
-                    dest, // dest address
-                    0, // value in wei to transfer (always zero for GMP)
-                    add(callback, 32), // input memory pointer
-                    mload(callback), // input size
-                    0, // output memory pointer
-                    32 // output size (fixed 32 bytes)
-                )
+    //     bytes memory callback = message.callback;
+    //     assembly ("memory-safe") {
+    //         // Using low-level assembly because the GMP is considered executed
+    //         // regardless if the call reverts or not.
+    //         mstore(0, 0)
+    //         success :=
+    //             call(
+    //                 gasLimit, // call gas limit defined in the GMP message or 50% of the block gas limit
+    //                 dest, // dest address
+    //                 0, // value in wei to transfer (always zero for GMP)
+    //                 add(callback, 32), // input memory pointer
+    //                 mload(callback), // input size
+    //                 0, // output memory pointer
+    //                 32 // output size (fixed 32 bytes)
+    //             )
 
-            // Get Result, reuse data to keep a predictable memory expansion
-            result := mload(0)
-        }
+    //         // Get Result, reuse data to keep a predictable memory expansion
+    //         result := mload(0)
+    //     }
 
-        // Update GMP status
-        status = GmpStatus(BranchlessMath.ternary(success, uint256(GmpStatus.SUCCESS), uint256(GmpStatus.REVERT)));
+    //     // Update GMP status
+    //     status = GmpStatus(BranchlessMath.ternary(success, uint256(GmpStatus.SUCCESS), uint256(GmpStatus.REVERT)));
 
-        // Persist gmp execution status on storage
-        gmp.status = status;
+    //     // Persist gmp execution status on storage
+    //     gmp.status = status;
 
-        // Emit event
-        emit GmpExecuted(message.eip712hash, message.source, message.dest, status, result);
-    }
+    //     // Emit event
+    //     emit GmpExecuted(message.eip712hash, message.source, message.dest, status, result);
+    // }
 
     function batchExecute(Signature calldata signature, InboundMessage calldata message) external {
         uint256 initialGas = gasleft();
+        // Add the solidity selector overhead to the initial gas, this way we guarantee that
+        // the `initialGas` represents the actual gas that was available to this contract.
+        initialGas = initialGas.saturatingAdd(GasUtils.EXECUTION_SELECTOR_OVERHEAD);
 
         // Track the free memory pointer, to be able to reset it after the loop
         uint256 freeMemPtr;
@@ -254,7 +257,12 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                 assembly {
                     gmp := add(params.offset, 0x20)
                 }
-                operationHash = _inExecute(gmp);
+                _checkGmpMessage(gmp);
+                // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
+                // see `src/Primitives.sol` for more details.
+                GmpCallback memory callback = gmp.intoCallback();
+                messageHash = callback.eip712hash;
+                _execute(callback);
             } else if (op.command == Command.RegisterShard) {
                 require(params.length >= 64, "invalid TssKey");
                 TssKey calldata newShard;
@@ -291,9 +299,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Refund the chronicle gas
         unchecked {
             // Compute GMP gas used
-            uint256 gasUsed = 7152;
+            uint256 gasUsed = 7188;
             gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseCost());
-            gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
+            gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 0));
             gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
 
             // Compute refund amount
@@ -308,22 +316,74 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         emit BatchExecuted(message.batchID);
     }
 
-    function _inExecute(GmpMessage calldata message) private returns (bytes32) {
+    function _execute(GmpCallback memory callback) private returns (GmpStatus, bytes32) {
+        // Verify if this GMP message was already executed
+        GmpInfo storage gmp = _messages[callback.eip712hash];
+        require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
+
+        // Update status to `pending` to prevent reentrancy attacks.
+        gmp.status = GmpStatus.PENDING;
+        gmp.blockNumber = uint64(block.number);
+
+        // Cap the GMP gas limit to 50% of the block gas limit
+        // OBS: we assume the remaining 50% is enough for the Gateway execution, which is a safe assumption
+        // once most EVM blockchains have gas limits above 10M and don't need more than 60k gas for the Gateway execution.
+        uint256 gasLimit = BranchlessMath.min(callback.gasLimit, block.gaslimit >> 1);
+        unchecked {
+            // Add `all but one 64th` to the gas needed, as the defined by EIP-150
+            // https://eips.ethereum.org/EIPS/eip-150
+            uint256 gasNeeded = gasLimit.saturatingMul(64).saturatingDiv(63);
+            // to guarantee it was provided enough gas to execute the GMP message
+            gasNeeded = gasNeeded.saturatingAdd(10000);
+            require(gasleft() >= gasNeeded, "insufficient gas to execute GMP message");
+        }
+
+        // Execute GMP call
+        bool success;
+        bytes32 result;
+        {
+            address dest = callback.dest;
+            bytes memory onGmpReceivedCallback = callback.callback;
+            assembly ("memory-safe") {
+                // Using low-level assembly because the GMP is considered executed
+                // regardless if the call reverts or not.
+                mstore(0, 0)
+                success :=
+                    call(
+                        gasLimit, // call gas limit defined in the GMP message or 50% of the block gas limit
+                        dest, // dest address
+                        0, // value in wei to transfer (always zero for GMP)
+                        add(onGmpReceivedCallback, 32), // input memory pointer
+                        mload(onGmpReceivedCallback), // input size
+                        0, // output memory pointer
+                        32 // output size (fixed 32 bytes)
+                    )
+
+                // Get Result, reuse data to keep a predictable memory expansion
+                result := mload(0)
+            }
+        }
+
+        // Update GMP status
+        GmpStatus status =
+            GmpStatus(BranchlessMath.ternary(success, uint256(GmpStatus.SUCCESS), uint256(GmpStatus.REVERT)));
+
+        // Persist gmp execution status on storage
+        gmp.status = status;
+
+        // Emit event
+        emit GmpExecuted(callback.eip712hash, callback.source, callback.dest, status, result);
+
+        return (status, result);
+    }
+
+    function _checkGmpMessage(GmpMessage calldata message) private view {
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
         require(message.destNetwork == NETWORK_ID, "invalid gmp network");
 
         // Check if the message data is too large
         require(message.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
-
-        // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
-        // see `src/Primitives.sol` for more details.
-        GmpCallback memory callback = message.intoCallback();
-
-        // Execute GMP message
-        _execute(callback);
-
-        return callback.eip712hash;
     }
 
     /**
@@ -340,12 +400,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // the `initialGas` represents the actual gas that was available to this contract.
         initialGas = initialGas.saturatingAdd(GasUtils.EXECUTION_SELECTOR_OVERHEAD);
 
-        // Theoretically we could remove the destination network field
-        // and fill it up with the network id of the contract, then the signature will fail.
-        require(message.destNetwork == NETWORK_ID, "invalid gmp network");
-
-        // Check if the message data is too large
-        require(message.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
+        // Check GMP Message
+        _checkGmpMessage(message);
 
         // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
         // see `src/Primitives.sol` for more details.
@@ -360,7 +416,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Refund the chronicle gas
         unchecked {
             // Compute GMP gas used
-            uint256 gasUsed = 7152;
+            uint256 gasUsed = 7188;
             gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseCost());
             gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
             gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());

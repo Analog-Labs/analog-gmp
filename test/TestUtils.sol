@@ -453,6 +453,14 @@ library TestUtils {
 }
 
 library VerifyingUtils {
+    function addr(VerifyingKey memory pubkey) internal pure returns (address) {
+        uint256 hash;
+        assembly {
+            hash := keccak256(pubkey, 0x40)
+        }
+        return address(uint160(hash));
+    }
+
     function yParity(VerifyingKey memory pubkey) internal pure returns (uint8) {
         return uint8(pubkey.py % 2) + 27;
     }
@@ -479,6 +487,18 @@ library VerifyingUtils {
 }
 
 library SigningUtils {
+    function addr(SigningKey memory signer) internal pure returns (address) {
+        // uint256 px = signer.pubkey.px;
+        // uint256 py = signer.pubkey.py;
+        // uint256 hash;
+        // assembly {
+        //     mstore(0x00, px)
+        //     mstore(0x20, py)
+        //     hash := keccak256(0x00, 0x40)
+        // }
+        return VerifyingUtils.addr(signer.pubkey);
+    }
+
     function yParity(SigningKey memory signer) internal pure returns (uint8) {
         return uint8(signer.pubkey.py % 2) + 27;
     }

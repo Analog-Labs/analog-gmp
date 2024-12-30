@@ -82,6 +82,7 @@ struct UpdateKeysMessage {
  * @dev Messages from Timechain take the form of these commands.
  */
 enum Command {
+    Invalid,
     GMP,
     RegisterShard,
     UnregisterShard,
