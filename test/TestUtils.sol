@@ -488,14 +488,6 @@ library VerifyingUtils {
 
 library SigningUtils {
     function addr(SigningKey memory signer) internal pure returns (address) {
-        // uint256 px = signer.pubkey.px;
-        // uint256 py = signer.pubkey.py;
-        // uint256 hash;
-        // assembly {
-        //     mstore(0x00, px)
-        //     mstore(0x20, py)
-        //     hash := keccak256(0x00, 0x40)
-        // }
         return VerifyingUtils.addr(signer.pubkey);
     }
 
