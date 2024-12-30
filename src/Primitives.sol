@@ -83,7 +83,8 @@ struct UpdateKeysMessage {
  */
 enum Command {
     GMP,
-    SetShards,
+    RegisterShard,
+    UnregisterShard,
     SetRoute
 }
 
@@ -103,7 +104,7 @@ struct InboundMessage {
     uint8 version;
     /// @dev The batch ID
     uint64 batchID;
-    /// @dev 
+    /// @dev
     GatewayOp[] ops;
 }
 
