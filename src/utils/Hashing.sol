@@ -72,7 +72,7 @@ library Hashing {
             let freeMemBackup := mload(0x40)
             mstore(0x40, c)
             {
-                // backup the scratch space 0x60
+                // Backup the scratch space 0x60
                 let backup := mload(0x60)
 
                 // Compute the hash
@@ -82,7 +82,7 @@ library Hashing {
                 // Restore the scratch space 0x60
                 mstore(0x60, backup)
             }
-            // Backup the free memory pointer
+            // Restore the free memory pointer
             mstore(0x40, freeMemBackup)
         }
     }
