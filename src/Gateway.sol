@@ -325,11 +325,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         require(message.destNetwork == NETWORK_ID, "invalid gmp network");
 
         // Check if the message data is too large
-        // bytes calldata data = message.data;
-        // assembly ("memory-safe") {
-        //     let offset := data.offset
-        //     data.offset := add(offset, mul(message, lt(offset, message)))
-        // }
         require(message.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
     }
 
