@@ -76,7 +76,7 @@ library GasUtils {
      */
     function unsafeReplaceAllocatedMemory(uint256 newPointer) internal pure returns (uint256 oldPointer) {
         assembly ("memory-safe") {
-            oldPointer := mload(0x40)
+            oldPointer := mload(ALLOCATED_MEMORY)
             mstore(ALLOCATED_MEMORY, newPointer)
         }
     }
