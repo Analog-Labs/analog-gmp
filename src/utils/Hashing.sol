@@ -8,7 +8,7 @@ library Hashing {
      * @dev Hashes a single 256-bit integer without memory allocation.
      */
     function hash(uint256 a) internal pure returns (bytes32 h) {
-        assembly {
+        assembly ("memory-safe") {
             mstore(0x00, a)
             h := keccak256(0x00, 0x20)
         }
@@ -18,7 +18,7 @@ library Hashing {
      * @dev Hashes two 256-bit words without memory allocation.
      */
     function hash(uint256 a, uint256 b) internal pure returns (bytes32 h) {
-        assembly {
+        assembly ("memory-safe") {
             mstore(0x00, a)
             mstore(0x20, b)
             h := keccak256(0x00, 0x40)
@@ -32,7 +32,7 @@ library Hashing {
      * Reference: https://docs.soliditylang.org/en/v0.8.28/internals/layout_in_memory.html
      */
     function hash(uint256 a, uint256 b, uint256 c) internal pure returns (bytes32 h) {
-        assembly {
+        assembly ("memory-safe") {
             mstore(0x00, a)
             mstore(0x20, b)
 
@@ -64,7 +64,7 @@ library Hashing {
      * Reference: https://docs.soliditylang.org/en/v0.8.28/internals/layout_in_memory.html
      */
     function hash(uint256 a, uint256 b, uint256 c, uint256 d) internal pure returns (bytes32 h) {
-        assembly {
+        assembly ("memory-safe") {
             mstore(0x00, a)
             mstore(0x20, b)
 
