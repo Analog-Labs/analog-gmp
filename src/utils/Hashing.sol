@@ -53,7 +53,7 @@ library Hashing {
      * To store the last two words this method backup and retored the reserved memory location `0x40` and `0x80`.
      * Reference: https://docs.soliditylang.org/en/v0.8.28/internals/layout_in_memory.html
      */
-    function hash(bytes32 a, bytes32 b, bytes32 c, bytes32 d) internal pure returns (bytes32 h) {
+    function hash(bytes32 a, bytes32 b, bytes32 c, bytes32 d) internal pure returns (bytes32) {
         return hash(uint256(a), uint256(b), uint256(c), uint256(d));
     }
 

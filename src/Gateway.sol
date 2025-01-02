@@ -147,6 +147,50 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         );
     }
 
+    /**
+     * @dev Execute a single GMP message.
+     * IMPORTANT: This method doesn't check if the `params` are a valid `GmpMessage`, this must be done by the caller.
+     */
+    function _gmpCommand(bytes calldata params) private returns (bytes32 operationHash) {
+        require(params.length >= 256, "invalid GmpMessage");
+        GmpMessage calldata gmp;
+        assembly {
+            gmp := add(params.offset, 0x20)
+        }
+        _checkGmpMessage(gmp);
+        // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
+        // see `src/Primitives.sol` for more details.
+        GmpCallback memory callback = gmp.intoCallback();
+        operationHash = callback.eip712hash;
+        _execute(callback);
+    }
+
+    /**
+     * @dev Register a single shard, and returns the operation hash.
+     */
+    function _registerShardCommand(bytes calldata params) private returns (bytes32 operationHash) {
+        require(params.length == 64, "invalid TssKey");
+        TssKey calldata newShard;
+        assembly {
+            newShard := params.offset
+        }
+        operationHash = Hashing.hash(newShard.yParity, newShard.xCoord);
+        _setShard(newShard);
+    }
+
+    /**
+     * @dev Removes a single shard from the set.
+     */
+    function _unregisterShardCommand(bytes calldata params) private returns (bytes32 operationHash) {
+        require(params.length == 64, "invalid TssKey");
+        TssKey calldata shard;
+        assembly {
+            shard := params.offset
+        }
+        operationHash = Hashing.hash(shard.yParity, shard.xCoord);
+        _revokeShard(shard);
+    }
+
     // Register/Revoke TSS keys using shard TSS signature
     function updateKeys(Signature calldata signature, UpdateKeysMessage calldata message) external {
         // Check if the message was already executed to prevent replay attacks
@@ -176,72 +220,140 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         }
     }
 
+    /*//////////////////////////////////////////////////////////////
+                  GATEWAY OPERATIONS AND COMMANDS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Lookup table to find the function pointer for a given command.
+     * Different than nested if-else, this has constant gas cost regardless the number of commands.
+     *
+     * Obs: supports up to 16 commands.
+     * See: `_buildCommandsLUT` and `_cmdTableLookup` methods for more details.
+     */
+    type CommandsLookUpTable is uint256;
+
+    /**
+     * Cast the command function into a uint256.
+     */
+    function fnToPtr(function(bytes calldata) internal returns (bytes32) fn) private pure returns (uint256 ptr) {
+        assembly {
+            ptr := fn
+        }
+    }
+
+    /**
+     * @dev Creates a lookup table to find the function pointer for a given command.
+     *
+     * Motivation: More efficient than nested if-else, and also guarantees a constant gas overhead for any command, which
+     * makes easier to estimate the gas cost necessary to execute the whole batch.
+     */
+    function _buildCommandsLUT() private pure returns (CommandsLookUpTable) {
+        uint256 lookupTable;
+        // GMP
+        lookupTable = fnToPtr(_gmpCommand) << (uint256(Command.GMP) << 4);
+        // RegisterShard
+        lookupTable |= fnToPtr(_registerShardCommand) << (uint256(Command.RegisterShard) << 4);
+        // UnregisterShard
+        lookupTable |= fnToPtr(_unregisterShardCommand) << (uint256(Command.UnregisterShard) << 4);
+        return CommandsLookUpTable.wrap(lookupTable);
+    }
+
+    /**
+     * @dev Get in constant gas the function pointer for the provided command.
+     * See `_buildCommandsLUT` for more details.
+     */
+    function _cmdTableLookup(CommandsLookUpTable lut, Command command)
+        private
+        pure
+        returns (function(bytes calldata) internal returns (bytes32) fn)
+    {
+        unchecked {
+            // Extract the function pointer from the table using the `Command` as index.
+            uint256 ptr = CommandsLookUpTable.unwrap(lut) >> (uint256(command) << 4);
+            ptr &= 0xffff;
+
+            // Make sure the function pointer is within the code bounds.
+            uint256 codeSize;
+            assembly {
+                codeSize := codesize()
+            }
+            require(ptr > 0 && ptr < codeSize, "invalid command");
+
+            // Converts the `uint256` back to `function(bytes calldata) internal returns (bytes32) fn`
+            assembly {
+                fn := ptr
+            }
+        }
+    }
+
+    /**
+     * @dev Execute a batch of `GatewayOp` and returns the maximum amount of memory used in bytes and the operations root hash.
+     *
+     * This method also reuses the same memory space for each command, to prevent the memory to grow and
+     * increase the cost exponentially.
+     * @return (uint256, bytes32) Returns a tuple containing the maximum amount of memory used in bytes and the operations root hash.
+     */
+    function _executeCommands(GatewayOp[] calldata operations) private returns (uint256, bytes32) {
+        // Track the free memory pointer, to reset the memory after each command executed.
+        uint256 freeMemPointer = GasUtils.readAllocatedMemory();
+        uint256 maxAllocatedMemory = freeMemPointer;
+
+        // Create the Command LookUp Table
+        CommandsLookUpTable lut = _buildCommandsLUT();
+
+        bytes32 operationsRootHash = bytes32(0);
+        for (uint256 i = 0; i < operations.length; i++) {
+            GatewayOp calldata operation = operations[i];
+
+            // Lookup the command function pointer
+            function(bytes calldata) internal returns (bytes32) commandFN = _cmdTableLookup(lut, operation.command);
+
+            // Execute the command
+            bytes32 operationHash = commandFN(operation.params);
+
+            // Update the operations root hash
+            operationsRootHash =
+                Hashing.hash(uint256(operationsRootHash), uint256(operation.command), uint256(operationHash));
+
+            // Restore the memory, to prevent the memory expansion costs to increase exponentially.
+            uint256 newFreeMemPointer = GasUtils.unsafeReplaceAllocatedMemory(freeMemPointer);
+
+            // Update the Max Allocated Memory
+            maxAllocatedMemory = maxAllocatedMemory.max(newFreeMemPointer);
+        }
+
+        // Compute what was the maximum amount of memory used in bytes
+        maxAllocatedMemory = maxAllocatedMemory - freeMemPointer;
+
+        return (maxAllocatedMemory, operationsRootHash);
+    }
+
+    /**
+     * @dev Verify and dispatch messages from the Timechain in batch.
+     */
     function batchExecute(Signature calldata signature, InboundMessage calldata message) external {
         uint256 initialGas = gasleft();
         // Add the solidity selector overhead to the initial gas, this way we guarantee that
         // the `initialGas` represents the actual gas that was available to this contract.
         initialGas = initialGas.saturatingAdd(GasUtils.BATCH_SELECTOR_OVERHEAD);
 
-        // Track the free memory pointer, to be able to reset it after the loop
-        uint256 freeMemPtr;
-        assembly {
-            freeMemPtr := mload(0x40)
-        }
+        // Execute the commands and compute the operations root hash
+        (, bytes32 rootHash) = _executeCommands(message.ops);
+        emit BatchExecuted(message.batchID);
 
-        bytes32 messageHash = bytes32(0);
-        GatewayOp[] calldata operations = message.ops;
-        for (uint256 i = 0; i < operations.length; i++) {
-            GatewayOp calldata op = operations[i];
-            bytes calldata params = op.params;
+        // Compute the Batch signing hash
+        bytes32 signingHash = Hashing.hash(message.version, message.batchID, uint256(rootHash));
 
-            bytes32 operationHash;
-            if (op.command == Command.GMP) {
-                require(params.length >= 256, "invalid GmpMessage");
-                GmpMessage calldata gmp;
-                assembly {
-                    gmp := add(params.offset, 0x20)
-                }
-                _checkGmpMessage(gmp);
-                // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
-                // see `src/Primitives.sol` for more details.
-                GmpCallback memory callback = gmp.intoCallback();
-                operationHash = callback.eip712hash;
-                _execute(callback);
-            } else if (op.command == Command.RegisterShard) {
-                require(params.length >= 64, "invalid TssKey");
-                TssKey calldata newShard;
-                assembly {
-                    newShard := params.offset
-                }
-                operationHash = Hashing.hash(newShard.yParity, newShard.xCoord);
-                _setShard(newShard);
-            } else if (op.command == Command.UnregisterShard) {
-                require(params.length >= 64, "invalid TssKey");
-                TssKey calldata shard;
-                assembly {
-                    shard := params.offset
-                }
-                operationHash = Hashing.hash(shard.yParity, shard.xCoord);
-                _revokeShard(shard);
-            } else {
-                revert("unknown command");
-            }
-
-            // Update the message hash
-            messageHash = Hashing.hash(uint256(messageHash), uint256(op.command), uint256(operationHash));
-
-            // Restore the memory, to prevent the memory expansion costs to increase exponentially.
-            assembly {
-                mstore(0x40, freeMemPtr)
-            }
-        }
-        messageHash = keccak256(abi.encode(message.version, message.batchID, messageHash));
-        _verifySignature(signature, messageHash);
+        // Verify the signature
+        _verifySignature(signature, signingHash);
 
         // Refund the chronicle gas
         unchecked {
-            // Compute GMP gas used
+            // Extra gas overhead used to execute the refund logic.
             uint256 gasUsed = 7188;
+
+            // Compute the gas used + base cost + proxy overhead
             gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseCost());
             gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 0));
             gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
@@ -249,13 +361,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             // Compute refund amount
             uint256 refund = BranchlessMath.min(gasUsed.saturatingMul(tx.gasprice), address(this).balance);
 
+            // Refund the gas used
             assembly ("memory-safe") {
-                // Refund the gas used
                 pop(call(gas(), caller(), refund, 0, 0, 0, 0))
             }
         }
-
-        emit BatchExecuted(message.batchID);
     }
 
     function _execute(GmpCallback memory callback) private returns (GmpStatus, bytes32) {

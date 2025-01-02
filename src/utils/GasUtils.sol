@@ -13,12 +13,30 @@ library GasUtils {
     using BranchlessMath for uint256;
 
     /**
-     * @dev How much gas is used until the first `gasleft()` instruction is executed.
+     * @dev How much gas is used until the first `gasleft()` instruction is executed in the `Gateway.batchExecute` method.
+     *
+     * HOW TO UPDATE THIS VALUE:
+     * 1. Run `forge test --match-test=TempTest --debug`
+     * 2. Move the cursor until you enter the `src/Gateway.sol` file.
+     * 3. Execute the opcodes until you reach the first `GAS` opcode.
+     * 4. Execute the GAS opcode then copy the `Gas used in call` value to the constant below.
+     *
+     * Obs: To guarantee the overhead is constant regardless the input size, always use `calldata` instead of `memory`
+     * for external functions.
      */
     uint256 internal constant BATCH_SELECTOR_OVERHEAD = 465;
 
     /**
      * @dev How much gas is used until the first `gasleft()` instruction is executed.
+     *
+     * HOW TO UPDATE THIS VALUE:
+     * 1. Run `forge test --match-test=TempTest --debug`
+     * 2. Move the cursor until you enter the `src/Gateway.sol` file.
+     * 3. Execute the opcodes until you reach the first `GAS` opcode.
+     * 4. Execute the GAS opcode then copy the `Gas used in call` value to the constant below.
+     *
+     * Obs: To guarantee the overhead is constant regardless the input size, always use `calldata` instead of `memory`
+     * for external functions.
      */
     uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 474;
 
@@ -36,6 +54,32 @@ library GasUtils {
      * @dev Extra gas cost of the first `IGateway.submitMessage` method.
      */
     uint256 internal constant FIRST_MESSAGE_EXTRA_COST = 17100;
+
+    /**
+     * @dev Solidity's reserved location for the free memory pointer.
+     * Reference: https://docs.soliditylang.org/en/v0.8.28/internals/layout_in_memory.html
+     */
+    uint256 internal constant ALLOCATED_MEMORY = 0x40;
+
+    /**
+     * @dev Read the current allocated size (a.k.a free memory pointer).
+     */
+    function readAllocatedMemory() internal pure returns (uint256 pointer) {
+        assembly ("memory-safe") {
+            pointer := mload(ALLOCATED_MEMORY)
+        }
+    }
+
+    /**
+     * @dev Replace the current allocated size by the `newPointer`, and returns the old value stored.
+     * CAUTION: Only use this emthod if you know what you are doing.
+     */
+    function unsafeReplaceAllocatedMemory(uint256 newPointer) internal pure returns (uint256 oldPointer) {
+        assembly ("memory-safe") {
+            oldPointer := mload(0x40)
+            mstore(ALLOCATED_MEMORY, newPointer)
+        }
+    }
 
     /**
      * @dev Compute the gas cost of memory expansion.
