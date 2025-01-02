@@ -72,7 +72,8 @@ library GasUtils {
 
     /**
      * @dev Replace the current allocated size by the `newPointer`, and returns the old value stored.
-     * CAUTION: Only use this emthod if you know what you are doing.
+     * CAUTION: Only use this method if you know what you are doing. Make sure you don't overwrite any
+     * memory location that is still in use by the current call context.
      */
     function unsafeReplaceAllocatedMemory(uint256 newPointer) internal pure returns (uint256 oldPointer) {
         assembly ("memory-safe") {
