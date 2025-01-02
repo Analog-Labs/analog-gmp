@@ -147,50 +147,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         );
     }
 
-    /**
-     * @dev Execute a single GMP message.
-     * IMPORTANT: This method doesn't check if the `params` are a valid `GmpMessage`, this must be done by the caller.
-     */
-    function _gmpCommand(bytes calldata params) private returns (bytes32 operationHash) {
-        require(params.length >= 256, "invalid GmpMessage");
-        GmpMessage calldata gmp;
-        assembly {
-            gmp := add(params.offset, 0x20)
-        }
-        _checkGmpMessage(gmp);
-        // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
-        // see `src/Primitives.sol` for more details.
-        GmpCallback memory callback = gmp.intoCallback();
-        operationHash = callback.eip712hash;
-        _execute(callback);
-    }
-
-    /**
-     * @dev Register a single shard, and returns the operation hash.
-     */
-    function _registerShardCommand(bytes calldata params) private returns (bytes32 operationHash) {
-        require(params.length == 64, "invalid TssKey");
-        TssKey calldata newShard;
-        assembly {
-            newShard := params.offset
-        }
-        operationHash = Hashing.hash(newShard.yParity, newShard.xCoord);
-        _setShard(newShard);
-    }
-
-    /**
-     * @dev Removes a single shard from the set.
-     */
-    function _unregisterShardCommand(bytes calldata params) private returns (bytes32 operationHash) {
-        require(params.length == 64, "invalid TssKey");
-        TssKey calldata shard;
-        assembly {
-            shard := params.offset
-        }
-        operationHash = Hashing.hash(shard.yParity, shard.xCoord);
-        _revokeShard(shard);
-    }
-
     // Register/Revoke TSS keys using shard TSS signature
     function updateKeys(Signature calldata signature, UpdateKeysMessage calldata message) external {
         // Check if the message was already executed to prevent replay attacks
@@ -232,6 +188,49 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      * See: `_buildCommandsLUT` and `_cmdTableLookup` methods for more details.
      */
     type CommandsLookUpTable is uint256;
+
+    /**
+     * @dev Dispatch a single GMP message.
+     */
+    function _gmpCommand(bytes calldata params) private returns (bytes32 operationHash) {
+        require(params.length >= 256, "invalid GmpMessage");
+        GmpMessage calldata gmp;
+        assembly {
+            gmp := add(params.offset, 0x20)
+        }
+        _checkGmpMessage(gmp);
+        // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
+        // see `src/Primitives.sol` for more details.
+        GmpCallback memory callback = gmp.intoCallback();
+        operationHash = callback.eip712hash;
+        _execute(callback);
+    }
+
+    /**
+     * @dev Register a single shard and returns the GatewayOp hash.
+     */
+    function _registerShardCommand(bytes calldata params) private returns (bytes32 operationHash) {
+        require(params.length == 64, "invalid TssKey");
+        TssKey calldata newShard;
+        assembly {
+            newShard := params.offset
+        }
+        operationHash = Hashing.hash(newShard.yParity, newShard.xCoord);
+        _setShard(newShard);
+    }
+
+    /**
+     * @dev Removes a single shard from the set.
+     */
+    function _unregisterShardCommand(bytes calldata params) private returns (bytes32 operationHash) {
+        require(params.length == 64, "invalid TssKey");
+        TssKey calldata shard;
+        assembly {
+            shard := params.offset
+        }
+        operationHash = Hashing.hash(shard.yParity, shard.xCoord);
+        _revokeShard(shard);
+    }
 
     /**
      * Cast the command function into a uint256.
@@ -330,7 +329,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     /**
-     * @dev Verify and dispatch messages from the Timechain in batch.
+     * @dev Verify and dispatch messages from the Timechain.
      */
     function batchExecute(Signature calldata signature, InboundMessage calldata message) external {
         uint256 initialGas = gasleft();
