@@ -337,12 +337,13 @@ library PrimitiveUtils {
             callback.destNetwork = m.destNetwork;
             callback.gasLimit = m.gasLimit;
             callback.salt = m.salt;
+            bytes calldata data = m.data;
             callback.callback = abi.encodeWithSignature(
                 "onGmpReceived(bytes32,uint128,bytes32,bytes)",
                 callback.eip712hash,
                 callback.srcNetwork,
                 callback.source,
-                m.data
+                data
             );
         } else {
             GmpMessage memory m = _intoMemoryPointer(message);

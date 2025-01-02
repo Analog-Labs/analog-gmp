@@ -15,17 +15,22 @@ library GasUtils {
     /**
      * @dev How much gas is used until the first `gasleft()` instruction is executed.
      */
+    uint256 internal constant BATCH_SELECTOR_OVERHEAD = 465;
+
+    /**
+     * @dev How much gas is used until the first `gasleft()` instruction is executed.
+     */
     uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 474;
 
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46683;
+    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46706;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 23525 + 348;
+    uint256 internal constant SUBMIT_BASE_COST = 23873;
 
     /**
      * @dev Extra gas cost of the first `IGateway.submitMessage` method.

@@ -3,6 +3,7 @@
 
 pragma solidity >=0.8.0;
 
+import {Hashing} from "./utils/Hashing.sol";
 import {Schnorr} from "./utils/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {GasUtils} from "./utils/GasUtils.sol";
@@ -179,7 +180,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint256 initialGas = gasleft();
         // Add the solidity selector overhead to the initial gas, this way we guarantee that
         // the `initialGas` represents the actual gas that was available to this contract.
-        initialGas = initialGas.saturatingAdd(GasUtils.EXECUTION_SELECTOR_OVERHEAD);
+        initialGas = initialGas.saturatingAdd(GasUtils.BATCH_SELECTOR_OVERHEAD);
 
         // Track the free memory pointer, to be able to reset it after the loop
         uint256 freeMemPtr;
@@ -204,7 +205,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                 // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
                 // see `src/Primitives.sol` for more details.
                 GmpCallback memory callback = gmp.intoCallback();
-                messageHash = callback.eip712hash;
+                operationHash = callback.eip712hash;
                 _execute(callback);
             } else if (op.command == Command.RegisterShard) {
                 require(params.length >= 64, "invalid TssKey");
@@ -212,7 +213,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                 assembly {
                     newShard := params.offset
                 }
-                operationHash = bytes32(newShard.xCoord);
+                operationHash = Hashing.hash(newShard.yParity, newShard.xCoord);
                 _setShard(newShard);
             } else if (op.command == Command.UnregisterShard) {
                 require(params.length >= 64, "invalid TssKey");
@@ -220,19 +221,17 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                 assembly {
                     shard := params.offset
                 }
-                operationHash = bytes32(shard.xCoord);
+                operationHash = Hashing.hash(shard.yParity, shard.xCoord);
                 _revokeShard(shard);
             } else {
                 revert("unknown command");
             }
 
-            assembly {
-                // Update the message hash
-                mstore(0x00, messageHash)
-                mstore(0x20, operationHash)
-                messageHash := keccak256(0x00, 0x40)
+            // Update the message hash
+            messageHash = Hashing.hash(uint256(messageHash), uint256(op.command), uint256(operationHash));
 
-                // Reset memory, to prevent the memory expansion costs to increase exponentially.
+            // Restore the memory, to prevent the memory expansion costs to increase exponentially.
+            assembly {
                 mstore(0x40, freeMemPtr)
             }
         }
@@ -326,6 +325,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         require(message.destNetwork == NETWORK_ID, "invalid gmp network");
 
         // Check if the message data is too large
+        // bytes calldata data = message.data;
+        // assembly ("memory-safe") {
+        //     let offset := data.offset
+        //     data.offset := add(offset, mul(message, lt(offset, message)))
+        // }
         require(message.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
     }
 
