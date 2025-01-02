@@ -48,7 +48,7 @@ jumpdest_remover = true
 # Sometimes re-orders literals in commutative operations.
 order_literals = true
 # Removes duplicate code blocks
-deduplicate = false
+deduplicate = true
 # Common subexpression elimination, this is the most complicated step but
 # can also provide the largest gain.
 cse = true

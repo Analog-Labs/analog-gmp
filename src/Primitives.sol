@@ -79,6 +79,37 @@ struct UpdateKeysMessage {
 }
 
 /**
+ * @dev Messages from Timechain take the form of these commands.
+ */
+enum Command {
+    Invalid,
+    GMP,
+    RegisterShard,
+    UnregisterShard,
+    SetRoute
+}
+
+struct GatewayOp {
+    /// @dev The command to execute
+    Command command;
+    /// @dev The Parameters for the command
+    bytes params;
+}
+
+/**
+ * @dev Inbound message from a Timechain
+ * @param revoke Shard's keys to revoke
+ * @param register Shard's keys to register
+ */
+struct InboundMessage {
+    uint8 version;
+    /// @dev The batch ID
+    uint64 batchID;
+    /// @dev
+    GatewayOp[] ops;
+}
+
+/**
  * @dev A Route represents a communication channel between two networks.
  * @param networkId The id of the provided network.
  * @param gasLimit The maximum amount of gas we allow on this particular network.
@@ -306,12 +337,13 @@ library PrimitiveUtils {
             callback.destNetwork = m.destNetwork;
             callback.gasLimit = m.gasLimit;
             callback.salt = m.salt;
+            bytes calldata data = m.data;
             callback.callback = abi.encodeWithSignature(
                 "onGmpReceived(bytes32,uint128,bytes32,bytes)",
                 callback.eip712hash,
                 callback.srcNetwork,
                 callback.source,
-                m.data
+                data
             );
         } else {
             GmpMessage memory m = _intoMemoryPointer(message);
