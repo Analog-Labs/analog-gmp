@@ -35,7 +35,7 @@ import {
     GMP_VERSION
 } from "../src/Primitives.sol";
 
-contract Batch is BaseTest {
+contract Batching is BaseTest {
     using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpSender;

@@ -233,11 +233,11 @@ library GasUtils {
     }
 
     /**
-     * @dev Compute the number of words.
+     * @dev Convert byte count to 256bit word count, rounded up.
      */
-    function _toWord(uint256 x) private pure returns (uint256 r) {
+    function _toWord(uint256 byteCount) private pure returns (uint256 words) {
         assembly {
-            r := add(shr(5, x), gt(and(x, 0x1f), 0))
+            words := add(shr(5, byteCount), gt(and(byteCount, 0x1f), 0))
         }
     }
 
