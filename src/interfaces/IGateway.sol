@@ -16,6 +16,7 @@ interface IGateway {
      * @param destinationAddress the target address on the destination chain.
      * @param destinationNetwork the target chain where the contract call will be made.
      * @param executionGasLimit the gas limit available for the contract call
+     * @param gasCost the gas limit available for the contract call
      * @param salt salt is equal to the previous message id (EIP-712 hash).
      * @param data message data with no specified format
      */
@@ -24,7 +25,8 @@ interface IGateway {
         bytes32 indexed source,
         address indexed destinationAddress,
         uint16 destinationNetwork,
-        uint256 executionGasLimit,
+        uint64 executionGasLimit,
+        uint64 gasCost,
         uint256 salt,
         bytes data
     );

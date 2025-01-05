@@ -60,10 +60,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     /**
      * @dev Selector of `GmpCreated` event.
-     * keccak256("GmpCreated(bytes32,bytes32,address,uint16,uint256,uint256,bytes)");
+     * keccak256("GmpCreated(bytes32,bytes32,address,uint16,uint64,uint64,uint256,bytes)");
      */
     bytes32 private constant GMP_CREATED_EVENT_SELECTOR =
-        0x0114885f90b5168242aa31b7afb9c2e9f88e90ce329c893d3e6c56021c4c03a5;
+        0xd9047a7e6f40289fbb463a818e2a4e84b4ef712beab3dc322f4bd3ab13dd79a3;
 
     /**
      * @dev The address of the `UniversalFactory` contract, must be the same on all networks.
@@ -500,7 +500,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Check if the provided parameters are valid
         // See `RouteStorage.estimateWeiCost` at `storage/Routes.sol` for more details.
         RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(NetworkID.wrap(routeId));
-        require(msg.value >= route.estimateWeiCost(data, executionGasLimit), "insufficient tx value");
+        (uint256 gasCost, uint256 fee) = route.estimateCost(data, executionGasLimit);
+        require(msg.value >= fee, "insufficient tx value");
 
         // We use 20 bytes for represent the address and 1 bit for the contract flag
         GmpSender source = msg.sender.toSender(false);
@@ -514,7 +515,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
         _emitGmpCreated(
-            message.eip712hash(), source, destinationAddress, routeId, executionGasLimit, nextNonce, message.data
+            message.eip712hash(),
+            source,
+            destinationAddress,
+            routeId,
+            executionGasLimit,
+            gasCost,
+            nextNonce,
+            message.data
         );
     }
 
@@ -527,6 +535,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         address destinationAddress,
         uint16 destinationNetwork,
         uint256 executionGasLimit,
+        uint256 gasCost,
         uint256 salt,
         bytes memory payload
     ) private {
@@ -537,13 +546,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // return prevHash;
         // ```
         assembly {
-            let ptr := sub(payload, 0x80)
-            mstore(ptr, destinationNetwork) // dest network
+            let ptr := sub(payload, 0xa0)
+            mstore(add(ptr, 0x00), destinationNetwork) // dest network
             mstore(add(ptr, 0x20), executionGasLimit) // gas limit
-            mstore(add(ptr, 0x40), salt) // salt
-            mstore(add(ptr, 0x60), 0x80) // data offset
+            mstore(add(ptr, 0x40), gasCost) // gasCost
+            mstore(add(ptr, 0x60), salt) // salt
+            mstore(add(ptr, 0x80), 0xa0) // data offset
             let size := and(add(mload(payload), 31), 0xffffffe0)
-            size := add(size, 160)
+            size := add(size, 192)
             log4(ptr, size, GMP_CREATED_EVENT_SELECTOR, messageID, source, destinationAddress)
             mstore(0, messageID)
             return(0, 32)

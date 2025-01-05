@@ -507,7 +507,6 @@ contract GatewayTest is BaseTest {
             bytes memory encoded =
                 abi.encodeCall(IGateway.submitMessage, (gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data));
             assertEq(encoded.length, ((gmp.data.length + 31) & 0xffe0) + 164, "wrong encoded length");
-            emit log_named_bytes("    calldata", encoded);
             baseCost = TestUtils.calculateBaseCost(encoded);
         }
 
@@ -533,8 +532,16 @@ contract GatewayTest is BaseTest {
         bytes32 id = gmp.eip712hash();
         vm.expectEmit(true, true, true, true);
         emit IGateway.GmpCreated(
-            id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
+            id,
+            GmpSender.unwrap(gmp.source),
+            gmp.dest,
+            gmp.destNetwork,
+            uint64(gmp.gasLimit),
+            uint64(ctx.value),
+            gmp.salt,
+            gmp.data
         );
+        console.log("expect: ", ctx.value);
         ctx.gasLimit += 17100;
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
 
@@ -738,14 +745,19 @@ contract GatewayTest is BaseTest {
         vm.expectRevert("insufficient tx value");
         ctx.submitMessage(gmp);
 
-        // Expect event
-        vm.expectEmit(true, true, true, true);
-        emit IGateway.GmpCreated(
-            id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
-        );
-
         // Submit message with sufficient funds
         ctx.value += 1;
+        vm.expectEmit(true, true, true, true);
+        emit IGateway.GmpCreated(
+            id,
+            GmpSender.unwrap(gmp.source),
+            gmp.dest,
+            gmp.destNetwork,
+            uint64(gmp.gasLimit),
+            uint64(ctx.value),
+            gmp.salt,
+            gmp.data
+        );
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
 
         // Verify the gas cost
@@ -759,7 +771,14 @@ contract GatewayTest is BaseTest {
         // Expect event
         vm.expectEmit(true, true, true, true);
         emit IGateway.GmpCreated(
-            id, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
+            id,
+            GmpSender.unwrap(gmp.source),
+            gmp.dest,
+            gmp.destNetwork,
+            uint64(gmp.gasLimit),
+            uint64(ctx.value),
+            gmp.salt,
+            gmp.data
         );
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
         assertEq(ctx.executionCost, expectedCost - 6800, "unexpected execution gas cost in second call");

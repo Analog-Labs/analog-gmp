@@ -16,7 +16,7 @@ library GasUtils {
      * @dev How much gas is used until the first `gasleft()` instruction is executed in the `Gateway.batchExecute` method.
      *
      * HOW TO UPDATE THIS VALUE:
-     * 1. Run `forge test --match-test=TempTest --debug`
+     * 1. Run `forge test --match-test=test_gasMeter --fuzz-runs=1 --debug`
      * 2. Move the cursor until you enter the `src/Gateway.sol` file.
      * 3. Execute the opcodes until you reach the first `GAS` opcode.
      * 4. Execute the GAS opcode then copy the `Gas used in call` value to the constant below.
@@ -30,7 +30,7 @@ library GasUtils {
      * @dev How much gas is used until the first `gasleft()` instruction is executed.
      *
      * HOW TO UPDATE THIS VALUE:
-     * 1. Run `forge test --match-test=TempTest --debug`
+     * 1. Run `forge test --match-test=test_submitMessageMeter --fuzz-runs=1 --debug`
      * 2. Move the cursor until you enter the `src/Gateway.sol` file.
      * 3. Execute the opcodes until you reach the first `GAS` opcode.
      * 4. Execute the GAS opcode then copy the `Gas used in call` value to the constant below.
@@ -48,7 +48,7 @@ library GasUtils {
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 23873;
+    uint256 internal constant SUBMIT_BASE_COST = 24116;
 
     /**
      * @dev Extra gas cost of the first `IGateway.submitMessage` method.
