@@ -342,7 +342,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         emit BatchExecuted(message.batchID);
 
         // Compute the Batch signing hash
-        bytes32 signingHash = Hashing.hash(message.version, message.batchID, uint256(rootHash));
+        bytes32 signingHash = keccak256(abi.encodePacked("Analog GMP v2", NETWORK_ID, address(this), rootHash));
 
         // Verify the signature
         _verifySignature(signature, signingHash);
@@ -428,6 +428,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         return (status, result);
     }
 
+    /**
+     * @dev Check if the GmpMessage network is correct and if the data is within the maximum size.
+     */
     function _checkGmpMessage(GmpMessage calldata message) private view {
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
