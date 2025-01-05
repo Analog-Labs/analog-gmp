@@ -89,6 +89,11 @@ enum Command {
     SetRoute
 }
 
+/**
+ * @dev Inbound message from a Timechain
+ * @param command Command identifier.
+ * @param params Encoded command.
+ */
 struct GatewayOp {
     /// @dev The command to execute
     Command command;
@@ -98,8 +103,9 @@ struct GatewayOp {
 
 /**
  * @dev Inbound message from a Timechain
- * @param revoke Shard's keys to revoke
- * @param register Shard's keys to register
+ * @param version Message version, will change if the message format changes.
+ * @param batchID Sequence number representing the batch order.
+ * @param ops List of operations to execute.
  */
 struct InboundMessage {
     uint8 version;

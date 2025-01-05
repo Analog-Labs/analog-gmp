@@ -20,6 +20,9 @@ library NetworkIDHelpers {
     NetworkID internal constant BINANCE_SMART_CHAIN_TESTNET = NetworkID.wrap(9);
     NetworkID internal constant ARBITRUM_SEPOLIA = NetworkID.wrap(10);
 
+    /**
+     * @dev Converts a `NetworkID` into a `uint16`.
+     */
     function asUint(NetworkID networkId) internal pure returns (uint16) {
         return NetworkID.unwrap(networkId);
     }
@@ -116,6 +119,9 @@ library NetworkIDHelpers {
         return (exists, NetworkID.wrap(uint16(networkId)));
     }
 
+    /**
+     * @dev Converts a EIP-155 chain id into a `NetworkID`, reverts if the network id doesn't exists.
+     */
     function fromChainID(uint256 chainid) internal pure returns (NetworkID) {
         (bool exists, NetworkID networkId) = tryFromChainID(chainid);
         require(exists, "network id doesn't exists for the given chain id");
