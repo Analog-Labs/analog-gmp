@@ -281,15 +281,15 @@ library GmpTestTools {
             }
 
             // Decode the GMP message
-            (uint16 destNetwork, uint256 gasLimit, uint256 salt, bytes memory data) =
-                abi.decode(log.data, (uint16, uint256, uint256, bytes));
+            (uint16 destNetwork, uint64 gasLimit, uint64 nonce, bytes memory data) =
+                abi.decode(log.data, (uint16, uint64, uint64, bytes));
             gmpMessages[pos++] = GmpMessage({
                 source: GmpSender.wrap(log.topics[2]),
                 srcNetwork: srcNetwork,
                 dest: address(uint160(uint256(log.topics[3]))),
                 destNetwork: destNetwork,
                 gasLimit: gasLimit,
-                salt: salt,
+                nonce: nonce,
                 data: data
             });
         }

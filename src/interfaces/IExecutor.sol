@@ -4,7 +4,15 @@
 pragma solidity >=0.8.0;
 
 import {
-    Signature, GmpMessage, TssKey, GmpStatus, GmpStatus, UpdateKeysMessage, GmpSender, Route
+    InboundMessage,
+    Signature,
+    GmpMessage,
+    TssKey,
+    GmpStatus,
+    GmpStatus,
+    UpdateKeysMessage,
+    GmpSender,
+    Route
 } from "../Primitives.sol";
 
 /**
@@ -22,6 +30,12 @@ interface IExecutor {
     event GmpExecuted(
         bytes32 indexed id, GmpSender indexed source, address indexed dest, GmpStatus status, bytes32 result
     );
+
+    /**
+     * @dev Emitted when a Batch is executed.
+     * @param batch batch_id which is executed
+     */
+    event BatchExecuted(uint64 batch);
 
     /**
      * @dev Emitted when shards are registered.
@@ -68,6 +82,13 @@ interface IExecutor {
      * @dev Create or update an array of routes
      */
     function setRoutes(Route[] calldata values) external;
+
+    /**
+     * Execute operatins in batch
+     * @param signature Schnorr signature
+     * @param message GMP message
+     */
+    function batchExecute(Signature calldata signature, InboundMessage calldata message) external;
 
     /**
      * Execute GMP message

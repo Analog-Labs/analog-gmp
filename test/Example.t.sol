@@ -15,6 +15,7 @@ import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
+import {GasUtils} from "../src/utils/GasUtils.sol";
 import {
     GmpMessage,
     UpdateKeysMessage,
@@ -109,15 +110,30 @@ contract ExampleTest is Test {
             dest: address(dstToken),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 100_000,
-            salt: 0,
+            nonce: 0,
             data: abi.encode(MockERC20.CrossChainTransfer({from: ALICE, to: BOB, amount: 100}))
         });
+
+        // Calculate the expect GMP gas cost
+        uint256 gasCost;
+        {
+            uint256 nonZeros = GasUtils.countNonZeros(gmp.data);
+            uint256 zeros = gmp.data.length - nonZeros;
+            gasCost = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gmp.gasLimit);
+        }
 
         // Expect `GmpCreated` to be emitted
         bytes32 messageID = gmp.eip712hash();
         vm.expectEmit(true, true, true, true, address(srcGateway));
         emit IGateway.GmpCreated(
-            messageID, GmpSender.unwrap(gmp.source), gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.salt, gmp.data
+            messageID,
+            GmpSender.unwrap(gmp.source),
+            gmp.dest,
+            gmp.destNetwork,
+            gmp.gasLimit,
+            uint64(gasCost),
+            gmp.nonce,
+            gmp.data
         );
 
         {

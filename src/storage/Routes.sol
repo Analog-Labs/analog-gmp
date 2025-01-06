@@ -19,6 +19,7 @@ library RouteStore {
     using EnumerableSet for EnumerableSet.Map;
     using NetworkIDHelpers for NetworkID;
     using UFloatMath for UFloat9x56;
+    using BranchlessMath for uint256;
 
     /**
      * @dev Namespace of the routes storage `analog.one.gateway.routes`.
@@ -232,6 +233,28 @@ library RouteStore {
         // Verify if the gas limit and message size are within the limits
         require(gasLimit <= route.gasLimit, "gas limit exceeded");
         require(messageSize <= MAX_PAYLOAD_SIZE, "maximum payload size exceeded");
+    }
+
+    /**
+     * @dev Utility function for measure the wei cost of a GMP message.
+     */
+    function estimateCost(NetworkInfo memory route, bytes calldata data, uint256 gasLimit)
+        internal
+        pure
+        returns (uint256 gasCost, uint256 fee)
+    {
+        // Guarantee the networks exists and `data` is less than `MAX_PAYLOAD_SIZE`
+        _checkPreconditions(route, data.length, gasLimit);
+
+        // Compute base cost
+        uint256 nonZeros = GasUtils.countNonZerosCalldata(data);
+        uint256 zeros = data.length - nonZeros;
+
+        // Compute execution cost
+        gasCost = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gasLimit);
+
+        // Calculate the gas cost: gasPrice * gasCost + baseFee
+        fee = UFloatMath.saturatingMul(route.relativeGasPrice, gasCost).saturatingAdd(route.baseFee);
     }
 
     /**

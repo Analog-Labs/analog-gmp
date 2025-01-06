@@ -18,8 +18,8 @@ contract GmpProxy is IGmpReceiver {
         uint16 srcNetwork;
         address dest;
         uint16 destNetwork;
-        uint256 gasLimit;
-        uint256 salt;
+        uint64 gasLimit;
+        uint64 nonce;
         bytes data;
     }
 

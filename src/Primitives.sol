@@ -10,7 +10,7 @@ import {NetworkID} from "./NetworkID.sol";
 /**
  * @dev GMP message EIP-712 Type Hash.
  * Declared as raw value to enable it to be used in inline assembly
- * keccak256("GmpMessage(bytes32 source,uint16 srcNetwork,address dest,uint16 destNetwork,uint256 gasLimit,uint256 salt,bytes data)")
+ * keccak256("GmpMessage(bytes32 source,uint16 srcNetwork,address dest,uint16 destNetwork,uint64 gasLimit,uint64 gasCost,uint32 nonce,bytes data)")
  */
 uint256 constant GMP_VERSION = 0;
 
@@ -55,7 +55,7 @@ struct Signature {
  * @param dest Destination/Recipient contract address
  * @param destNetwork Destination chain identifier (it's the EIP-155 chain_id for ethereum networks)
  * @param gasLimit gas limit of the GMP call
- * @param salt Message salt, useful for sending two messages with same content
+ * @param nonce Sequence nonce per sender, allows sending two messages with same content
  * @param data message data with no specified format
  */
 struct GmpMessage {
@@ -63,8 +63,8 @@ struct GmpMessage {
     uint16 srcNetwork;
     address dest;
     uint16 destNetwork;
-    uint256 gasLimit;
-    uint256 salt;
+    uint64 gasLimit;
+    uint64 nonce;
     bytes data;
 }
 
@@ -76,6 +76,43 @@ struct GmpMessage {
 struct UpdateKeysMessage {
     TssKey[] revoke;
     TssKey[] register;
+}
+
+/**
+ * @dev Messages from Timechain take the form of these commands.
+ */
+enum Command {
+    Invalid,
+    GMP,
+    RegisterShard,
+    UnregisterShard,
+    SetRoute
+}
+
+/**
+ * @dev Inbound message from a Timechain
+ * @param command Command identifier.
+ * @param params Encoded command.
+ */
+struct GatewayOp {
+    /// @dev The command to execute
+    Command command;
+    /// @dev The Parameters for the command
+    bytes params;
+}
+
+/**
+ * @dev Inbound message from a Timechain
+ * @param version Message version, will change if the message format changes.
+ * @param batchID Sequence number representing the batch order.
+ * @param ops List of operations to execute.
+ */
+struct InboundMessage {
+    uint8 version;
+    /// @dev The batch ID
+    uint64 batchID;
+    /// @dev
+    GatewayOp[] ops;
 }
 
 /**
@@ -124,7 +161,7 @@ enum GmpStatus {
  * @param dest Destination/Recipient contract address
  * @param destNetwork Destination chain identifier (it's the EIP-155 chain_id for ethereum networks)
  * @param gasLimit gas limit of the GMP call
- * @param salt Message salt, useful for sending two messages with same content
+ * @param nonce Sequence nonce per sender, allows sending two messages with same content
  * @param callback encoded callback of `IGmpRecipient` interface, see `IGateway.sol` for more details.
  */
 struct GmpCallback {
@@ -133,8 +170,8 @@ struct GmpCallback {
     uint16 srcNetwork;
     address dest;
     uint16 destNetwork;
-    uint256 gasLimit;
-    uint256 salt;
+    uint64 gasLimit;
+    uint64 nonce;
     bytes callback;
 }
 
@@ -288,7 +325,7 @@ library PrimitiveUtils {
         // | 0x0060..0x0080 <- GmpCallback.dest
         // | 0x0080..0x00a0 <- GmpCallback.destNetwork
         // | 0x00a0..0x00c0 <- GmpCallback.gasLimit
-        // | 0x00c0..0x00e0 <- GmpCallback.salt
+        // | 0x00c0..0x00e0 <- GmpCallback.nonce
         // | 0x00e0..0x0100 <- GmpCallback.callback.offset
         // | 0x0100..0x0120 <- GmpCallback.callback.length
         // | 0x0120..0x0124 <- onGmpReceived.selector (4 bytes)
@@ -305,13 +342,14 @@ library PrimitiveUtils {
             callback.dest = m.dest;
             callback.destNetwork = m.destNetwork;
             callback.gasLimit = m.gasLimit;
-            callback.salt = m.salt;
+            callback.nonce = m.nonce;
+            bytes calldata data = m.data;
             callback.callback = abi.encodeWithSignature(
                 "onGmpReceived(bytes32,uint128,bytes32,bytes)",
                 callback.eip712hash,
                 callback.srcNetwork,
                 callback.source,
-                m.data
+                data
             );
         } else {
             GmpMessage memory m = _intoMemoryPointer(message);
@@ -320,7 +358,7 @@ library PrimitiveUtils {
             callback.dest = m.dest;
             callback.destNetwork = m.destNetwork;
             callback.gasLimit = m.gasLimit;
-            callback.salt = m.salt;
+            callback.nonce = m.nonce;
             callback.callback = abi.encodeWithSignature(
                 "onGmpReceived(bytes32,uint128,bytes32,bytes)",
                 callback.eip712hash,
