@@ -17,7 +17,7 @@ interface IGateway {
      * @param destinationNetwork the target chain where the contract call will be made.
      * @param executionGasLimit the gas limit available for the contract call
      * @param gasCost the gas limit available for the contract call
-     * @param salt salt is equal to the previous message id (EIP-712 hash).
+     * @param nonce Sequence number per sender, used to guarantee each message is unique.
      * @param data message data with no specified format
      */
     event GmpCreated(
@@ -27,7 +27,7 @@ interface IGateway {
         uint16 destinationNetwork,
         uint64 executionGasLimit,
         uint64 gasCost,
-        uint256 salt,
+        uint64 nonce,
         bytes data
     );
 

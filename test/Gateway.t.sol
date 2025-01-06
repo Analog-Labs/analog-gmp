@@ -40,7 +40,7 @@ contract SigUtilsTest is GatewayEIP712, Test {
             dest: address(0x0),
             destNetwork: 69,
             gasLimit: 0,
-            salt: 0,
+            nonce: 0,
             data: ""
         });
         bytes32 typedHash = gmp.eip712hash();
@@ -52,7 +52,7 @@ contract SigUtilsTest is GatewayEIP712, Test {
                 gmp.dest,
                 gmp.destNetwork,
                 gmp.gasLimit,
-                gmp.salt,
+                gmp.nonce,
                 keccak256(gmp.data)
             )
         );
@@ -355,7 +355,7 @@ contract GatewayTest is BaseTest {
             dest: address(bytes20(keccak256("dummy_address"))),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 0,
-            salt: 0,
+            nonce: 0,
             data: new bytes(24576 + 1)
         });
 
@@ -399,7 +399,7 @@ contract GatewayTest is BaseTest {
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 1000,
-            salt: 0,
+            nonce: 0,
             data: new bytes(messageSize)
         });
         {
@@ -497,7 +497,7 @@ contract GatewayTest is BaseTest {
             dest: address(bytes20(keccak256("dummy_address"))),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 0,
-            salt: 0,
+            nonce: 0,
             data: new bytes(messageSize)
         });
 
@@ -538,7 +538,7 @@ contract GatewayTest is BaseTest {
             gmp.destNetwork,
             uint64(gmp.gasLimit),
             uint64(ctx.value),
-            gmp.salt,
+            gmp.nonce,
             gmp.data
         );
         console.log("expect: ", ctx.value);
@@ -564,7 +564,7 @@ contract GatewayTest is BaseTest {
         GmpSender sender = TestUtils.createTestAccount(100 ether).toSender(false);
 
         // GMP message gas used
-        uint256 gmpGasUsed = 2_000;
+        uint64 gmpGasUsed = 2_000;
 
         // Build and sign GMP message
         GmpMessage memory gmp = GmpMessage({
@@ -573,7 +573,7 @@ contract GatewayTest is BaseTest {
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: gmpGasUsed,
-            salt: 1,
+            nonce: 1,
             data: abi.encodePacked(uint256(gmpGasUsed))
         });
         Signature memory sig = sign(gmp);
@@ -606,7 +606,7 @@ contract GatewayTest is BaseTest {
             assertEq(
                 uint256(info.status), uint256(GmpStatus.SUCCESS), "GMP status stored doesn't match the returned status"
             );
-            assertEq(returned, bytes32(gmp.gasLimit), "unexpected GMP result");
+            assertEq(returned, bytes32(uint256(gmp.gasLimit)), "unexpected GMP result");
 
             // Verify the gas cost
             assertEq(ctx.executionCost + ctx.baseCost, expectGasUsed, "unexpected gas used");
@@ -629,7 +629,7 @@ contract GatewayTest is BaseTest {
             dest: address(0x0),
             destNetwork: SRC_NETWORK_ID,
             gasLimit: 1000,
-            salt: 1,
+            nonce: 1,
             data: ""
         });
         Signature memory wrongNetworkSig = sign(wrongNetwork);
@@ -654,7 +654,7 @@ contract GatewayTest is BaseTest {
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 100_000,
-            salt: 1,
+            nonce: 1,
             data: abi.encode(uint256(100_000))
         });
         Signature memory sig = sign(gmp);
@@ -684,7 +684,7 @@ contract GatewayTest is BaseTest {
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 1000,
-            salt: 1,
+            nonce: 1,
             data: abi.encode(uint256(1000))
         });
         Signature memory sig = sign(gmp);
@@ -716,7 +716,7 @@ contract GatewayTest is BaseTest {
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 100_000,
-            salt: 0,
+            nonce: 0,
             data: abi.encodePacked(uint256(100_000))
         });
         bytes32 id = gmp.eip712hash();
@@ -755,7 +755,7 @@ contract GatewayTest is BaseTest {
             gmp.destNetwork,
             uint64(gmp.gasLimit),
             uint64(ctx.value),
-            gmp.salt,
+            gmp.nonce,
             gmp.data
         );
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
@@ -764,8 +764,8 @@ contract GatewayTest is BaseTest {
         uint256 expectedCost = GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 6500;
         assertEq(ctx.executionCost, expectedCost + 17100, "unexpected execution gas cost in first call");
 
-        // Now the second GMP message should have the salt equals to previous gmp hash
-        gmp.salt = gateway.nonceOf(gmp.source.toAddress());
+        // Now the second GMP message nonce must be equals to previous message nonce + 1.
+        gmp.nonce = gateway.nonceOf(gmp.source.toAddress());
         id = gmp.eip712hash();
 
         // Expect event
@@ -777,7 +777,7 @@ contract GatewayTest is BaseTest {
             gmp.destNetwork,
             uint64(gmp.gasLimit),
             uint64(ctx.value),
-            gmp.salt,
+            gmp.nonce,
             gmp.data
         );
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");

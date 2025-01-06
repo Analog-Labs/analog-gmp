@@ -281,9 +281,7 @@ contract Batching is BaseTest {
             dest: RECEIVER_CONTRACT,
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 7845,
-            salt: 0,
-            // data: hex"deadbeefdeadbeefdeadbe"
-            // data: hex"deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdead"
+            nonce: 0,
             data: new bytes(800)
         });
         {
@@ -346,8 +344,8 @@ contract Batching is BaseTest {
                     srcNetwork: 0x8888,
                     dest: 0x9999999999999999999999999999999999999999,
                     destNetwork: 0xAAAA,
-                    gasLimit: 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB,
-                    salt: 0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC,
+                    gasLimit: 0xBBBBBBBBBBBBBBBB,
+                    nonce: 0xCCCCCCCCCCCCCCCC,
                     data: abi.encode(uint256(0xDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD))
                 })
             )
@@ -362,8 +360,8 @@ contract Batching is BaseTest {
                     srcNetwork: 0x8080,
                     dest: 0x9090909090909090909090909090909090909090,
                     destNetwork: 0xA0A0,
-                    gasLimit: 0xB0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0,
-                    salt: 0xC0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0,
+                    gasLimit: 0xB0B0B0B0B0B0B0B0,
+                    nonce: 0xC0C0C0C0C0C0C0C0,
                     data: abi.encode(uint256(0xD0D0D0D0D0D0D0D0D0D0D0D0D0D0D0))
                 })
             )
@@ -391,7 +389,7 @@ contract Batching is BaseTest {
         SigningKey memory signer = TestUtils.createSigner(SECRET);
 
         // Build and sign GMP
-        uint256 gasLimit = 7845;
+        uint64 gasLimit = 7845;
         GatewayOp[] memory ops = new GatewayOp[](1);
         ops[0] = GatewayOp({
             command: Command.GMP,
@@ -402,7 +400,7 @@ contract Batching is BaseTest {
                     dest: RECEIVER_CONTRACT,
                     destNetwork: DEST_NETWORK_ID,
                     gasLimit: gasLimit,
-                    salt: 0,
+                    nonce: 0,
                     data: abi.encode(gasLimit)
                 })
             )
@@ -424,7 +422,7 @@ contract Batching is BaseTest {
         vm.txGasPrice(1);
         SigningKey memory signer = TestUtils.createSigner(SECRET);
         vm.deal(signer.addr(), 100 ether);
-        uint256 gasLimit = 7845;
+        uint64 gasLimit = 7845;
 
         /////////////////////
         // Build the batch //
@@ -439,7 +437,7 @@ contract Batching is BaseTest {
                     dest: RECEIVER_CONTRACT,
                     destNetwork: DEST_NETWORK_ID,
                     gasLimit: gasLimit,
-                    salt: 0,
+                    nonce: 0,
                     data: abi.encode(gasLimit)
                 })
             )
@@ -453,7 +451,7 @@ contract Batching is BaseTest {
                     dest: RECEIVER_CONTRACT_02,
                     destNetwork: DEST_NETWORK_ID,
                     gasLimit: gasLimit,
-                    salt: 0,
+                    nonce: 0,
                     data: abi.encode(gasLimit)
                 })
             )

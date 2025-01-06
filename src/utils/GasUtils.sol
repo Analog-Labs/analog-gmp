@@ -43,15 +43,16 @@ library GasUtils {
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46706;
+    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46960;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 24116;
+    uint256 internal constant SUBMIT_BASE_COST = 24138;
 
     /**
-     * @dev Extra gas cost of the first `IGateway.submitMessage` method.
+     * @dev Extra gas cost that any account `Contract or EOA` must pay when calling `IGateway.submitMessage` method.
+     * This cost is necessary for initialize the account's `nonce` storage slot.
      */
     uint256 internal constant FIRST_MESSAGE_EXTRA_COST = 17100;
 

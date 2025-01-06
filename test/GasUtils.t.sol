@@ -91,7 +91,7 @@ contract GasUtilsTest is BaseTest {
     /**
      * @dev Create a GMP message with the provided parameters.
      */
-    function _buildGmpMessage(address sender, uint256 gasLimit, uint256 gasUsed, uint256 messageSize)
+    function _buildGmpMessage(address sender, uint64 gasLimit, uint64 gasUsed, uint256 messageSize)
         private
         view
         returns (GmpMessage memory message, Signature memory signature, CallOptions memory context)
@@ -119,7 +119,7 @@ contract GasUtilsTest is BaseTest {
             dest: gmpReceiver,
             destNetwork: DEST_NETWORK_ID,
             gasLimit: gasLimit,
-            salt: 0,
+            nonce: 0,
             data: data
         });
 
@@ -151,7 +151,7 @@ contract GasUtilsTest is BaseTest {
             dest: address(0x2222222222222222222222222222222222222222),
             destNetwork: 1337,
             gasLimit: 0,
-            salt: 0,
+            nonce: 0,
             data: hex"00"
         });
         Signature memory sig = sign(gmp);

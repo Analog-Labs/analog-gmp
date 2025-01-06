@@ -60,10 +60,10 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     /**
      * @dev Selector of `GmpCreated` event.
-     * keccak256("GmpCreated(bytes32,bytes32,address,uint16,uint64,uint64,uint256,bytes)");
+     * keccak256("GmpCreated(bytes32,bytes32,address,uint16,uint64,uint64,uint64,bytes)");
      */
     bytes32 private constant GMP_CREATED_EVENT_SELECTOR =
-        0xd9047a7e6f40289fbb463a818e2a4e84b4ef712beab3dc322f4bd3ab13dd79a3;
+        0x081a0b65828c1720ce022ffb992d4a5ec86e2abc4c383acd4029ba8486e41b4f;
 
     /**
      * @dev The address of the `UniversalFactory` contract, must be the same on all networks.
@@ -108,8 +108,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         emit ShardsRegistered(keys);
     }
 
-    function nonceOf(address account) external view returns (uint256) {
-        return _nonces[account];
+    function nonceOf(address account) external view returns (uint64) {
+        return uint64(_nonces[account]);
     }
 
     function gmpInfo(bytes32 id) external view returns (GmpInfo memory) {
@@ -470,7 +470,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Refund the chronicle gas
         unchecked {
             // Compute GMP gas used
-            uint256 gasUsed = 7188;
+            uint256 gasUsed = 7188 - 11;
             gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseCost());
             gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
             gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
@@ -509,24 +509,26 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // We use 20 bytes for represent the address and 1 bit for the contract flag
         GmpSender source = msg.sender.toSender(false);
 
-        // Nonce is per sender, it's incremented for every message sent.
-        uint256 nextNonce = _nonces[msg.sender]++;
+        unchecked {
+            // Nonce is per sender, it's incremented for every message sent.
+            uint64 nextNonce = uint64(_nonces[msg.sender]++);
 
-        // Create GMP message and update nonce
-        GmpMessage memory message =
-            GmpMessage(source, NETWORK_ID, destinationAddress, routeId, executionGasLimit, nextNonce, data);
+            // Create GMP message and update nonce
+            GmpMessage memory message =
+                GmpMessage(source, NETWORK_ID, destinationAddress, routeId, uint64(executionGasLimit), nextNonce, data);
 
-        // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
-        _emitGmpCreated(
-            message.eip712hash(),
-            source,
-            destinationAddress,
-            routeId,
-            executionGasLimit,
-            gasCost,
-            nextNonce,
-            message.data
-        );
+            // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
+            _emitGmpCreated(
+                message.eip712hash(),
+                source,
+                destinationAddress,
+                routeId,
+                executionGasLimit,
+                gasCost,
+                nextNonce,
+                message.data
+            );
+        }
     }
 
     /**
@@ -539,13 +541,13 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint16 destinationNetwork,
         uint256 executionGasLimit,
         uint256 gasCost,
-        uint256 salt,
+        uint256 nonce,
         bytes memory payload
     ) private {
         // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
         // the assembly code below is equivalent to:
         // ```solidity
-        // emit GmpCreated(prevHash, source, destinationAddress, destinationNetwork, executionGasLimit, salt, data);
+        // emit GmpCreated(prevHash, source, destinationAddress, destinationNetwork, executionGasLimit, gasCost, nonce, data);
         // return prevHash;
         // ```
         assembly {
@@ -553,7 +555,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             mstore(add(ptr, 0x00), destinationNetwork) // dest network
             mstore(add(ptr, 0x20), executionGasLimit) // gas limit
             mstore(add(ptr, 0x40), gasCost) // gasCost
-            mstore(add(ptr, 0x60), salt) // salt
+            mstore(add(ptr, 0x60), nonce) // nonce
             mstore(add(ptr, 0x80), 0xa0) // data offset
             let size := and(add(mload(payload), 31), 0xffffffe0)
             size := add(size, 192)

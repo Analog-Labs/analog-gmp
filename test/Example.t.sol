@@ -110,7 +110,7 @@ contract ExampleTest is Test {
             dest: address(dstToken),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 100_000,
-            salt: 0,
+            nonce: 0,
             data: abi.encode(MockERC20.CrossChainTransfer({from: ALICE, to: BOB, amount: 100}))
         });
 
@@ -130,9 +130,9 @@ contract ExampleTest is Test {
             GmpSender.unwrap(gmp.source),
             gmp.dest,
             gmp.destNetwork,
-            uint64(gmp.gasLimit),
+            gmp.gasLimit,
             uint64(gasCost),
-            gmp.salt,
+            gmp.nonce,
             gmp.data
         );
 
