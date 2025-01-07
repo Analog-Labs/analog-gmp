@@ -256,9 +256,10 @@ contract Batching is BaseTest {
             }
             rootHash = Hashing.hash(uint256(rootHash), uint256(op.command), uint256(operationHash));
         }
-        // return Hashing.hash(message.version, message.batchID, uint256(messageHash));
-        // TODO: The `message.version` and `message.batchID` must be part of the signing hash.
-        return keccak256(abi.encodePacked("Analog GMP v2", DEST_NETWORK_ID, address(GATEWAY_PROXY), rootHash));
+        rootHash = Hashing.hash(message.version, message.batchID, uint256(rootHash));
+        return keccak256(
+            abi.encodePacked("Analog GMP v2", DEST_NETWORK_ID, bytes32(uint256(uint160(GATEWAY_PROXY))), rootHash)
+        );
     }
 
     function signAt(SigningKey memory signer, InboundMessage memory message, Signature memory sig) private view {
