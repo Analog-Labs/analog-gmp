@@ -342,7 +342,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         emit BatchExecuted(message.batchID);
 
         // Compute the Batch signing hash
-        bytes32 signingHash = keccak256(abi.encodePacked("Analog GMP v2", NETWORK_ID, address(this), rootHash));
+        rootHash = Hashing.hash(message.version, message.batchID, uint256(rootHash));
+        bytes32 signingHash =
+            keccak256(abi.encodePacked("Analog GMP v2", NETWORK_ID, bytes32(uint256(uint160(address(this)))), rootHash));
 
         // Verify the signature
         _verifySignature(signature, signingHash);

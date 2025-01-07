@@ -15,3 +15,6 @@ docs/
 
 # MacOS
 **/.DS_Store
+
+# built artifacts
+src/artifacts/
