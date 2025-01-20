@@ -212,9 +212,7 @@ contract Batching is BaseTest {
         }
 
         // Deposit funds to the gateway contract
-        // Gateway(GATEWAY_PROXY).deposit{value: 10 ether}();
-        (bool success,) = GATEWAY_PROXY.call{value: 10 ether}("");
-        require(success, "Failed to send Ether");
+        Gateway(GATEWAY_PROXY).deposit{value: 10 ether}();
     }
 
     function sign(SigningKey memory signer, GmpMessage memory gmp) private pure returns (Signature memory) {
