@@ -81,7 +81,7 @@ contract GatewayProxyTest is Test {
         // 1.2 Deploy the `Gateway` implementation contract
         bytes memory implementationCreationCode =
             abi.encodePacked(type(Gateway).creationCode, abi.encode(routeID, proxyAddr));
-        address implementation = FACTORY.create2(salt, implementationCreationCode, abi.encode(routeID));
+        address payable implementation = payable(FACTORY.create2(salt, implementationCreationCode, abi.encode(routeID)));
         assertEq(Gateway(implementation).networkId(), routeID);
 
         ////////////////////////////////////////////////////////
@@ -109,7 +109,8 @@ contract GatewayProxyTest is Test {
 
         // Initializer, used to initialize the Gateway contract
         bytes memory initializer = abi.encodeCall(Gateway.initialize, (admin.addr, keys, networks));
-        gateway = Gateway(FACTORY.create2(salt, proxyCreationCode, authorization, initializer));
+        address payable gatewayAddr = payable(FACTORY.create2(salt, proxyCreationCode, authorization, initializer));
+        gateway = Gateway(gatewayAddr);
 
         // Send funds to the gateway contract
         vm.deal(address(gateway), 100 ether);

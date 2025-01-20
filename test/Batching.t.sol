@@ -95,15 +95,17 @@ contract Batching is BaseTest {
     // Gateway Proxy
     bytes private constant PROXY_BYTECODE = abi.encodePacked(type(GatewayProxy).creationCode, abi.encode(ADMIN));
     bytes32 private constant PROXY_BYTECODE_HASH = keccak256(PROXY_BYTECODE);
-    address private constant GATEWAY_PROXY = address(
-        uint160(
-            uint256(
-                keccak256(
-                    abi.encodePacked(
-                        uint8(0xff),
-                        address(FACTORY),
-                        uint256(0),
-                        keccak256(abi.encodePacked(type(GatewayProxy).creationCode, abi.encode(ADMIN)))
+    address payable private constant GATEWAY_PROXY = payable(
+        address(
+            uint160(
+                uint256(
+                    keccak256(
+                        abi.encodePacked(
+                            uint8(0xff),
+                            address(FACTORY),
+                            uint256(0),
+                            keccak256(abi.encodePacked(type(GatewayProxy).creationCode, abi.encode(ADMIN)))
+                        )
                     )
                 )
             )
@@ -210,7 +212,9 @@ contract Batching is BaseTest {
         }
 
         // Deposit funds to the gateway contract
-        Gateway(GATEWAY_PROXY).deposit{value: 10 ether}();
+        // Gateway(GATEWAY_PROXY).deposit{value: 10 ether}();
+        (bool success,) = GATEWAY_PROXY.call{value: 10 ether}("");
+        require(success, "Failed to send Ether");
     }
 
     function sign(SigningKey memory signer, GmpMessage memory gmp) private pure returns (Signature memory) {
@@ -258,7 +262,9 @@ contract Batching is BaseTest {
         }
         rootHash = Hashing.hash(message.version, message.batchID, uint256(rootHash));
         return keccak256(
-            abi.encodePacked("Analog GMP v2", DEST_NETWORK_ID, bytes32(uint256(uint160(GATEWAY_PROXY))), rootHash)
+            abi.encodePacked(
+                "Analog GMP v2", DEST_NETWORK_ID, bytes32(uint256(uint160(address(GATEWAY_PROXY)))), rootHash
+            )
         );
     }
 

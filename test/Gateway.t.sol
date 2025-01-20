@@ -164,8 +164,9 @@ contract GatewayTest is BaseTest {
     constructor() {
         VmSafe.Wallet memory admin = vm.createWallet(SECRET);
         assertEq(ADMIN, admin.addr, "admin address mismatch");
-        gateway =
-            Gateway(address(TestUtils.setupGateway(admin, bytes32(uint256(1234)), SRC_NETWORK_ID, DEST_NETWORK_ID)));
+        gateway = Gateway(
+            payable(address(TestUtils.setupGateway(admin, bytes32(uint256(1234)), SRC_NETWORK_ID, DEST_NETWORK_ID)))
+        );
         receiver = IGmpReceiver(new GasSpender());
     }
 

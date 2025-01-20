@@ -98,9 +98,4 @@ interface IExecutor {
     function execute(Signature calldata signature, GmpMessage calldata message)
         external
         returns (GmpStatus status, bytes32 result);
-
-    /**
-     * Deposit funds to the gateway contract
-     */
-    function deposit() external payable;
 }
