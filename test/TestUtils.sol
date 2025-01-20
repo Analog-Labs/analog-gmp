@@ -425,7 +425,8 @@ library TestUtils {
         // Initializer, used to initialize the Gateway contract
         bytes memory initializer = abi.encodeCall(Gateway.initialize, (admin.addr, keys, networks));
         bytes memory proxyCreationCode = abi.encodePacked(type(GatewayProxy).creationCode, abi.encode(admin.addr));
-        gateway = Gateway(FACTORY.create2(salt, proxyCreationCode, authorization, initializer));
+        address payable gatewayAddr = payable(FACTORY.create2(salt, proxyCreationCode, authorization, initializer));
+        gateway = Gateway(gatewayAddr);
 
         // Send funds to the gateway contract
         vm.deal(address(gateway), 100 ether);

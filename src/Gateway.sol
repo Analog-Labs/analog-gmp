@@ -594,6 +594,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      * IMPORTANT: this function must be called only by the administrator!!!!
      */
     function deposit() external payable {}
+    receive() external payable {}
 
     /**
      * Withdraw funds from the gateway contract

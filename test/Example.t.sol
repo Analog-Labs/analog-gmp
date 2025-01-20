@@ -91,8 +91,8 @@ contract ExampleTest is Test {
             networkIds[0] = SRC_NETWORK_ID;
             networkIds[1] = DEST_NETWORK_ID;
             Network[] memory networks = deployGateway(senderWallet, signer, networkIds);
-            srcGateway = Gateway(networks[0].gateway);
-            dstGateway = Gateway(networks[1].gateway);
+            srcGateway = Gateway(payable(networks[0].gateway));
+            dstGateway = Gateway(payable(networks[1].gateway));
         }
 
         // Step 2: Deploy the sender and recipient contracts
