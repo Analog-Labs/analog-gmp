@@ -595,7 +595,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      */
     function deposit() external payable {}
     receive() external payable {}
-    fallback() external payable {}
 
     /**
      * Withdraw funds from the gateway contract
