@@ -76,7 +76,6 @@ library ShardStore {
      * the shard info below 256 bit, so it can be stored in one single storage slot.
      * reference: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html
      *
-     * @custom:storage-location erc7201:analog.one.gateway.shards
      */
     struct MainStorage {
         EnumerableSet.Map shards;
