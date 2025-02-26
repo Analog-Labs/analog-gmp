@@ -335,7 +335,7 @@ contract GatewayTest is BaseTest {
         // Calling the receiver contract directly to make the address warm
         address sender = TestUtils.createTestAccount(10 ether);
         (uint256 gasUsed,, bytes memory output) =
-            TestUtils.executeCall(sender, address(receiver), 23_318, 0, testEncodedCall);
+            TestUtils.executeCall(sender, address(receiver), 23_318 + 128, 0, testEncodedCall);
         assertEq(gasUsed, 1234);
         assertEq(output.length, 32);
     }
