@@ -328,13 +328,14 @@ contract GatewayTest is BaseTest {
                 0x0000000000000000000000000000000000000000000000000000000000000000,
                 1,
                 0x0000000000000000000000000000000000000000000000000000000000000000,
+                0,
                 abi.encode(uint256(1234))
             )
         );
         // Calling the receiver contract directly to make the address warm
         address sender = TestUtils.createTestAccount(10 ether);
         (uint256 gasUsed,, bytes memory output) =
-            TestUtils.executeCall(sender, address(receiver), 23_318, 0, testEncodedCall);
+            TestUtils.executeCall(sender, address(receiver), 23_318 + 128, 0, testEncodedCall);
         assertEq(gasUsed, 1234);
         assertEq(output.length, 32);
     }
@@ -342,7 +343,7 @@ contract GatewayTest is BaseTest {
     function test_estimateMessageCost() external {
         vm.txGasPrice(1);
         uint256 cost = gateway.estimateMessageCost(DEST_NETWORK_ID, 96, 100000);
-        assertEq(cost, GasUtils.EXECUTION_BASE_COST + 133821);
+        assertEq(cost, GasUtils.EXECUTION_BASE_COST + 133824);
     }
 
     function test_checkPayloadSize() external {
