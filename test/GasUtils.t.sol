@@ -120,7 +120,7 @@ contract GasUtilsTest is BaseTest {
             dest: gmpReceiver,
             destNetwork: DEST_NETWORK_ID,
             gasLimit: gasLimit,
-            nonce: 0,
+            nonce: 1,
             data: data
         });
 
@@ -152,7 +152,7 @@ contract GasUtilsTest is BaseTest {
             dest: address(0x2222222222222222222222222222222222222222),
             destNetwork: 1337,
             gasLimit: 0,
-            nonce: 0,
+            nonce: 1,
             data: hex"00"
         });
         Signature memory sig = sign(gmp);
