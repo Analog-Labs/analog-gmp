@@ -214,7 +214,7 @@ contract GasUtilsTest is BaseTest {
             console.log("implementation: ", implementationAddr);
             console.logBytes(implementationAddr.code);
             console.log("calldata:");
-            console.logBytes(abi.encodeCall(IExecutor.execute, (sig, gmp)));
+            console.logBytes(abi.encodeCall(Gateway.execute, (sig, gmp)));
         }
         assertEq(expectedBaseCost, GasUtils.EXECUTION_BASE_COST, "Wrong EXECUTION_BASE_COST");
     }

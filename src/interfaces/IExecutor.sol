@@ -89,18 +89,4 @@ interface IExecutor {
      * @param message GMP message
      */
     function batchExecute(Signature calldata signature, InboundMessage calldata message) external;
-
-    /**
-     * Execute GMP message
-     * @param signature Schnorr signature
-     * @param message GMP message
-     */
-    function execute(Signature calldata signature, GmpMessage calldata message)
-        external
-        returns (GmpStatus status, bytes32 result);
-
-    /**
-     * Deposit funds to the gateway contract
-     */
-    function deposit() external payable;
 }
