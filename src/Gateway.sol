@@ -50,6 +50,7 @@ abstract contract GatewayEIP712 {
 contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
+    using PrimitiveUtils for GmpCallback;
     using PrimitiveUtils for address;
     using BranchlessMath for uint256;
     using UFloatMath for UFloat9x56;
@@ -202,7 +203,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
         // see `src/Primitives.sol` for more details.
         GmpCallback memory callback = gmp.intoCallback();
-        operationHash = callback.eip712hash;
+        operationHash = callback.opHash;
         _execute(callback);
     }
 
@@ -371,7 +372,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     function _execute(GmpCallback memory callback) private returns (GmpStatus, bytes32) {
         // Verify if this GMP message was already executed
-        GmpInfo storage gmp = _messages[callback.eip712hash];
+        bytes32 msgId = callback.messageId();
+        GmpInfo storage gmp = _messages[msgId];
         require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
 
         // Update status to `pending` to prevent reentrancy attacks.
@@ -425,7 +427,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         gmp.status = status;
 
         // Emit event
-        emit GmpExecuted(callback.eip712hash, callback.source, callback.dest, status, result);
+        emit GmpExecuted(msgId, callback.source, callback.dest, status, result);
 
         return (status, result);
     }
@@ -464,7 +466,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         GmpCallback memory callback = message.intoCallback();
 
         // Verify the TSS Schnorr Signature
-        _verifySignature(signature, callback.eip712hash);
+        _verifySignature(signature, callback.opHash);
 
         // Execute GMP message
         (status, result) = _execute(callback);
@@ -521,7 +523,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
             // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
             _emitGmpCreated(
-                message.eip712hash(),
+                message.messageId(),
                 source,
                 destinationAddress,
                 routeId,

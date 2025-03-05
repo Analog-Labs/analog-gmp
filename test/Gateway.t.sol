@@ -22,6 +22,7 @@ import {
     Signature,
     TssKey,
     Network,
+    GmpCallback,
     GmpStatus,
     PrimitiveUtils,
     GmpSender,
@@ -30,21 +31,23 @@ import {
 
 contract SigUtilsTest is GatewayEIP712, Test {
     using PrimitiveUtils for GmpMessage;
+    using PrimitiveUtils for GmpCallback;
 
     constructor() GatewayEIP712(69, address(0)) {}
 
     function testPayload() public pure {
         GmpMessage memory gmp = GmpMessage({
-            source: GmpSender.wrap(0x0),
+            source: GmpSender.wrap(bytes32(uint256(1))),
             srcNetwork: 42,
-            dest: address(0x0),
+            dest: address(0x1),
             destNetwork: 69,
             gasLimit: 0,
-            nonce: 0,
-            data: ""
+            nonce: 2,
+            data: "42"
         });
-        bytes32 typedHash = gmp.eip712hash();
-        bytes32 expected = keccak256(
+        GmpCallback memory callback = gmp.memToCallback();
+
+        bytes32 msgId = keccak256(
             abi.encode(
                 GMP_VERSION,
                 gmp.source,
@@ -52,11 +55,17 @@ contract SigUtilsTest is GatewayEIP712, Test {
                 gmp.dest,
                 gmp.destNetwork,
                 gmp.gasLimit,
-                gmp.nonce,
-                keccak256(gmp.data)
+                gmp.nonce
             )
         );
-        assertEq(typedHash, expected);
+
+        assertEq(gmp.messageId(), msgId);
+        assertEq(callback.messageId(), msgId);
+
+        bytes32 dataHash = keccak256(gmp.data);
+        bytes32 opHash = keccak256(abi.encode(msgId, dataHash));
+        assertEq(opHash, gmp.opHash());
+        assertEq(opHash, callback.opHash);
     }
 }
 
@@ -74,7 +83,7 @@ library GatewayUtils {
         internal
         returns (bool success, GmpStatus status, bytes32 result)
     {
-        bytes memory encodedCall = abi.encodeCall(IExecutor.execute, (signature, message));
+        bytes memory encodedCall = abi.encodeCall(Gateway.execute, (signature, message));
         bytes memory output;
         (ctx.executionCost, ctx.baseCost, success, output) =
             TestUtils.tryExecuteCall(ctx.from, ctx.to, ctx.gasLimit, ctx.value, encodedCall);
@@ -96,7 +105,7 @@ library GatewayUtils {
         internal
         returns (GmpStatus status, bytes32 result)
     {
-        bytes memory encodedCall = abi.encodeCall(IExecutor.execute, (signature, message));
+        bytes memory encodedCall = abi.encodeCall(Gateway.execute, (signature, message));
         (uint256 executionCost, uint256 baseCost, bytes memory output) =
             TestUtils.executeCall(ctx.from, ctx.to, ctx.gasLimit, ctx.value, encodedCall);
 
@@ -131,7 +140,7 @@ library GatewayUtils {
         returns (uint256 baseCost, uint256 executionCost)
     {
         executionCost = GasUtils.computeExecutionRefund(uint16(message.data.length), 0);
-        bytes memory encodedCall = abi.encodeCall(IExecutor.execute, (signature, message));
+        bytes memory encodedCall = abi.encodeCall(Gateway.execute, (signature, message));
         baseCost = TestUtils.calculateBaseCost(encodedCall);
     }
 }
@@ -177,7 +186,7 @@ contract GatewayTest is BaseTest {
     }
 
     function sign(GmpMessage memory gmp) internal pure returns (Signature memory) {
-        bytes32 hash = gmp.eip712hash();
+        bytes32 hash = gmp.opHash();
         SigningKey memory signer = TestUtils.createSigner(SECRET);
         (uint256 e, uint256 s) = signer.signPrehashed(hash, SIGNING_NONCE);
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
@@ -531,7 +540,7 @@ contract GatewayTest is BaseTest {
 
         uint256 snapshot = vm.snapshotState();
         // Must work if the funds and gas limit are sufficient
-        bytes32 id = gmp.eip712hash();
+        bytes32 id = gmp.messageId();
         vm.expectEmit(true, true, true, true);
         emit IGateway.GmpCreated(
             id,
@@ -604,7 +613,7 @@ contract GatewayTest is BaseTest {
 
             // Verify the GMP message status
             assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "Unexpected GMP status");
-            Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.eip712hash());
+            Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.messageId());
             assertEq(
                 uint256(info.status), uint256(GmpStatus.SUCCESS), "GMP status stored doesn't match the returned status"
             );
@@ -721,7 +730,7 @@ contract GatewayTest is BaseTest {
             nonce: 0,
             data: abi.encodePacked(uint256(100_000))
         });
-        bytes32 id = gmp.eip712hash();
+        bytes32 id = gmp.messageId();
 
         // Check the previous message hash
         assertEq(gateway.nonceOf(gmp.source.toAddress()), 0, "wrong previous message hash");
@@ -768,7 +777,7 @@ contract GatewayTest is BaseTest {
 
         // Now the second GMP message nonce must be equals to previous message nonce + 1.
         gmp.nonce = gateway.nonceOf(gmp.source.toAddress());
-        id = gmp.eip712hash();
+        id = gmp.messageId();
 
         // Expect event
         vm.expectEmit(true, true, true, true);

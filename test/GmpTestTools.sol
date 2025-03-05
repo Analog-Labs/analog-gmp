@@ -306,7 +306,7 @@ library GmpTestTools {
             GmpMessage memory message = gmpMessages[i];
 
             // Compute the message ID
-            bytes32 messageID = PrimitiveUtils.eip712hash(message);
+            bytes32 messageID = PrimitiveUtils.messageId(message);
 
             // Skip if the message is not intended for this network
             if (message.destNetwork != network) {

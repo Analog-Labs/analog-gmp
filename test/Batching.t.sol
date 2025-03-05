@@ -38,6 +38,7 @@ import {
 contract Batching is BaseTest {
     using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
+    using PrimitiveUtils for GmpCallback;
     using PrimitiveUtils for GmpSender;
     using PrimitiveUtils for address;
     using BranchlessMath for uint256;
@@ -218,13 +219,13 @@ contract Batching is BaseTest {
 
     function sign(SigningKey memory signer, GmpMessage memory gmp) private pure returns (Signature memory) {
         GmpCallback memory callback = gmp.memToCallback();
-        (uint256 e, uint256 s) = signer.signPrehashed(callback.eip712hash, SIGNING_NONCE);
+        (uint256 e, uint256 s) = signer.signPrehashed(callback.opHash, SIGNING_NONCE);
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
     }
 
     function computeGmpMessageID(GmpMessage calldata message) external pure returns (bytes32) {
         console.logBytes(msg.data);
-        return message.intoCallback().eip712hash;
+        return message.intoCallback().messageId();
     }
 
     function sign(SigningKey memory signer, InboundMessage memory message)
@@ -249,7 +250,7 @@ contract Batching is BaseTest {
                 assembly {
                     gmp := add(params.offset, 0x20)
                 }
-                operationHash = gmp.intoCallback().eip712hash;
+                operationHash = gmp.intoCallback().opHash;
             } else {
                 TssKey calldata tssKey;
                 assembly {
