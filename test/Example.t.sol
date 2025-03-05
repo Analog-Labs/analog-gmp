@@ -123,7 +123,7 @@ contract ExampleTest is Test {
         }
 
         // Expect `GmpCreated` to be emitted
-        bytes32 messageID = gmp.eip712hash();
+        bytes32 messageID = gmp.messageId();
         vm.expectEmit(true, true, true, true, address(srcGateway));
         emit IGateway.GmpCreated(
             messageID,
@@ -147,7 +147,7 @@ contract ExampleTest is Test {
         }
 
         vm.startPrank(_sender, _sender);
-        (uint256 c, uint256 z) = signer.signPrehashed(messageID, Random.nextUint());
+        (uint256 c, uint256 z) = signer.signPrehashed(gmp.opHash(), Random.nextUint());
         Signature memory sig = Signature({xCoord: signer.pubkey.px, e: c, s: z});
         assertTrue(dstGateway.gmpInfo(messageID).status == GmpStatus.NOT_FOUND, "GMP message already executed");
 
