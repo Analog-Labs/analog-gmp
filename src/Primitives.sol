@@ -128,8 +128,8 @@ struct Route {
     uint64 gasLimit;
     uint128 baseFee;
     bytes32 gateway;
-    uint128 relativeGasPriceNumerator;
-    uint128 relativeGasPriceDenominator;
+    uint256 relativeGasPriceNumerator;
+    uint256 relativeGasPriceDenominator;
 }
 
 /**
