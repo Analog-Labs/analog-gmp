@@ -374,7 +374,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Verify if this GMP message was already executed
         bytes32 msgId = callback.messageId();
         GmpInfo storage gmp = _messages[msgId];
-        require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
+        if (gmp.status != GmpStatus.NOT_FOUND) {
+            return (gmp.status, bytes32(0));
+        }
 
         // Update status to `pending` to prevent reentrancy attacks.
         gmp.status = GmpStatus.PENDING;

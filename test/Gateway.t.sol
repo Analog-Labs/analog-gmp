@@ -48,15 +48,7 @@ contract SigUtilsTest is GatewayEIP712, Test {
         GmpCallback memory callback = gmp.memToCallback();
 
         bytes32 msgId = keccak256(
-            abi.encode(
-                GMP_VERSION,
-                gmp.source,
-                gmp.srcNetwork,
-                gmp.dest,
-                gmp.destNetwork,
-                gmp.gasLimit,
-                gmp.nonce
-            )
+            abi.encode(GMP_VERSION, gmp.source, gmp.srcNetwork, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.nonce)
         );
 
         assertEq(gmp.messageId(), msgId);
@@ -714,7 +706,6 @@ contract GatewayTest is BaseTest {
         assertEq(gmp.gasLimit, uint256(result), "unexpected GMP result");
 
         // Execute GMP message second time
-        vm.expectRevert("message already executed");
         ctx.execute(sig, gmp);
     }
 
@@ -793,5 +784,46 @@ contract GatewayTest is BaseTest {
         );
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
         assertEq(ctx.executionCost, expectedCost - 6800, "unexpected execution gas cost in second call");
+    }
+
+    function test_anyWalletCanExecuteAValidMessage() external {
+        vm.txGasPrice(1);
+        GmpSender sender = TestUtils.createTestAccount(1000 ether).toSender(false);
+        GmpMessage memory gmp = GmpMessage({
+            source: sender,
+            srcNetwork: SRC_NETWORK_ID,
+            dest: address(receiver),
+            destNetwork: DEST_NETWORK_ID,
+            gasLimit: 1000,
+            nonce: 1,
+            data: abi.encode(uint256(1000))
+        });
+        Signature memory sig = sign(gmp);
+
+        // Execute GMP message first time
+        CallOptions memory ctx = CallOptions({
+            from: sender.toAddress(),
+            to: address(gateway),
+            value: 0,
+            gasLimit: 1_000_000,
+            executionCost: 0,
+            baseCost: 0
+        });
+        (GmpStatus status, bytes32 result) = ctx.execute(sig, gmp);
+        assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "unexpected GMP status");
+        assertEq(gmp.gasLimit, uint256(result), "unexpected GMP result");
+
+        // Create a different wallet to try to execute the same message
+        address differentWallet = TestUtils.createTestAccount(1000 ether);
+        CallOptions memory ctx2 = CallOptions({
+            from: differentWallet,
+            to: address(gateway),
+            value: 0,
+            gasLimit: 1_000_000,
+            executionCost: 0,
+            baseCost: 0
+        });
+
+        ctx2.execute(sig, gmp);
     }
 }
