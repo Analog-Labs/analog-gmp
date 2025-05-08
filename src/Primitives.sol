@@ -5,6 +5,7 @@ pragma solidity >=0.8.0;
 
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {UFloatMath, UFloat9x56} from "./utils/Float9x56.sol";
+import {Hashing} from "./utils/Hashing.sol";
 import {NetworkID} from "./NetworkID.sol";
 
 /**
@@ -251,6 +252,38 @@ library PrimitiveUtils {
             mstore(offset1, backup1)
             mstore(message, backup2)
         }
+    }
+
+    function messageId(InboundMessage memory message) internal pure returns (bytes32 id) {
+        GatewayOp[] memory operations = message.ops;
+
+        bytes32 operationsRootHash = bytes32(0);
+        bytes32 operationHash = bytes32(0);
+
+        for (uint256 i = 0; i < operations.length; i++) {
+            GatewayOp memory operation = operations[i];
+
+            if (operation.command == Command.GMP) {
+                GmpMessage memory gmp = abi.decode(operation.params, (GmpMessage));
+                GmpCallback memory callback = memToCallback(gmp);
+                operationHash = callback.opHash;
+                operationsRootHash =
+                    Hashing.hash(uint256(operationsRootHash), uint256(operation.command), uint256(operationHash));
+                continue;
+            }
+
+            if (operation.command == Command.RegisterShard || operation.command == Command.UnregisterShard) {
+                TssKey memory shard = abi.decode(operation.params, (TssKey));
+                operationHash = Hashing.hash(shard.yParity, shard.xCoord);
+                operationsRootHash =
+                    Hashing.hash(uint256(operationsRootHash), uint256(operation.command), uint256(operationHash));
+                continue;
+            }
+
+            revert("Invalid command");
+        }
+
+        return Hashing.hash(message.version, message.batchID, uint256(operationsRootHash));
     }
 
     type MessagePtr is uint256;
