@@ -106,7 +106,7 @@ library GasUtils {
 
             // Base cost: OPCODES + COLD SLOAD + COLD DELEGATECALL + RETURNDATACOPY
             // uint256 gasCost = 57 + 2100 + 2600;
-            uint256 gasCost = 31 + 2100 + 2600 + 32;
+            uint256 gasCost = 31 + 2100 + 2600 + 32 + 66;
 
             // CALLDATACOPY
             gasCost = gasCost.saturatingAdd(calldataLen * 3);

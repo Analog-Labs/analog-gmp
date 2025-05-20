@@ -189,7 +189,7 @@ contract Batching is BaseTest {
         emit log_named_uint("    gas needed", gasNeeded);
 
         require(GATEWAY_PROXY.code.length > 0, "gateway proxy not found");
-        Gateway(GATEWAY_PROXY).execute{gas: gasNeeded}(sig, gmp);
+        Gateway(payable(GATEWAY_PROXY)).execute{gas: gasNeeded}(sig, gmp);
 
         emit log_named_uint("    total cost", GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit));
         emit log_named_uint("execution cost", executionCost);
