@@ -174,8 +174,10 @@ contract GatewayTest is BaseTest {
         VmSafe.Wallet memory admin = vm.createWallet(SECRET);
         assertEq(ADMIN, admin.addr, "admin address mismatch");
         gateway = Gateway(
-            payable(address(TestUtils.setupGateway(admin, bytes32(uint256(1234)), SRC_NETWORK_ID, DEST_NETWORK_ID)))
+            payable(address(TestUtils.setupGateway(admin, DEST_NETWORK_ID)))
         );
+        TestUtils.setMockShard(admin, address(gateway), admin);
+        TestUtils.setMockRoute(admin, address(gateway), DEST_NETWORK_ID);
         receiver = IGmpReceiver(new GasSpender());
     }
 
@@ -491,7 +493,7 @@ contract GatewayTest is BaseTest {
 
         assertEq(
             ctx.executionCost,
-            GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 4500 + 17100,
+            GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 4500 + GasUtils.FIRST_MESSAGE_EXTRA_COST,
             "unexpected submit message gas cost"
         );
     }
@@ -553,13 +555,13 @@ contract GatewayTest is BaseTest {
             gmp.data
         );
         console.log("expect: ", ctx.value);
-        ctx.gasLimit += 17100;
+        ctx.gasLimit += GasUtils.FIRST_MESSAGE_EXTRA_COST;
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
 
         // Verify the execution cost
         assertEq(
             ctx.executionCost,
-            GasUtils.submitMessageGasCost(uint16(gmp.data.length)) + 17100,
+            GasUtils.submitMessageGasCost(uint16(gmp.data.length)) + GasUtils.FIRST_MESSAGE_EXTRA_COST,
             "unexpected submit message gas cost"
         );
 
@@ -773,7 +775,7 @@ contract GatewayTest is BaseTest {
 
         // Verify the gas cost
         uint256 expectedCost = GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 6500;
-        assertEq(ctx.executionCost, expectedCost + 17100, "unexpected execution gas cost in first call");
+        assertEq(ctx.executionCost, expectedCost + GasUtils.FIRST_MESSAGE_EXTRA_COST, "unexpected execution gas cost in first call");
 
         // Now the second GMP message nonce must be equals to previous message nonce + 1.
         gmp.nonce = gateway.nonceOf(gmp.source.toAddress());
