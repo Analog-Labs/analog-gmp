@@ -38,7 +38,7 @@ library GasUtils {
      * Obs: To guarantee the overhead is constant regardless the input size, always use `calldata` instead of `memory`
      * for external functions.
      */
-    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 496 - 22;
+    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 496 - 44;
 
     /**
      * @dev Base cost of the `IExecutor.execute` method.
@@ -48,7 +48,7 @@ library GasUtils {
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 24064 - 66 + 133;
+    uint256 internal constant SUBMIT_BASE_COST = 24064 - 66 + 133 + 44;
 
     /**
      * @dev Extra gas cost that any account `Contract or EOA` must pay when calling `IGateway.submitMessage` method.

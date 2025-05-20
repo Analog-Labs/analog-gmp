@@ -94,21 +94,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
 
-    // EIP-712 typed hash
-    function initialize(address proxyAdmin, TssKey[] calldata keys, Network[] calldata networks) external {
-        require(PROXY_ADDRESS == address(this) || msg.sender == FACTORY, "only proxy can be initialize");
-        ERC1967.setAdmin(proxyAdmin);
-
-        // Register networks
-        RouteStore.getMainStorage().initialize(networks, NetworkID.wrap(NETWORK_ID));
-
-        // Register keys
-        ShardStore.getMainStorage().registerTssKeys(keys);
-
-        // emit event
-        emit ShardsRegistered(keys);
-    }
-
     function nonceOf(address account) external view returns (uint64) {
         return uint64(_nonces[account]);
     }
