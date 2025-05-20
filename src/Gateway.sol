@@ -51,6 +51,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpCallback;
+    using PrimitiveUtils for InboundMessage;
     using PrimitiveUtils for address;
     using BranchlessMath for uint256;
     using UFloatMath for UFloat9x56;
@@ -323,14 +324,37 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // the `initialGas` represents the actual gas that was available to this contract.
         initialGas = initialGas.saturatingAdd(GasUtils.BATCH_SELECTOR_OVERHEAD);
 
-        // Execute the commands and compute the operations root hash
-        (, bytes32 rootHash) = _executeCommands(message.ops);
-        emit BatchExecuted(message.batchID);
+        bytes32 messageId = message.messageId();
+
+        // If the message was already executed, skip the execution
+        if (_executedMessages[messageId] == bytes32(0)) {
+            // Track the free memory pointer, to reset the memory after each command executed.
+            uint256 freeMemPointer = GasUtils.readAllocatedMemory();
+
+            // Create the Command LookUp Table
+            CommandsLookUpTable lut = _buildCommandsLUT();
+
+            for (uint256 i = 0; i < message.ops.length; i++) {
+                GatewayOp calldata operation = message.ops[i];
+
+                // Lookup the command function pointer
+                function(bytes calldata) internal returns (bytes32) commandFN = _cmdTableLookup(lut, operation.command);
+
+                // Execute the command
+                commandFN(operation.params);
+
+                // Restore the memory, to prevent the memory expansion costs to increase exponentially.
+                GasUtils.unsafeReplaceAllocatedMemory(freeMemPointer);
+            }
+
+            _executedMessages[messageId] = bytes32(signature.xCoord);
+            emit BatchExecuted(message.batchID);
+        }
 
         // Compute the Batch signing hash
-        rootHash = Hashing.hash(message.version, message.batchID, uint256(rootHash));
-        bytes32 signingHash =
-            keccak256(abi.encodePacked("Analog GMP v2", NETWORK_ID, bytes32(uint256(uint160(address(this)))), rootHash));
+        bytes32 signingHash = keccak256(
+            abi.encodePacked("Analog GMP v2", NETWORK_ID, bytes32(uint256(uint160(address(this)))), messageId)
+        );
 
         // Verify the signature
         _verifySignature(signature, signingHash);
@@ -359,7 +383,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Verify if this GMP message was already executed
         bytes32 msgId = callback.messageId();
         GmpInfo storage gmp = _messages[msgId];
-        require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
+        if (gmp.status != GmpStatus.NOT_FOUND) {
+            return (gmp.status, bytes32(0));
+        }
 
         // Update status to `pending` to prevent reentrancy attacks.
         gmp.status = GmpStatus.PENDING;
