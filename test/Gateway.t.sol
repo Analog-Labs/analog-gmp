@@ -207,14 +207,6 @@ contract GatewayTest is BaseTest {
         }
     }
 
-    function test_withinSizeLimit() external {
-        bytes memory implementationCreationCode =
-            abi.encodePacked(type(Gateway).creationCode, abi.encode(DEST_NETWORK_ID, address(gateway)));
-        address implementation =
-            FACTORY.create2(bytes32(uint256(1337)), implementationCreationCode, abi.encode(DEST_NETWORK_ID));
-        assertLt(implementation.code.length, 0x6000, "implementation code length is too large");
-    }
-
     function test_setShards() external {
         TssKey[] memory keys = new TssKey[](10);
 

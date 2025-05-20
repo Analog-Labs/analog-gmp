@@ -4,7 +4,6 @@
 pragma solidity >=0.8.0;
 
 import {ERC1967} from "./utils/ERC1967.sol";
-import {Context, CreateKind, IUniversalFactory} from "../lib/universal-factory/src/IUniversalFactory.sol";
 
 contract GatewayProxy {
     /**

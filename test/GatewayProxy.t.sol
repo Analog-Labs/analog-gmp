@@ -3,8 +3,6 @@
 
 pragma solidity >=0.8.0;
 
-import {IUniversalFactory} from "../lib/universal-factory/src/IUniversalFactory.sol";
-import {FactoryUtils} from "../lib/universal-factory/src/FactoryUtils.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils, SigningKey, SigningUtils} from "./TestUtils.sol";
@@ -35,7 +33,6 @@ contract GatewayProxyTest is Test {
     using PrimitiveUtils for address;
     using BranchlessMath for uint256;
     using SigningUtils for SigningKey;
-    using FactoryUtils for IUniversalFactory;
 
     IGmpReceiver internal receiver;
 
