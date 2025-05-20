@@ -5,7 +5,7 @@ pragma solidity >=0.8.0;
 import {Test, console, Vm} from "forge-std/Test.sol";
 import {IGateway} from "../../src/interfaces/IGateway.sol";
 import {IGmpReceiver} from "../../src/interfaces/IGmpReceiver.sol";
-import {GmpProxy} from "./GmpProxy.sol";
+import {GmpProxy} from "../../src/GmpProxy.sol";
 
 contract MockGateway is IGateway {
     uint16 _networkId;

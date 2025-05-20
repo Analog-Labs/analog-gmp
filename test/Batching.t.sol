@@ -5,8 +5,6 @@ pragma solidity >=0.8.0;
 
 import {Test, console, Vm} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {FactoryUtils} from "../lib/universal-factory/src/FactoryUtils.sol";
-import {IUniversalFactory} from "../lib/universal-factory/src/IUniversalFactory.sol";
 import {TestUtils, SigningKey, SigningUtils} from "./TestUtils.sol";
 import {GasSpender} from "./utils/GasSpender.sol";
 import {BaseTest} from "./utils/BaseTest.sol";
@@ -43,120 +41,49 @@ contract Batching is BaseTest {
     using PrimitiveUtils for address;
     using BranchlessMath for uint256;
     using SigningUtils for SigningKey;
-    using FactoryUtils for IUniversalFactory;
+
+    uint256 private constant ADMIN_SECRET = 0x955acb49dbb669143455ffbf98e30ae5b2d95343c8b46ce10bf1975d722e8001;
+    VmSafe.Wallet internal ADMIN;
+    
+    uint256 private constant SHARD_SECRET = 0x42;
+    VmSafe.Wallet internal SHARD;
+
+    address internal GATEWAY_PROXY;
 
     // Chronicle TSS Secret
-    uint256 private constant SECRET = 0x42;
     uint256 private constant SIGNING_NONCE = 0x69;
 
     // Netowrk ids
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
 
-    address private constant RECEIVER_CONTRACT = 0x9888d4d78827bE0C2aDeb578019D35b5a36E80a4;
-    address private constant RECEIVER_CONTRACT_02 = address(
-        uint160(
-            uint256(
-                keccak256(
-                    abi.encodePacked(
-                        uint8(0xff), address(FACTORY), uint256(1), keccak256(type(GasSpender).creationCode)
-                    )
-                )
-            )
-        )
-    );
-
-    // Domain Separators
-    bytes32 private constant DOMAIN_TYPED_HASH =
-        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
-
-    bytes32 private constant SRC_DOMAIN_SEPARATOR = keccak256(
-        abi.encode(
-            DOMAIN_TYPED_HASH,
-            keccak256("Analog Gateway Contract"),
-            keccak256("0.1.0"),
-            uint256(SRC_NETWORK_ID),
-            GATEWAY_PROXY
-        )
-    );
-    bytes32 private DST_DOMAIN_SEPARATOR = keccak256(
-        abi.encode(
-            DOMAIN_TYPED_HASH,
-            keccak256("Analog Gateway Contract"),
-            keccak256("0.1.0"),
-            uint256(DEST_NETWORK_ID),
-            GATEWAY_PROXY
-        )
-    );
-
-    address private constant DEPLOYER = 0xbe862AD9AbFe6f22BCb087716c7D89a26051f74C;
-    uint256 private constant ADMIN_SECRET = 0x955acb49dbb669143455ffbf98e30ae5b2d95343c8b46ce10bf1975d722e8001;
-    address private constant ADMIN = 0xBf3C099fAAC29F7AF0d883374A790f9b3B06c93A;
-
-    // Gateway Proxy
-    bytes private constant PROXY_BYTECODE = abi.encodePacked(type(GatewayProxy).creationCode, abi.encode(ADMIN));
-    bytes32 private constant PROXY_BYTECODE_HASH = keccak256(PROXY_BYTECODE);
-    address payable private constant GATEWAY_PROXY = payable(
-        address(
-            uint160(
-                uint256(
-                    keccak256(
-                        abi.encodePacked(
-                            uint8(0xff),
-                            address(FACTORY),
-                            uint256(0),
-                            keccak256(abi.encodePacked(type(GatewayProxy).creationCode, abi.encode(ADMIN)))
-                        )
-                    )
-                )
-            )
-        )
-    );
-
-    // Gateway Implementation
-    bytes private constant IMPLEMENTATION_BYTECODE =
-        abi.encodePacked(type(Gateway).creationCode, abi.encode(DEST_NETWORK_ID, GATEWAY_PROXY));
-    bytes32 private constant IMPLEMENTATION_BYTECODE_HASH = keccak256(IMPLEMENTATION_BYTECODE);
-    address private constant GATEWAY_IMPLEMENTATION = address(
-        uint160(
-            uint256(
-                keccak256(abi.encodePacked(uint8(0xff), address(FACTORY), uint256(0), IMPLEMENTATION_BYTECODE_HASH))
-            )
-        )
-    );
-
-    bytes32 private constant SIGNING_HASH = keccak256(abi.encode(GATEWAY_PROXY, GATEWAY_IMPLEMENTATION));
+    IGmpReceiver internal receiver1;
+    IGmpReceiver internal receiver2;
 
     constructor() {
         // Create the Admin account
-        SigningKey memory signer = TestUtils.createSigner(ADMIN_SECRET);
-        console.logBytes(abi.encodePacked(signer.pubkey.px, signer.pubkey.py));
-        assertEq(ADMIN, signer.addr(), "admin address missmatch");
+        ADMIN = vm.createWallet(ADMIN_SECRET);
+        vm.deal(ADMIN.addr, 100 ether);
 
-        // Deploy `GasSpender` contract
-        vm.prank(ADMIN, ADMIN);
-        assertEq(
-            RECEIVER_CONTRACT,
-            FACTORY.create3(bytes32(0), type(GasSpender).creationCode),
-            "GasSpender address missmatch"
-        );
+        // Create the Shard account
+        SHARD = vm.createWallet(SHARD_SECRET);
+        vm.deal(SHARD.addr, 10 ether);
 
-        assertEq(
-            RECEIVER_CONTRACT_02,
-            FACTORY.create2(bytes32(uint256(1)), type(GasSpender).creationCode),
-            "GasSpender address missmatch"
-        );
+        IGateway gw = TestUtils.setupGateway(ADMIN, DEST_NETWORK_ID);
+        GATEWAY_PROXY = address(gw);
+        TestUtils.setMockShard(ADMIN, address(gw), SHARD);
+        TestUtils.setMockRoute(ADMIN, address(gw), SRC_NETWORK_ID);
+        TestUtils.setMockRoute(ADMIN, address(gw), DEST_NETWORK_ID);
+        vm.deal(address(gw), 10 ether);
 
-        // Deposit funds to the ADMIN account
-        vm.deal(ADMIN, 100 ether);
+        receiver1 = IGmpReceiver(new GasSpender());
+        receiver2 = IGmpReceiver(new GasSpender());
     }
 
     function setUp() external {
-        console.log("-- STEP 01");
-        {
-            // Encode the `IGmpReceiver.onGmpReceived` call
-            uint256 gasToWaste = 1000;
-            bytes memory encodedCall = abi.encodeCall(
+        // Encode the `IGmpReceiver.onGmpReceived` call
+        uint256 gasToWaste = 1000;
+        bytes memory encodedCall = abi.encodeCall(
                 IGmpReceiver.onGmpReceived,
                 (
                     0x0000000000000000000000000000000000000000000000000000000000000000,
@@ -165,56 +92,9 @@ contract Batching is BaseTest {
                     0,
                     abi.encode(gasToWaste)
                 )
-            );
-            uint256 gasLimit = TestUtils.calculateBaseCost(encodedCall) + gasToWaste;
-            TestUtils.executeCall(ADMIN, address(RECEIVER_CONTRACT), gasLimit, 0, encodedCall);
-        }
-        console.log("-- STEP 02");
-
-        SigningKey memory signer = TestUtils.createSigner(SECRET);
-        vm.deal(DEPLOYER, 100 ether);
-        vm.startPrank(DEPLOYER, DEPLOYER);
-        assertEq(
-            GATEWAY_PROXY,
-            FACTORY.computeCreate2Address(bytes32(0), PROXY_BYTECODE_HASH),
-            "GatewayProxy address missmatch"
         );
-        // bytes memory bytecode = abi.encodePacked(type(Gateway).creationCode, abi.encode(DEST_NETWORK_ID, GATEWAY_PROXY));
-        console.log("implementation:", GATEWAY_IMPLEMENTATION);
-        console.log("         proxy:", GATEWAY_PROXY);
-        assertEq(
-            GATEWAY_IMPLEMENTATION,
-            FACTORY.create2(bytes32(0), IMPLEMENTATION_BYTECODE),
-            "Gateway implementation address missmatch"
-        );
-
-        // 2 - Deploy the Proxy Contract
-        console.log("-- Deploying GatewayProxy");
-        TssKey[] memory keys = new TssKey[](1);
-        // keys[0] = TssKey({yParity: signer.yParity() == 28 ? 1 : 0, xCoord: signer.xCoord()}); // Shard key
-        keys[0] = TssKey({yParity: signer.yParity() == 28 ? 3 : 2, xCoord: signer.xCoord()}); // Shard key
-        Network[] memory networks = new Network[](2);
-        networks[0].id = SRC_NETWORK_ID; // sepolia network id
-        networks[0].gateway = GATEWAY_PROXY; // sepolia proxy address
-        networks[1].id = DEST_NETWORK_ID; // shibuya network id
-        networks[1].gateway = GATEWAY_PROXY; // shibuya proxy address
-        bytes memory initializer = abi.encodeCall(Gateway.initialize, (ADMIN, keys, networks));
-        // console.logBytes(initializer);
-
-        // vm.startStateDiffRecording();
-        {
-            VmSafe.Wallet memory adminSigner = vm.createWallet(ADMIN_SECRET);
-            (uint8 v, bytes32 r, bytes32 s) = vm.sign(adminSigner, SIGNING_HASH);
-            bytes memory authorization = abi.encode(v, r, s, GATEWAY_IMPLEMENTATION);
-            assertEq(
-                GATEWAY_PROXY,
-                FACTORY.create2(bytes32(0), PROXY_BYTECODE, authorization, initializer),
-                "GatewayProxy address missmatch"
-            );
-        }
-
-        // Deposit funds to the gateway contract
-        Gateway(GATEWAY_PROXY).deposit{value: 10 ether}();
+        uint256 gasLimit = TestUtils.calculateBaseCost(encodedCall) + gasToWaste;
+        TestUtils.executeCall(ADMIN.addr, address(receiver1), gasLimit, 0, encodedCall);
     }
 
     function sign(SigningKey memory signer, GmpMessage memory gmp) private pure returns (Signature memory) {
@@ -236,7 +116,7 @@ contract Batching is BaseTest {
         signAt(signer, message, sig);
     }
 
-    function computeInboundMessageSigningHash(InboundMessage calldata message) external pure returns (bytes32) {
+    function computeInboundMessageSigningHash(InboundMessage calldata message) external view returns (bytes32) {
         bytes32 rootHash = bytes32(0);
 
         GatewayOp[] calldata ops = message.ops;
@@ -278,14 +158,14 @@ contract Batching is BaseTest {
 
     function test_gmp_debug() external {
         vm.txGasPrice(1);
-        SigningKey memory signer = TestUtils.createSigner(SECRET);
+        SigningKey memory signer = TestUtils.createSigner(SHARD_SECRET);
 
         // Build and sign GMP message
         // bytes memory data = new bytes(3070 + 32);
         GmpMessage memory gmp = GmpMessage({
-            source: ADMIN.toSender(false),
+            source: ADMIN.addr.toSender(false),
             srcNetwork: SRC_NETWORK_ID,
-            dest: RECEIVER_CONTRACT,
+            dest: address(receiver1),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: 7845,
             nonce: 0,
@@ -300,14 +180,14 @@ contract Batching is BaseTest {
 
         Signature memory sig = sign(signer, gmp);
 
-        vm.deal(DEPLOYER, 100 ether);
-        vm.startPrank(DEPLOYER, DEPLOYER);
+        vm.deal(ADMIN.addr, 100 ether);
+        vm.startPrank(ADMIN.addr, ADMIN.addr);
         uint256 gasNeeded = GasUtils.executionGasNeeded(uint16(gmp.data.length), gmp.gasLimit);
         uint256 executionCost = GasUtils._executionGasCost(uint16(gmp.data.length), gmp.gasLimit);
         emit log_named_uint("    gas needed", gasNeeded);
 
         require(GATEWAY_PROXY.code.length > 0, "gateway proxy not found");
-        Gateway(GATEWAY_PROXY).execute{gas: gasNeeded}(sig, gmp);
+        Gateway(payable(GATEWAY_PROXY)).execute{gas: gasNeeded}(sig, gmp);
 
         emit log_named_uint("    total cost", GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit));
         emit log_named_uint("execution cost", executionCost);
@@ -393,7 +273,7 @@ contract Batching is BaseTest {
     }
 
     function test_buildBatch2() external view {
-        SigningKey memory signer = TestUtils.createSigner(SECRET);
+        SigningKey memory signer = TestUtils.createSigner(SHARD_SECRET);
 
         // Build and sign GMP
         uint64 gasLimit = 7845;
@@ -402,9 +282,9 @@ contract Batching is BaseTest {
             command: Command.GMP,
             params: abi.encode(
                 GmpMessage({
-                    source: DEPLOYER.toSender(false),
+                    source: ADMIN.addr.toSender(false),
                     srcNetwork: SRC_NETWORK_ID,
-                    dest: RECEIVER_CONTRACT,
+                    dest: address(receiver1),
                     destNetwork: DEST_NETWORK_ID,
                     gasLimit: gasLimit,
                     nonce: 0,
@@ -427,7 +307,7 @@ contract Batching is BaseTest {
 
     function test_batch_debug() external {
         vm.txGasPrice(1);
-        SigningKey memory signer = TestUtils.createSigner(SECRET);
+        SigningKey memory signer = TestUtils.createSigner(SHARD_SECRET);
         vm.deal(signer.addr(), 100 ether);
         uint64 gasLimit = 7845;
 
@@ -439,9 +319,9 @@ contract Batching is BaseTest {
             command: Command.GMP,
             params: abi.encode(
                 GmpMessage({
-                    source: DEPLOYER.toSender(false),
+                    source: ADMIN.addr.toSender(false),
                     srcNetwork: SRC_NETWORK_ID,
-                    dest: RECEIVER_CONTRACT,
+                    dest: address(receiver1),
                     destNetwork: DEST_NETWORK_ID,
                     gasLimit: gasLimit,
                     nonce: 0,
@@ -453,9 +333,9 @@ contract Batching is BaseTest {
             command: Command.GMP,
             params: abi.encode(
                 GmpMessage({
-                    source: DEPLOYER.toSender(false),
+                    source: ADMIN.addr.toSender(false),
                     srcNetwork: SRC_NETWORK_ID,
-                    dest: RECEIVER_CONTRACT_02,
+                    dest: address(receiver2),
                     destNetwork: DEST_NETWORK_ID,
                     gasLimit: gasLimit,
                     nonce: 0,

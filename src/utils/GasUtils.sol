@@ -38,23 +38,23 @@ library GasUtils {
      * Obs: To guarantee the overhead is constant regardless the input size, always use `calldata` instead of `memory`
      * for external functions.
      */
-    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 496;
+    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 496 - 44;
 
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46960 + 144;
+    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46960 + 144 + 22;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 24064;
+    uint256 internal constant SUBMIT_BASE_COST = 24064 - 66 + 133 + 44;
 
     /**
      * @dev Extra gas cost that any account `Contract or EOA` must pay when calling `IGateway.submitMessage` method.
      * This cost is necessary for initialize the account's `nonce` storage slot.
      */
-    uint256 internal constant FIRST_MESSAGE_EXTRA_COST = 17100;
+    uint256 internal constant FIRST_MESSAGE_EXTRA_COST = 17100 + 6000;
 
     /**
      * @dev Solidity's reserved location for the free memory pointer.
@@ -106,7 +106,7 @@ library GasUtils {
 
             // Base cost: OPCODES + COLD SLOAD + COLD DELEGATECALL + RETURNDATACOPY
             // uint256 gasCost = 57 + 2100 + 2600;
-            uint256 gasCost = 31 + 2100 + 2600 + 32;
+            uint256 gasCost = 31 + 2100 + 2600 + 32 + 66;
 
             // CALLDATACOPY
             gasCost = gasCost.saturatingAdd(calldataLen * 3);
@@ -140,7 +140,7 @@ library GasUtils {
             gasCost += words << 8;
 
             // Memory expansion cost
-            words += 17 - 1;
+            words += 17 - 1 + 2;
             gasCost += ((words * words) >> 9) + (words * 3);
 
             return gasCost;

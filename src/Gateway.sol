@@ -94,21 +94,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
     constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
 
-    // EIP-712 typed hash
-    function initialize(address proxyAdmin, TssKey[] calldata keys, Network[] calldata networks) external {
-        require(PROXY_ADDRESS == address(this) || msg.sender == FACTORY, "only proxy can be initialize");
-        ERC1967.setAdmin(proxyAdmin);
-
-        // Register networks
-        RouteStore.getMainStorage().initialize(networks, NetworkID.wrap(NETWORK_ID));
-
-        // Register keys
-        ShardStore.getMainStorage().registerTssKeys(keys);
-
-        // emit event
-        emit ShardsRegistered(keys);
-    }
-
     function nonceOf(address account) external view returns (uint64) {
         return uint64(_nonces[account]);
     }
@@ -592,13 +577,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     /**
-     * Deposit funds to the gateway contract
-     * IMPORTANT: this function must be called only by the administrator!!!!
-     */
-    function deposit() external payable {}
-    receive() external payable {}
-
-    /**
      * Withdraw funds from the gateway contract
      * @param amount The amount to withdraw
      * @param recipient The recipient address
@@ -782,35 +760,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
                 sstore(key, value)
             }
             prev = key;
-        }
-    }
-
-    function upgrade(address newImplementation) external payable {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
-
-        // Store the address of the implementation contract
-        ERC1967.setImplementation(newImplementation);
-    }
-
-    function upgradeAndCall(address newImplementation, bytes memory initializer)
-        external
-        payable
-        returns (bytes memory returndata)
-    {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
-
-        // Store the address of the implementation contract
-        ERC1967.setImplementation(newImplementation);
-
-        // Initialize storage by calling the implementation's using `delegatecall`.
-        bool success;
-        (success, returndata) = newImplementation.delegatecall(initializer);
-
-        // Revert if the initialization failed
-        if (!success) {
-            assembly ("memory-safe") {
-                revert(add(returndata, 32), mload(returndata))
-            }
         }
     }
 }

@@ -30,23 +30,27 @@ library RouteStore {
     /**
      * @dev Network info stored in the Gateway Contract
      * @param gasLimit The maximum amount of gas we allow on this particular network.
-     * @param relativeGasPrice Gas price of destination chain, in terms of the source chain token.
+     * @param relativeGasPriceNumerator Gas price of destination chain, in terms of the source chain token.
+     * @param relativeGasPriceDenominator Gas price of destination chain, in terms of the source chain token.
      * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
      */
     struct NetworkInfo {
+        bytes32 gateway;
         uint64 gasLimit;
-        UFloat9x56 relativeGasPrice;
         uint128 baseFee;
+        uint256 relativeGasPriceNumerator;
+        uint256 relativeGasPriceDenominator;
     }
 
     /**
      * @dev Emitted when a route is updated.
      * @param networkId Network identifier.
-     * @param relativeGasPrice Gas price of destination chain, in terms of the source chain token.
+     * @param relativeGasPriceNumerator Gas price of destination chain, in terms of the source chain token.
+     * @param relativeGasPriceDenominator Gas price of destination chain, in terms of the source chain token.
      * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
      * @param gasLimit The maximum amount of gas we allow on this particular network.
      */
-    event RouteUpdated(uint16 indexed networkId, UFloat9x56 relativeGasPrice, uint128 baseFee, uint64 gasLimit);
+    event RouteUpdated(uint16 indexed networkId, uint256 relativeGasPriceNumerator, uint256 relativeGasPriceDenominator, uint128 baseFee, uint64 gasLimit);
 
     /**
      * @dev Shard info stored in the Gateway Contract
@@ -169,13 +173,12 @@ library RouteStore {
 
         // Update relative gas price and base fee if any of them are greater than zero
         if (route.relativeGasPriceDenominator > 0) {
-            UFloat9x56 relativeGasPrice =
-                UFloatMath.fromRational(route.relativeGasPriceNumerator, route.relativeGasPriceDenominator);
-            stored.relativeGasPrice = relativeGasPrice;
+            stored.relativeGasPriceNumerator = route.relativeGasPriceNumerator;
+            stored.relativeGasPriceDenominator = route.relativeGasPriceDenominator;
             stored.baseFee = route.baseFee;
         }
 
-        emit RouteUpdated(route.networkId.asUint(), stored.relativeGasPrice, stored.baseFee, stored.gasLimit);
+        emit RouteUpdated(route.networkId.asUint(), stored.relativeGasPriceNumerator, stored.relativeGasPriceDenominator, stored.baseFee, stored.gasLimit);
     }
 
     /**
@@ -191,7 +194,8 @@ library RouteStore {
             require(created, "network already initialized");
             require(network.id != networkdID.asUint() || network.gateway == address(this), "wrong gateway address");
             info.gasLimit = 15_000_000; // Default to 15M gas
-            info.relativeGasPrice = UFloatMath.ONE;
+            info.relativeGasPriceNumerator = 1;
+            info.relativeGasPriceDenominator = 1;
             info.baseFee = 0;
         }
     }
@@ -208,16 +212,16 @@ library RouteStore {
         bytes32[] memory idx = store.routes.keys;
         Route[] memory routes = new Route[](idx.length);
         for (uint256 i = 0; i < idx.length; i++) {
-            (bool success, NetworkInfo storage route) = tryGet(store, NetworkID.wrap(uint16(uint256(idx[i]))));
+            NetworkID networkId = NetworkID.wrap(uint16(uint256(idx[i])));
+            (bool success, NetworkInfo storage route) = tryGet(store, networkId);
             require(success, "route not found");
-            (uint256 numerator, uint256 denominator) = route.relativeGasPrice.toRational();
             routes[i] = Route({
-                networkId: NetworkID.wrap(uint16(uint256(idx[i]))),
+                networkId: networkId,
                 gasLimit: route.gasLimit,
                 baseFee: route.baseFee,
-                gateway: bytes32(uint256(uint160(address(this)))),
-                relativeGasPriceNumerator: numerator,
-                relativeGasPriceDenominator: denominator
+                gateway: route.gateway,
+                relativeGasPriceNumerator: route.relativeGasPriceNumerator,
+                relativeGasPriceDenominator: route.relativeGasPriceDenominator
             });
         }
         return routes;
@@ -228,7 +232,7 @@ library RouteStore {
      */
     function _checkPreconditions(NetworkInfo memory route, uint256 messageSize, uint256 gasLimit) private pure {
         // Verify if the network exists
-        require(route.baseFee > 0 || UFloat9x56.unwrap(route.relativeGasPrice) > 0, "route is temporarily disabled");
+        require(route.baseFee > 0 || route.relativeGasPriceDenominator > 0, "route is temporarily disabled");
 
         // Verify if the gas limit and message size are within the limits
         require(gasLimit <= route.gasLimit, "gas limit exceeded");
@@ -254,22 +258,7 @@ library RouteStore {
         gasCost = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gasLimit);
 
         // Calculate the gas cost: gasPrice * gasCost + baseFee
-        fee = UFloatMath.saturatingMul(route.relativeGasPrice, gasCost).saturatingAdd(route.baseFee);
-    }
-
-    /**
-     * @dev Utility function for measure the wei cost of a GMP message.
-     */
-    function estimateWeiCost(NetworkInfo memory route, bytes calldata data, uint256 gasLimit)
-        internal
-        pure
-        returns (uint256)
-    {
-        _checkPreconditions(route, data.length, gasLimit);
-        uint256 nonZeros = GasUtils.countNonZerosCalldata(data);
-        uint256 zeros = data.length - nonZeros;
-        return
-            GasUtils.estimateWeiCost(route.relativeGasPrice, route.baseFee, uint16(nonZeros), uint16(zeros), gasLimit);
+        fee = route.relativeGasPriceNumerator.saturatingMul(gasCost).saturatingDiv(route.relativeGasPriceDenominator).saturatingAdd(route.baseFee);
     }
 
     /**
@@ -281,6 +270,9 @@ library RouteStore {
         returns (uint256)
     {
         _checkPreconditions(route, messageSize, gasLimit);
-        return GasUtils.estimateWeiCost(route.relativeGasPrice, route.baseFee, uint16(messageSize), 0, gasLimit);
+
+        UFloat9x56 relativeGasPrice =
+            UFloatMath.fromRational(route.relativeGasPriceNumerator, route.relativeGasPriceDenominator);
+        return GasUtils.estimateWeiCost(relativeGasPrice, route.baseFee, uint16(messageSize), 0, gasLimit);
     }
 }
