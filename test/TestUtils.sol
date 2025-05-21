@@ -32,13 +32,11 @@ library TestUtils {
     address internal constant VM_ADDRESS = address(uint160(uint256(keccak256("hevm cheat code"))));
     Vm internal constant vm = Vm(VM_ADDRESS);
 
-    function setupGateway(
-        VmSafe.Wallet memory admin,
-        uint16 network
-    ) internal returns (Gateway gw) {
+    function setupGateway(VmSafe.Wallet memory admin, uint16 network) internal returns (Gateway gw) {
         vm.startPrank(admin.addr, admin.addr);
         GatewayProxy proxy = new GatewayProxy(admin.addr);
-        Gateway gateway = new Gateway(network, address(proxy));
+        Gateway gateway = new Gateway();
+        gateway.initialize(network);
         proxy.upgrade(address(gateway));
         vm.deal(address(proxy), 10 ether);
         vm.stopPrank();
@@ -57,18 +55,23 @@ library TestUtils {
     function setMockRoute(VmSafe.Wallet memory admin, address gateway, uint16 network) internal {
         Gateway gw = Gateway(payable(gateway));
         vm.startPrank(admin.addr, admin.addr);
-        gw.setRoute(Route({
-            networkId: NetworkID.wrap(network),
-            gasLimit: 1_000_000,
-            baseFee: 0,
-            gateway: bytes32(uint(1)),
-            relativeGasPriceNumerator: 1,
-            relativeGasPriceDenominator: 1
-        }));
+        gw.setRoute(
+            Route({
+                networkId: NetworkID.wrap(network),
+                gasLimit: 1_000_000,
+                baseFee: 0,
+                gateway: bytes32(uint256(1)),
+                relativeGasPriceNumerator: 1,
+                relativeGasPriceDenominator: 1
+            })
+        );
         vm.stopPrank();
     }
 
-    function sign(VmSafe.Wallet memory shard, GmpMessage memory gmp, uint256 nonce) internal returns (Signature memory sig){
+    function sign(VmSafe.Wallet memory shard, GmpMessage memory gmp, uint256 nonce)
+        internal
+        returns (Signature memory sig)
+    {
         bytes32 hash = gmp.opHash();
         Signer signer = new Signer(shard.privateKey);
         (uint256 e, uint256 s) = signer.signPrehashed(uint256(hash), nonce);
