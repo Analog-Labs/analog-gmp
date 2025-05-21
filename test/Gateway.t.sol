@@ -33,8 +33,6 @@ contract SigUtilsTest is GatewayEIP712, Test {
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpCallback;
 
-    constructor() GatewayEIP712(69, address(0)) {}
-
     function testPayload() public pure {
         GmpMessage memory gmp = GmpMessage({
             source: GmpSender.wrap(bytes32(uint256(1))),
@@ -48,15 +46,7 @@ contract SigUtilsTest is GatewayEIP712, Test {
         GmpCallback memory callback = gmp.memToCallback();
 
         bytes32 msgId = keccak256(
-            abi.encode(
-                GMP_VERSION,
-                gmp.source,
-                gmp.srcNetwork,
-                gmp.dest,
-                gmp.destNetwork,
-                gmp.gasLimit,
-                gmp.nonce
-            )
+            abi.encode(GMP_VERSION, gmp.source, gmp.srcNetwork, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.nonce)
         );
 
         assertEq(gmp.messageId(), msgId);
@@ -95,9 +85,7 @@ contract GatewayTest is Test {
     constructor() {
         VmSafe.Wallet memory admin = vm.createWallet(SECRET);
         assertEq(ADMIN, admin.addr, "admin address mismatch");
-        gateway = Gateway(
-            payable(address(TestUtils.setupGateway(admin, DEST_NETWORK_ID)))
-        );
+        gateway = Gateway(payable(address(TestUtils.setupGateway(admin, DEST_NETWORK_ID))));
         TestUtils.setMockShard(admin, address(gateway), admin);
         TestUtils.setMockRoute(admin, address(gateway), DEST_NETWORK_ID);
         receiver = IGmpReceiver(new GasSpender());
@@ -274,7 +262,9 @@ contract GatewayTest is Test {
         vm.expectRevert("msg data too large");
         gateway.execute{gas: 1_000_000}(sig, gmp);
         uint256 ctxExecutionCost = vm.lastCallGas().gasTotalUsed;
-        assertLt(ctxExecutionCost, GasUtils.executionGasUsed(uint16(gmp.data.length), 0), "revert should use less gas!!");
+        assertLt(
+            ctxExecutionCost, GasUtils.executionGasUsed(uint16(gmp.data.length), 0), "revert should use less gas!!"
+        );
     }
 
     function test_refund() external {
@@ -325,7 +315,6 @@ contract GatewayTest is Test {
         vm.txGasPrice(1);
         address sender = address(0xdead_beef);
         vm.deal(sender, 10 ether);
-
 
         GmpMessage memory wrongNetwork = GmpMessage({
             source: sender.toSender(false),
