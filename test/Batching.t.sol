@@ -43,7 +43,7 @@ contract Batching is Test {
 
     uint256 private constant ADMIN_SECRET = 0x955acb49dbb669143455ffbf98e30ae5b2d95343c8b46ce10bf1975d722e8001;
     VmSafe.Wallet internal ADMIN;
-    
+
     uint256 private constant SHARD_SECRET = 0x42;
     VmSafe.Wallet internal SHARD;
 
@@ -97,11 +97,7 @@ contract Batching is Test {
         return message.intoCallback().messageId();
     }
 
-    function sign(Signer signer, InboundMessage memory message)
-        private
-        view
-        returns (Signature memory sig)
-    {
+    function sign(Signer signer, InboundMessage memory message) private view returns (Signature memory sig) {
         signAt(signer, message, sig);
     }
 

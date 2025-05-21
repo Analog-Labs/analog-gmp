@@ -34,6 +34,7 @@ import {
 import {NetworkID, NetworkIDHelpers} from "./NetworkID.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {console} from "forge-std/console.sol";
 
 abstract contract GatewayEIP712 is Initializable {
     using NetworkIDHelpers for NetworkID;
@@ -53,8 +54,11 @@ abstract contract GatewayEIP712 is Initializable {
     }
 
     function __GatewayEIP712_init(uint16 networkId) internal onlyInitializing {
+        console.log("gateway abstrate init");
         GatewayEIP712Storage storage gs = _getGatewayEIP712Storage();
+        console.log("gateway setting network_id", networkId);
         gs.networkId = networkId;
+        console.log("setting proxy address");
         gs.proxyAddress = address(this);
     }
 
@@ -117,6 +121,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
     function initialize(uint16 _networkId) public initializer {
         __GatewayEIP712_init(_networkId);
         __UUPSUpgradeable_init();
+        console.log("network id after initializing", NETWORK_ID());
     }
 
     function _authorizeUpgrade(address) internal view override {
@@ -449,6 +454,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
     function _checkGmpMessage(GmpMessage calldata message) private view {
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
+        console.log("network id in gateway is", NETWORK_ID());
         require(message.destNetwork == NETWORK_ID(), "invalid gmp network");
 
         // Check if the message data is too large

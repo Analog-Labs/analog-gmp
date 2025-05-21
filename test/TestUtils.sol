@@ -21,6 +21,7 @@ import {
     PrimitiveUtils,
     GmpSender
 } from "../src/Primitives.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @dev Utilities for testing purposes
@@ -34,13 +35,23 @@ library TestUtils {
 
     function setupGateway(VmSafe.Wallet memory admin, uint16 network) internal returns (Gateway gw) {
         vm.startPrank(admin.addr, admin.addr);
-        GatewayProxy proxy = new GatewayProxy(admin.addr);
+        // GatewayProxy proxy = new GatewayProxy(admin.addr);
+
         Gateway gateway = new Gateway();
-        gateway.initialize(network);
-        proxy.upgrade(address(gateway));
+        bytes memory initData = abi.encodeWithSelector(Gateway.initialize.selector, network);
+        ERC1967Proxy proxy = new ERC1967Proxy(address(gateway), initData);
+        console.log("Implementation:", address(gateway));
+        console.log("Proxy:", address(proxy));
+
         vm.deal(address(proxy), 10 ether);
+        console.log("deel done");
         vm.stopPrank();
+<<<<<<< HEAD
         return Gateway(payable(address(proxy)));
+=======
+        console.log("stopping prank");
+        return IGateway(address(proxy));
+>>>>>>> 2a6b8f8 (Add ERC1967 proxy in test utils)
     }
 
     function setMockShard(VmSafe.Wallet memory admin, address gateway, VmSafe.Wallet memory shard) internal {
