@@ -33,7 +33,8 @@ contract GasSpenderTest is BaseTest {
         vm.txGasPrice(1);
 
         // Create the Sender account
-        address sender = TestUtils.createTestAccount(100 ether);
+        address sender = address(0xdead_beef);
+        vm.deal(sender, 100 ether);
 
         // Deploy the GasSpender contract
         GasSpender spender = new GasSpender();
@@ -53,7 +54,8 @@ contract GasSpenderTest is BaseTest {
         vm.txGasPrice(1);
 
         // Create the Sender account
-        address sender = TestUtils.createTestAccount(100 ether);
+        address sender = address(0xdead_beef);
+        vm.deal(sender, 100 ether);
 
         // Deploy the GasSpender contract
         GasSpender spender = new GasSpender();
@@ -71,7 +73,8 @@ contract GasSpenderTest is BaseTest {
         vm.txGasPrice(1);
 
         // Create the Sender account
-        address sender = TestUtils.createTestAccount(100 ether);
+        address sender = address(0xdead_beef);
+        vm.deal(sender, 100 ether);
 
         // Deploy the GasSpender contract
         GasSpender spender = new GasSpender();

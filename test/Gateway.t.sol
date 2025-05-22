@@ -336,7 +336,8 @@ contract GatewayTest is BaseTest {
             )
         );
         // Calling the receiver contract directly to make the address warm
-        address sender = TestUtils.createTestAccount(10 ether);
+        address sender = address(uint160(uint256(keccak256(msg.data))));
+        vm.deal(sender, 10 ether);
         (uint256 gasUsed,, bytes memory output) =
             TestUtils.executeCall(sender, address(receiver), 23_318 + 128, 0, testEncodedCall);
         assertEq(gasUsed, 1234);
@@ -351,7 +352,8 @@ contract GatewayTest is BaseTest {
 
     function test_checkPayloadSize() external {
         vm.txGasPrice(1);
-        address sender = TestUtils.createTestAccount(100 ether);
+        address sender = address(0xdead_beef);
+        vm.deal(sender, 10 ether);
 
         // Build and sign GMP message
         GmpMessage memory gmp = GmpMessage({
@@ -395,7 +397,8 @@ contract GatewayTest is BaseTest {
     function test_gasMeter(uint16 messageSize) external {
         vm.assume(messageSize <= 0x6000 && messageSize >= 32);
         vm.txGasPrice(1);
-        address sender = TestUtils.createTestAccount(100 ether);
+        address sender = address(0xdead_beef);
+        vm.deal(sender, 10 ether);
 
         // Build and sign GMP message
         GmpMessage memory gmp = GmpMessage({
@@ -493,7 +496,8 @@ contract GatewayTest is BaseTest {
     function test_submitMessageMeter(uint16 messageSize) external {
         vm.assume(messageSize <= 0x6000);
         vm.txGasPrice(1);
-        address sender = TestUtils.createTestAccount(1000 ether);
+        address sender = address(0xdead_beef);
+        vm.deal(sender, 10 ether);
 
         // Build and sign GMP message
         GmpMessage memory gmp = GmpMessage({
@@ -566,14 +570,15 @@ contract GatewayTest is BaseTest {
 
     function test_refund() external {
         vm.txGasPrice(1);
-        GmpSender sender = TestUtils.createTestAccount(100 ether).toSender(false);
+        address sender = address(0xdead_beef);
+        vm.deal(sender, 10 ether);
 
         // GMP message gas used
         uint64 gmpGasUsed = 2_000;
 
         // Build and sign GMP message
         GmpMessage memory gmp = GmpMessage({
-            source: sender,
+            source: sender.toSender(false),
             srcNetwork: SRC_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
@@ -588,10 +593,10 @@ contract GatewayTest is BaseTest {
         uint256 expectGasUsed = baseCost + executionCost + gmp.gasLimit;
 
         // Execute GMP message
-        uint256 beforeBalance = sender.toAddress().balance;
+        uint256 beforeBalance = sender.balance;
         {
             CallOptions memory ctx = CallOptions({
-                from: sender.toAddress(),
+                from: sender,
                 to: address(gateway),
                 value: 0,
                 gasLimit: GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit) + baseCost,
@@ -619,14 +624,15 @@ contract GatewayTest is BaseTest {
         }
 
         // Verify the gas refund
-        uint256 afterBalance = sender.toAddress().balance;
+        uint256 afterBalance = sender.balance;
         assertEq(beforeBalance, afterBalance, "wrong refund amount");
     }
 
     function test_ExecuteRevertsWrongNetwork() external {
         vm.txGasPrice(1);
-        uint256 amount = 10 ether;
-        address sender = TestUtils.createTestAccount(amount * 2);
+        address sender = address(0xdead_beef);
+        vm.deal(sender, 10 ether);
+
 
         GmpMessage memory wrongNetwork = GmpMessage({
             source: sender.toSender(false),
@@ -652,9 +658,10 @@ contract GatewayTest is BaseTest {
 
     function test_ExecuteRevertsBelowGasLimit() external {
         vm.txGasPrice(1);
-        GmpSender sender = TestUtils.createTestAccount(100 ether).toSender(false);
+        address sender = address(0xdead_beef);
+        vm.deal(sender, 10 ether);
         GmpMessage memory gmp = GmpMessage({
-            source: sender,
+            source: sender.toSender(false),
             srcNetwork: SRC_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
@@ -669,7 +676,7 @@ contract GatewayTest is BaseTest {
 
         // Execute GMP message
         CallOptions memory ctx = CallOptions({
-            from: sender.toAddress(),
+            from: sender,
             to: address(gateway),
             value: 0,
             gasLimit: baseCost + executionCost,
@@ -682,9 +689,10 @@ contract GatewayTest is BaseTest {
 
     function test_executeRevertsAlreadyExecuted() external {
         vm.txGasPrice(1);
-        GmpSender sender = TestUtils.createTestAccount(1000 ether).toSender(false);
+        address sender = address(0xdead_beef);
+        vm.deal(sender, 10 ether);
         GmpMessage memory gmp = GmpMessage({
-            source: sender,
+            source: sender.toSender(false),
             srcNetwork: SRC_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
@@ -696,7 +704,7 @@ contract GatewayTest is BaseTest {
 
         // Execute GMP message first time
         CallOptions memory ctx = CallOptions({
-            from: sender.toAddress(),
+            from: sender,
             to: address(gateway),
             value: 0,
             gasLimit: 1_000_000,
@@ -714,9 +722,10 @@ contract GatewayTest is BaseTest {
 
     function test_submitGmpMessage() external {
         vm.txGasPrice(1);
-        GmpSender gmpSender = TestUtils.createTestAccount(1000 ether).toSender(false);
+        address sender = address(0xdead_beef);
+        vm.deal(sender, 10 ether);
         GmpMessage memory gmp = GmpMessage({
-            source: gmpSender,
+            source: sender.toSender(false),
             srcNetwork: DEST_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
@@ -730,7 +739,7 @@ contract GatewayTest is BaseTest {
         assertEq(gateway.nonceOf(gmp.source.toAddress()), 0, "wrong previous message hash");
 
         CallOptions memory ctx = CallOptions({
-            from: gmpSender.toAddress(),
+            from: sender,
             to: address(gateway),
             value: 0,
             gasLimit: 1_000_000,

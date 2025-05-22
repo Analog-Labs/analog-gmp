@@ -45,53 +45,6 @@ library TestUtils {
     Vm internal constant vm = Vm(VM_ADDRESS);
 
     /**
-     * @dev Deploys a contract with the given bytecode
-     */
-    function deployContract(bytes memory bytecode) internal returns (address addr) {
-        require(bytecode.length > 0, "Error: deploy code is empty");
-        assembly ("memory-safe") {
-            let ptr := add(bytecode, 32)
-            let size := mload(bytecode)
-            addr := create(0, ptr, size)
-        }
-        require(addr != address(0), "Error: failed to deploy contract");
-    }
-
-    /**
-     * @dev  Delegate call to another contract bytecode
-     *  This execute the code of another contract in the context of the current contract
-     */
-    function delegateCall(address contractAddr, bytes memory data)
-        internal
-        returns (bool success, bytes memory output)
-    {
-        require(contractAddr.code.length > 0, "Error: provided address is not a contract");
-        assembly ("memory-safe") {
-            success :=
-                delegatecall(
-                    gas(), // call gas limit
-                    contractAddr, // dest address
-                    add(32, data), // input memory pointer
-                    mload(data), // input size
-                    0, // output memory pointer
-                    0 // output size
-                )
-
-            // Alloc memory for the output
-            output := mload(0x40)
-            let ptr := add(output, 32)
-            let size := returndatasize()
-            mstore(0x40, add(ptr, size)) // Increment free memory pointer
-
-            // Store return data size
-            mstore(output, size)
-
-            // Copy delegatecall output to memory
-            returndatacopy(ptr, 0, size)
-        }
-    }
-
-    /**
      * @dev Count the number of non-zero bytes in a byte sequence.
      * Reference: https://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
      */
@@ -131,50 +84,6 @@ library TestUtils {
         uint256 nonZeros = countNonZeros(txData);
         uint256 zeros = txData.length - nonZeros;
         baseCost = 21_000 + (nonZeros * 16) + (zeros * 4);
-    }
-
-    /**
-     * @dev Calculate the tx base cost.
-     * formula: 21000 + zeros * 4 + nonZeros * 16
-     * Reference: https://eips.ethereum.org/EIPS/eip-2028
-     */
-    function memExpansionCost(uint256 size) internal pure returns (uint256) {
-        uint256 words = (size + 31) / 32;
-        return ((words ** 2) / 512) + (words * 3);
-    }
-
-    /**
-     * @dev Generate a new account account from the calldata
-     * This will generate a unique deterministic address for each test case
-     */
-    function createTestAccount(uint256 initialBalance) internal returns (address account) {
-        // Generate a new account address from the calldata
-        // This will generate a unique deterministic address for each test case
-        account = address(uint160(uint256(keccak256(msg.data))));
-        vm.deal(account, initialBalance);
-    }
-
-    /**
-     * @dev Generate a new account account from the calldata
-     */
-    function createTestAccount() internal returns (address account) {
-        // Create an account with 100 ether
-        account = createTestAccount(100 ether);
-    }
-
-    /**
-     * @dev Convert an address to GMP bytes32 identifier
-     */
-    function source(address account, bool isContract) internal pure returns (bytes32) {
-        uint256 contractFlag = isContract ? 1 << 160 : 0;
-        return bytes32(contractFlag | uint256(uint160(account)));
-    }
-
-    /**
-     * @dev Convert an address to GMP bytes32 identifier
-     */
-    function source(address account) internal view returns (bytes32) {
-        return source(account, account.code.length > 0);
     }
 
     /**

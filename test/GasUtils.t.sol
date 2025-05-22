@@ -174,7 +174,8 @@ contract GasUtilsTest is BaseTest {
         vm.assume(messageSize <= (0x6000 - 32));
         messageSize += 32;
         vm.txGasPrice(1);
-        address sender = TestUtils.createTestAccount(100 ether);
+        address sender = address(0xdead_beef);
+        vm.deal(sender, 100 ether);
 
         // Build the GMP message
         GmpMessage memory gmp;
