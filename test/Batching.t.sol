@@ -30,7 +30,8 @@ import {
     GmpStatus,
     PrimitiveUtils,
     GmpSender,
-    GMP_VERSION
+    GMP_VERSION,
+    GmpMessage
 } from "../src/Primitives.sol";
 
 contract Batching is Test {

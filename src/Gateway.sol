@@ -34,6 +34,7 @@ import {
 import {NetworkID, NetworkIDHelpers} from "./NetworkID.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {console} from "forge-std/console.sol";
 
 abstract contract GatewayEIP712 is Initializable {
@@ -54,11 +55,8 @@ abstract contract GatewayEIP712 is Initializable {
     }
 
     function __GatewayEIP712_init(uint16 networkId) internal onlyInitializing {
-        console.log("gateway abstrate init");
         GatewayEIP712Storage storage gs = _getGatewayEIP712Storage();
-        console.log("gateway setting network_id", networkId);
         gs.networkId = networkId;
-        console.log("setting proxy address");
         gs.proxyAddress = address(this);
     }
 
@@ -71,7 +69,7 @@ abstract contract GatewayEIP712 is Initializable {
     }
 }
 
-contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgradeable {
+contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable {
     using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpCallback;
@@ -116,17 +114,21 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
         uint64 blockNumber; // block in which the message was processed
     }
 
+    constructor() {
+        _disableInitializers();
+    }
+
     // constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
 
     function initialize(uint16 _networkId) public initializer {
+        __Ownable_init(msg.sender);
         __GatewayEIP712_init(_networkId);
         __UUPSUpgradeable_init();
         console.log("network id after initializing", NETWORK_ID());
+        console.log("initializing with sender", msg.sender);
     }
 
-    function _authorizeUpgrade(address) internal view override {
-        require(msg.sender == ERC1967.getAdmin(), "Unauthorized");
-    }
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     function nonceOf(address account) external view returns (uint64) {
         return uint64(_nonces[account]);
@@ -615,8 +617,12 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
      * @param recipient The recipient address
      * @param data The data to send to the recipient (in case it is a contract)
      */
-    function withdraw(uint256 amount, address recipient, bytes calldata data) external returns (bytes memory output) {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function withdraw(uint256 amount, address recipient, bytes calldata data)
+        external
+        onlyOwner
+        returns (bytes memory output)
+    {
+        // require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         // Check if the recipient is a contract
         if (recipient.code.length > 0) {
             bool success;
@@ -686,16 +692,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
     /**
      * @dev Register a single Shards with provided TSS public key.
      */
-    function setShard(TssKey calldata publicKey) external {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function setShard(TssKey calldata publicKey) external onlyOwner {
         _setShard(publicKey);
     }
 
     /**
      * @dev Register Shards in batch.
      */
-    function setShards(TssKey[] calldata publicKeys) external {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function setShards(TssKey[] calldata publicKeys) external onlyOwner {
         (TssKey[] memory created, TssKey[] memory revoked) = ShardStore.getMainStorage().replaceTssKeys(publicKeys);
 
         if (created.length > 0) {
@@ -710,16 +714,16 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
     /**
      * @dev Revoke a single shard TSS Key.
      */
-    function revokeShard(TssKey calldata publicKey) external {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function revokeShard(TssKey calldata publicKey) external onlyOwner {
+        // require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         _revokeShard(publicKey);
     }
 
     /**
      * @dev Revoke Shards in batch.
      */
-    function revokeShards(TssKey[] calldata publicKeys) external {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function revokeShards(TssKey[] calldata publicKeys) external onlyOwner {
+        // require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         TssKey[] memory revokedKeys = ShardStore.getMainStorage().revokeKeys(publicKeys);
         if (revokedKeys.length > 0) {
             emit ShardsUnregistered(revokedKeys);
@@ -740,16 +744,16 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
     /**
      * @dev Create or update a single route
      */
-    function setRoute(Route calldata info) external {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function setRoute(Route calldata info) external onlyOwner {
+        // require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         RouteStore.getMainStorage().createOrUpdateRoute(info);
     }
 
     /**
      * @dev Create or update an array of routes
      */
-    function setRoutes(Route[] calldata values) external {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function setRoutes(Route[] calldata values) external onlyOwner {
+        // require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         require(values.length > 0, "routes cannot be empty");
         RouteStore.MainStorage storage store = RouteStore.getMainStorage();
         for (uint256 i = 0; i < values.length; i++) {
@@ -762,17 +766,18 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
     //////////////////////////////////////////////////////////////*/
 
     function admin() external view returns (address) {
-        return ERC1967.getAdmin();
+        return owner();
     }
 
-    function setAdmin(address newAdmin) external payable {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
-        ERC1967.setAdmin(newAdmin);
+    function setAdmin(address newAdmin) external payable onlyOwner {
+        // require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+        transferOwnership(newAdmin);
+        // ERC1967.setAdmin(newAdmin);
     }
 
     // DANGER: This function is for migration purposes only, it allows the admin to set any storage slot.
-    function sudoSetStorage(uint256[2][] calldata values) external payable {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function sudoSetStorage(uint256[2][] calldata values) external payable onlyOwner {
+        // require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         require(values.length > 0, "invalid values");
 
         uint256 prev = 0;

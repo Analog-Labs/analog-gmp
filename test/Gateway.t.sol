@@ -28,6 +28,7 @@ import {
     GmpSender,
     GMP_VERSION
 } from "../src/Primitives.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 contract SigUtilsTest is GatewayEIP712, Test {
     using PrimitiveUtils for GmpMessage;
@@ -129,7 +130,9 @@ contract GatewayTest is Test {
         _sortTssKeys(keys);
 
         // Only admin can set shards keys
-        vm.expectRevert("unauthorized");
+        address notAdmin = address(0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496);
+        vm.prank(notAdmin);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, notAdmin));
         gateway.setShards(keys);
 
         // Set shards keys must work

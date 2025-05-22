@@ -44,14 +44,8 @@ library TestUtils {
         console.log("Proxy:", address(proxy));
 
         vm.deal(address(proxy), 10 ether);
-        console.log("deel done");
         vm.stopPrank();
-<<<<<<< HEAD
         return Gateway(payable(address(proxy)));
-=======
-        console.log("stopping prank");
-        return IGateway(address(proxy));
->>>>>>> 2a6b8f8 (Add ERC1967 proxy in test utils)
     }
 
     function setMockShard(VmSafe.Wallet memory admin, address gateway, VmSafe.Wallet memory shard) internal {
