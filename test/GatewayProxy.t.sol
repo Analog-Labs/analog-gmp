@@ -5,7 +5,7 @@ pragma solidity >=0.8.0;
 
 import {Test, console} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {TestUtils, SigningKey, SigningUtils} from "./TestUtils.sol";
+import {TestUtils} from "./TestUtils.sol";
 import {GasSpender} from "./utils/GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
@@ -27,13 +27,6 @@ import {
 } from "../src/Primitives.sol";
 
 contract GatewayProxyTest is Test {
-    using PrimitiveUtils for UpdateKeysMessage;
-    using PrimitiveUtils for GmpMessage;
-    using PrimitiveUtils for GmpSender;
-    using PrimitiveUtils for address;
-    using BranchlessMath for uint256;
-    using SigningUtils for SigningKey;
-
     IGmpReceiver internal receiver;
 
     constructor() {

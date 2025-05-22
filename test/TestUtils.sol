@@ -5,8 +5,7 @@ pragma solidity >=0.8.0;
 
 import {VmSafe, Vm} from "forge-std/Vm.sol";
 import {console} from "forge-std/console.sol";
-import {Schnorr} from "../lib/frost-evm/sol/Schnorr.sol";
-import {SECP256K1} from "../lib/frost-evm/sol/SECP256K1.sol";
+import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
@@ -23,16 +22,6 @@ import {
     PrimitiveUtils,
     GmpSender
 } from "../src/Primitives.sol";
-
-struct VerifyingKey {
-    uint256 px;
-    uint256 py;
-}
-
-struct SigningKey {
-    uint256 secret;
-    VerifyingKey pubkey;
-}
 
 /**
  * @dev Utilities for testing purposes
@@ -84,41 +73,6 @@ library TestUtils {
         uint256 nonZeros = countNonZeros(txData);
         uint256 zeros = txData.length - nonZeros;
         baseCost = 21_000 + (nonZeros * 16) + (zeros * 4);
-    }
-
-    /**
-     * @dev Creates a new TSS signer
-     */
-    function createSigner(uint256 secret) internal pure returns (SigningKey memory) {
-        require(secret != 0, "secret must be greater than 0");
-        require(secret < Schnorr.Q, "secret must be less than secp256k1 group order");
-        (uint256 px, uint256 py) = SECP256K1.publicKey(secret);
-        return SigningKey({secret: secret, pubkey: VerifyingKey({px: px, py: py})});
-    }
-
-    /**
-     * @dev Creates a new TSS signer
-     */
-    function signerFromEntropy(bytes32 entropy) internal pure returns (SigningKey memory) {
-        uint256 secret;
-        assembly {
-            mstore(0, entropy)
-            secret := keccak256(0x00, 0x20)
-        }
-        while (secret >= Schnorr.Q) {
-            assembly {
-                mstore(0, secret)
-                secret := keccak256(0x00, 0x20)
-            }
-        }
-        return createSigner(secret);
-    }
-
-    /**
-     * @dev Creates an unique TSS signer per test case
-     */
-    function createSigner() internal pure returns (SigningKey memory) {
-        return signerFromEntropy(keccak256(msg.data));
     }
 
     // Workaround for set the tx.gasLimit, currently is not possible to define the gaslimit in foundry
@@ -259,8 +213,8 @@ library TestUtils {
     }
 
     function setMockShard(VmSafe.Wallet memory admin, address gateway, VmSafe.Wallet memory shard) internal {
-        SigningKey memory signer = TestUtils.createSigner(shard.privateKey);
-        TssKey memory key = TssKey({yParity: SigningUtils.yParity(signer) == 28 ? 3 : 2, xCoord: SigningUtils.xCoord(signer)});
+        Signer signer = new Signer(shard.privateKey);
+        TssKey memory key = TssKey({yParity: signer.yParity(), xCoord: signer.xCoord()});
         Gateway gw = Gateway(payable(gateway));
         vm.startPrank(admin.addr, admin.addr);
         gw.setShard(key);
@@ -279,93 +233,5 @@ library TestUtils {
             relativeGasPriceDenominator: 1
         }));
         vm.stopPrank();
-    }
-}
-
-library VerifyingUtils {
-    function addr(VerifyingKey memory pubkey) internal pure returns (address) {
-        uint256 hash;
-        assembly {
-            hash := keccak256(pubkey, 0x40)
-        }
-        return address(uint160(hash));
-    }
-
-    function yParity(VerifyingKey memory pubkey) internal pure returns (uint8) {
-        return uint8(pubkey.py % 2) + 27;
-    }
-
-    function challenge(VerifyingKey memory pubkey, bytes32 hash, address r) internal pure returns (uint256) {
-        return uint256(keccak256(abi.encodePacked(r, yParity(pubkey), pubkey.px, uint256(hash))));
-    }
-
-    function verifyPrehash(VerifyingKey memory pubkey, bytes32 prehash, uint256 c, uint256 z)
-        internal
-        pure
-        returns (bool)
-    {
-        return Schnorr.verify(yParity(pubkey), pubkey.px, uint256(prehash), c, z);
-    }
-
-    function verify(VerifyingKey memory pubkey, bytes memory message, uint256 c, uint256 z)
-        internal
-        pure
-        returns (bool)
-    {
-        return verifyPrehash(pubkey, keccak256(message), c, z);
-    }
-}
-
-library SigningUtils {
-    function addr(SigningKey memory signer) internal pure returns (address) {
-        return VerifyingUtils.addr(signer.pubkey);
-    }
-
-    function yParity(SigningKey memory signer) internal pure returns (uint8) {
-        return uint8(signer.pubkey.py % 2) + 27;
-    }
-
-    function xCoord(SigningKey memory signer) internal pure returns (uint256) {
-        return signer.pubkey.px;
-    }
-
-    function challenge(SigningKey memory signer, bytes32 hash, address r) internal pure returns (uint256) {
-        return uint256(keccak256(abi.encodePacked(r, yParity(signer), signer.pubkey.px, uint256(hash))));
-    }
-
-    function signPrehashed(SigningKey memory signer, bytes32 hash, uint256 nonce)
-        internal
-        pure
-        returns (uint256, uint256)
-    {
-        (uint256 rx, uint256 ry) = SECP256K1.publicKey(nonce);
-        address r = SECP256K1.point_hash(rx, ry);
-        uint256 c = challenge(signer, hash, r);
-        uint256 z = addmod(nonce, mulmod(c, signer.secret, Schnorr.Q), Schnorr.Q);
-        return (c, z);
-    }
-
-    function sign(SigningKey memory signer, bytes memory message, uint256 nonce)
-        internal
-        pure
-        returns (uint256, uint256)
-    {
-        return signPrehashed(signer, keccak256(message), nonce);
-    }
-
-    function verifyPrehash(SigningKey memory signer, bytes32 prehash, uint256 c, uint256 z)
-        internal
-        pure
-        returns (bool)
-    {
-        return Schnorr.verify(yParity(signer), signer.pubkey.px, uint256(prehash), c, z);
-    }
-
-    function verify(SigningKey memory signer, bytes memory message, uint256 c, uint256 z)
-        internal
-        pure
-        returns (bool)
-    {
-        return verifyPrehash(signer, keccak256(message), c, z);
     }
 }

@@ -5,7 +5,8 @@ pragma solidity >=0.8.0;
 
 import {Test, console, Vm} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {TestUtils, SigningKey, SigningUtils} from "./TestUtils.sol";
+import {TestUtils} from "./TestUtils.sol";
+import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {GasSpender} from "./utils/GasSpender.sol";
 import {BaseTest} from "./utils/BaseTest.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
@@ -153,7 +154,6 @@ contract GatewayTest is BaseTest {
     using PrimitiveUtils for address;
     using GatewayUtils for CallOptions;
     using BranchlessMath for uint256;
-    using SigningUtils for SigningKey;
 
     Gateway internal gateway;
 
@@ -187,10 +187,10 @@ contract GatewayTest is BaseTest {
         assertTrue(gasleft() >= 10_000_000);
     }
 
-    function sign(GmpMessage memory gmp) internal pure returns (Signature memory) {
+    function sign(GmpMessage memory gmp) internal returns (Signature memory) {
         bytes32 hash = gmp.opHash();
-        SigningKey memory signer = TestUtils.createSigner(SECRET);
-        (uint256 e, uint256 s) = signer.signPrehashed(hash, SIGNING_NONCE);
+        Signer signer = new Signer(SECRET);
+        (uint256 e, uint256 s) = signer.signPrehashed(uint256(hash), SIGNING_NONCE);
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
     }
 
@@ -211,10 +211,10 @@ contract GatewayTest is BaseTest {
         TssKey[] memory keys = new TssKey[](10);
 
         // create random shard keys
-        SigningKey memory signer;
+        Signer signer;
         for (uint256 i = 0; i < keys.length; i++) {
-            signer = TestUtils.signerFromEntropy(bytes32(i));
-            keys[i] = TssKey({yParity: signer.yParity() == 28 ? 3 : 2, xCoord: signer.xCoord()});
+            signer = new Signer(i + 1);
+            keys[i] = TssKey({yParity: signer.yParity(), xCoord: signer.xCoord()});
         }
         _sortTssKeys(keys);
 
@@ -235,9 +235,9 @@ contract GatewayTest is BaseTest {
         }
 
         // // Replace one shard key
-        signer = TestUtils.signerFromEntropy(bytes32(uint256(12345)));
+        signer = new Signer(12345);
         keys[0].xCoord = signer.xCoord();
-        keys[0].yParity = signer.yParity() == 28 ? 3 : 2;
+        keys[0].yParity = signer.yParity();
         _sortTssKeys(keys);
         vm.prank(ADMIN, ADMIN);
         gateway.setShards(keys);
@@ -255,10 +255,10 @@ contract GatewayTest is BaseTest {
         TssKey[] memory keys = new TssKey[](10);
 
         // create random shard keys
-        SigningKey memory signer;
+        Signer signer;
         for (uint256 i = 0; i < keys.length; i++) {
-            signer = TestUtils.signerFromEntropy(bytes32(i));
-            keys[i] = TssKey({yParity: signer.yParity() == 28 ? 3 : 2, xCoord: signer.xCoord()});
+            signer = new Signer(i + 1);
+            keys[i] = TssKey({yParity: signer.yParity(), xCoord: signer.xCoord()});
         }
         _sortTssKeys(keys);
 
@@ -277,8 +277,8 @@ contract GatewayTest is BaseTest {
 
         // Revoke a registered shard thats not registered.
         uint256 unregisteredSignerKey = 11;
-        signer = TestUtils.signerFromEntropy(bytes32(unregisteredSignerKey));
-        TssKey memory nonRegisteredKey = TssKey({yParity: signer.yParity() == 28 ? 3 : 2, xCoord: signer.xCoord()});
+        signer = new Signer(unregisteredSignerKey);
+        TssKey memory nonRegisteredKey = TssKey({yParity: signer.yParity(), xCoord: signer.xCoord()});
         vm.prank(ADMIN, ADMIN);
         vm.recordLogs();
         gateway.revokeShard(nonRegisteredKey);
