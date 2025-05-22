@@ -30,8 +30,15 @@ import {
     GmpStatus,
     PrimitiveUtils,
     GmpSender,
-    GMP_VERSION
+    GMP_VERSION,
+    GmpMessage
 } from "../src/Primitives.sol";
+
+interface IGatewayWithExecute {
+    function execute(Signature calldata signature, GmpMessage calldata message)
+        external
+        returns (GmpStatus status, bytes32 result);
+}
 
 contract Batching is BaseTest {
     using PrimitiveUtils for UpdateKeysMessage;
@@ -187,6 +194,7 @@ contract Batching is BaseTest {
         emit log_named_uint("    gas needed", gasNeeded);
 
         require(GATEWAY_PROXY.code.length > 0, "gateway proxy not found");
+        // IGatewayWithExecute(GATEWAY_PROXY).execute{gas: gasNeeded}(sig, gmp);
         Gateway(payable(GATEWAY_PROXY)).execute{gas: gasNeeded}(sig, gmp);
 
         emit log_named_uint("    total cost", GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit));

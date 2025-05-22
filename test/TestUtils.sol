@@ -341,6 +341,7 @@ library TestUtils {
         vm.startPrank(admin.addr, admin.addr);
         // GatewayProxy proxy = new GatewayProxy(admin.addr);
 
+        console.log("Admin is", admin.addr);
         Gateway gateway = new Gateway();
         bytes memory initData = abi.encodeWithSelector(Gateway.initialize.selector, network);
         ERC1967Proxy proxy = new ERC1967Proxy(address(gateway), initData);
@@ -348,9 +349,7 @@ library TestUtils {
         console.log("Proxy:", address(proxy));
 
         vm.deal(address(proxy), 10 ether);
-        console.log("deel done");
         vm.stopPrank();
-        console.log("stopping prank");
         return IGateway(address(proxy));
     }
 

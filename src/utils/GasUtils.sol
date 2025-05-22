@@ -24,7 +24,7 @@ library GasUtils {
      * Obs: To guarantee the overhead is constant regardless the input size, always use `calldata` instead of `memory`
      * for external functions.
      */
-    uint256 internal constant BATCH_SELECTOR_OVERHEAD = 465;
+    uint256 internal constant BATCH_SELECTOR_OVERHEAD = 496;
 
     /**
      * @dev How much gas is used until the first `gasleft()` instruction is executed.
@@ -38,23 +38,24 @@ library GasUtils {
      * Obs: To guarantee the overhead is constant regardless the input size, always use `calldata` instead of `memory`
      * for external functions.
      */
-    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 496 - 44;
+    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 496;
 
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46960 + 144 + 22;
+    uint256 internal constant EXECUTION_BASE_COST =
+        EXECUTION_SELECTOR_OVERHEAD + 46960 + 144 + 22 + 5491 - 5 + 6 - 12 + 12;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 24064 - 66 + 133 + 44;
+    uint256 internal constant SUBMIT_BASE_COST = 24064 - 66 + 133 + 44 - 5 - 17;
 
     /**
      * @dev Extra gas cost that any account `Contract or EOA` must pay when calling `IGateway.submitMessage` method.
      * This cost is necessary for initialize the account's `nonce` storage slot.
      */
-    uint256 internal constant FIRST_MESSAGE_EXTRA_COST = 17100 + 6000;
+    uint256 internal constant FIRST_MESSAGE_EXTRA_COST = 17100 + 6000 - 1 + 11;
 
     /**
      * @dev Solidity's reserved location for the free memory pointer.
