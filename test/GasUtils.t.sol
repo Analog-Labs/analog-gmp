@@ -94,8 +94,6 @@ contract GasUtilsTest is Test {
      * @dev Compare the estimated gas cost VS the actual gas cost of the `execute` method.
      */
     function test_baseExecutionCost(uint16 messageSize, uint16 gasLimit) external {
-        //uint16 messageSize = 0;
-        //uint16 gasLimit = 5000;
         vm.assume(gasLimit >= 5000);
         vm.assume(messageSize <= (0x6000 - 32));
         messageSize += 32;
@@ -140,14 +138,8 @@ contract GasUtilsTest is Test {
         assertEq(gas.gasLimit - gas.gasTotalUsed, gas.gasRemaining);
 
         uint256 mGasUsed = gas.gasTotalUsed;
-        uint256 cGasUsed = GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit);
+        uint256 cGasUsed = GasUtils.executionGasUsed(uint16(gmp.data.length), gmp.gasLimit);
         console.log("gasUsed", mGasUsed, cGasUsed);
         assertEq(cGasUsed, mGasUsed, "gasUsed mismatch");
-
-        assert(gas.gasRefunded >= 0);
-        uint256 mGasNeeded = uint64(gas.gasRefunded) + gas.gasTotalUsed;
-        uint256 cGasNeeded = GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit);
-        console.log("gasNeeded", mGasNeeded, cGasNeeded);
-        // TODO: assertEq(cGasNeeded, mGasNeeded, "gasNeeded mismatch");
     }
 }

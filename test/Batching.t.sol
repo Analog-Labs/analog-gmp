@@ -171,15 +171,8 @@ contract Batching is Test {
 
         vm.deal(ADMIN.addr, 100 ether);
         vm.startPrank(ADMIN.addr, ADMIN.addr);
-        uint256 gasNeeded = GasUtils.executionGasNeeded(uint16(gmp.data.length), gmp.gasLimit);
-        uint256 executionCost = GasUtils._executionGasCost(uint16(gmp.data.length), gmp.gasLimit);
-        emit log_named_uint("    gas needed", gasNeeded);
-
         require(GATEWAY_PROXY.code.length > 0, "gateway proxy not found");
-        Gateway(payable(GATEWAY_PROXY)).execute{gas: gasNeeded}(sig, gmp);
-
-        emit log_named_uint("    total cost", GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit));
-        emit log_named_uint("execution cost", executionCost);
+        Gateway(payable(GATEWAY_PROXY)).execute(sig, gmp);
     }
 
     function batchExecute(Signature calldata, InboundMessage calldata message) external pure {
@@ -342,21 +335,14 @@ contract Batching is Test {
 
         // vm.deal(DEPLOYER, 100 ether);
         // vm.startPrank(DEPLOYER, DEPLOYER);
-        uint256 gasNeeded = GasUtils.executionGasNeeded(uint16(32), gasLimit);
-        uint256 executionCost = GasUtils._executionGasCost(uint16(32), gasLimit);
-        emit log_named_uint("    gas needed", gasNeeded);
-        emit log_named_uint("execution cost", executionCost);
         require(GATEWAY_PROXY.code.length > 0, "gateway proxy not found");
 
         console.log("will execute..");
         vm.startPrank(address(signer));
-        Gateway(GATEWAY_PROXY).batchExecute{gas: 500_000}(sig, inbound);
-        executionCost = vm.lastCallGas().gasTotalUsed;
+        Gateway(GATEWAY_PROXY).batchExecute(sig, inbound);
+        //uint256 mGasUsed = vm.lastCallGas().gasTotalUsed;
+        //uint256 cGasUsed = GasUtils.executionGasUsed(32, gasLimit);
+        //assertEq(cGasUsed, mGasUsed, "unexpected gas used");
         vm.stopPrank();
-        emit log_named_uint("execution cost", executionCost);
-        //emit log_named_uint("     base cost", baseCost);
-
-        emit log_named_uint("    total cost", GasUtils.computeExecutionRefund(uint16(32), gasLimit));
-        emit log_named_uint("execution cost", executionCost);
     }
 }
