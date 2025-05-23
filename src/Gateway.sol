@@ -32,22 +32,43 @@ import {
     MAX_PAYLOAD_SIZE
 } from "./Primitives.sol";
 import {NetworkID, NetworkIDHelpers} from "./NetworkID.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-abstract contract GatewayEIP712 {
+abstract contract GatewayEIP712 is Initializable {
     using NetworkIDHelpers for NetworkID;
 
-    // EIP-712: Typed structured data hashing and signing
-    // https://eips.ethereum.org/EIPS/eip-712
-    uint16 internal immutable NETWORK_ID;
-    address internal immutable PROXY_ADDRESS;
+    bytes32 private constant GATEWAY_STORAGE_SLOT = keccak256("analog.gateway.storage");
 
-    constructor(uint16 networkId, address gateway) {
-        NETWORK_ID = networkId;
-        PROXY_ADDRESS = gateway;
+    struct GatewayEIP712Storage {
+        uint16 networkId;
+        address proxyAddress;
+    }
+
+    function _getGatewayEIP712Storage() internal pure returns (GatewayEIP712Storage storage gs) {
+        bytes32 slot = GATEWAY_STORAGE_SLOT;
+        assembly {
+            gs.slot := slot
+        }
+    }
+
+    function __GatewayEIP712_init(uint16 networkId) internal onlyInitializing {
+        GatewayEIP712Storage storage gs = _getGatewayEIP712Storage();
+        gs.networkId = networkId;
+        gs.proxyAddress = address(this);
+    }
+
+    function NETWORK_ID() public view returns (uint16) {
+        return _getGatewayEIP712Storage().networkId;
+    }
+
+    function PROXY_ADDRESS() public view returns (address) {
+        return _getGatewayEIP712Storage().proxyAddress;
     }
 }
 
-contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
+contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable {
     using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpCallback;
@@ -92,7 +113,19 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         uint64 blockNumber; // block in which the message was processed
     }
 
-    constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
+    constructor() {
+        _disableInitializers();
+    }
+
+    // constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
+
+    function initialize(uint16 _networkId) public initializer {
+        __Ownable_init(msg.sender);
+        __GatewayEIP712_init(_networkId);
+        __UUPSUpgradeable_init();
+    }
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     function nonceOf(address account) external view returns (uint64) {
         return uint64(_nonces[account]);
@@ -108,7 +141,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     }
 
     function networkId() external view returns (uint16) {
-        return NETWORK_ID;
+        return NETWORK_ID();
     }
 
     function networkInfo(uint16 id) external view returns (RouteStore.NetworkInfo memory) {
@@ -329,8 +362,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
 
         // Compute the Batch signing hash
         rootHash = Hashing.hash(message.version, message.batchID, uint256(rootHash));
-        bytes32 signingHash =
-            keccak256(abi.encodePacked("Analog GMP v2", NETWORK_ID, bytes32(uint256(uint160(address(this)))), rootHash));
+        bytes32 signingHash = keccak256(
+            abi.encodePacked("Analog GMP v2", NETWORK_ID(), bytes32(uint256(uint160(address(this)))), rootHash)
+        );
 
         // Verify the signature
         _verifySignature(signature, signingHash);
@@ -423,7 +457,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     function _checkGmpMessage(GmpMessage calldata message) private view {
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
-        require(message.destNetwork == NETWORK_ID, "invalid gmp network");
+        require(message.destNetwork == NETWORK_ID(), "invalid gmp network");
 
         // Check if the message data is too large
         require(message.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
@@ -503,8 +537,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
             uint64 nextNonce = uint64(_nonces[msg.sender]++);
 
             // Create GMP message and update nonce
-            GmpMessage memory message =
-                GmpMessage(source, NETWORK_ID, destinationAddress, routeId, uint64(executionGasLimit), nextNonce, data);
+            GmpMessage memory message = GmpMessage(
+                source, NETWORK_ID(), destinationAddress, routeId, uint64(executionGasLimit), nextNonce, data
+            );
 
             // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
             _emitGmpCreated(
@@ -582,8 +617,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
      * @param recipient The recipient address
      * @param data The data to send to the recipient (in case it is a contract)
      */
-    function withdraw(uint256 amount, address recipient, bytes calldata data) external returns (bytes memory output) {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function withdraw(uint256 amount, address recipient, bytes calldata data)
+        external
+        onlyOwner
+        returns (bytes memory output)
+    {
         // Check if the recipient is a contract
         if (recipient.code.length > 0) {
             bool success;
@@ -653,16 +691,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     /**
      * @dev Register a single Shards with provided TSS public key.
      */
-    function setShard(TssKey calldata publicKey) external {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function setShard(TssKey calldata publicKey) external onlyOwner {
         _setShard(publicKey);
     }
 
     /**
      * @dev Register Shards in batch.
      */
-    function setShards(TssKey[] calldata publicKeys) external {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function setShards(TssKey[] calldata publicKeys) external onlyOwner {
         (TssKey[] memory created, TssKey[] memory revoked) = ShardStore.getMainStorage().replaceTssKeys(publicKeys);
 
         if (created.length > 0) {
@@ -677,16 +713,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     /**
      * @dev Revoke a single shard TSS Key.
      */
-    function revokeShard(TssKey calldata publicKey) external {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function revokeShard(TssKey calldata publicKey) external onlyOwner {
         _revokeShard(publicKey);
     }
 
     /**
      * @dev Revoke Shards in batch.
      */
-    function revokeShards(TssKey[] calldata publicKeys) external {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function revokeShards(TssKey[] calldata publicKeys) external onlyOwner {
         TssKey[] memory revokedKeys = ShardStore.getMainStorage().revokeKeys(publicKeys);
         if (revokedKeys.length > 0) {
             emit ShardsUnregistered(revokedKeys);
@@ -707,16 +741,14 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     /**
      * @dev Create or update a single route
      */
-    function setRoute(Route calldata info) external {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function setRoute(Route calldata info) external onlyOwner {
         RouteStore.getMainStorage().createOrUpdateRoute(info);
     }
 
     /**
      * @dev Create or update an array of routes
      */
-    function setRoutes(Route[] calldata values) external {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function setRoutes(Route[] calldata values) external onlyOwner {
         require(values.length > 0, "routes cannot be empty");
         RouteStore.MainStorage storage store = RouteStore.getMainStorage();
         for (uint256 i = 0; i < values.length; i++) {
@@ -729,17 +761,15 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
     //////////////////////////////////////////////////////////////*/
 
     function admin() external view returns (address) {
-        return ERC1967.getAdmin();
+        return owner();
     }
 
-    function setAdmin(address newAdmin) external payable {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
-        ERC1967.setAdmin(newAdmin);
+    function setAdmin(address newAdmin) external payable onlyOwner {
+        transferOwnership(newAdmin);
     }
 
     // DANGER: This function is for migration purposes only, it allows the admin to set any storage slot.
-    function sudoSetStorage(uint256[2][] calldata values) external payable {
-        require(msg.sender == ERC1967.getAdmin(), "unauthorized");
+    function sudoSetStorage(uint256[2][] calldata values) external payable onlyOwner {
         require(values.length > 0, "invalid values");
 
         uint256 prev = 0;

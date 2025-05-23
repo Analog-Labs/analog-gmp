@@ -30,8 +30,15 @@ import {
     GmpStatus,
     PrimitiveUtils,
     GmpSender,
-    GMP_VERSION
+    GMP_VERSION,
+    GmpMessage
 } from "../src/Primitives.sol";
+
+interface IGatewayWithExecute {
+    function execute(Signature calldata signature, GmpMessage calldata message)
+        external
+        returns (GmpStatus status, bytes32 result);
+}
 
 contract Batching is BaseTest {
     using PrimitiveUtils for UpdateKeysMessage;
@@ -44,7 +51,7 @@ contract Batching is BaseTest {
 
     uint256 private constant ADMIN_SECRET = 0x955acb49dbb669143455ffbf98e30ae5b2d95343c8b46ce10bf1975d722e8001;
     VmSafe.Wallet internal ADMIN;
-    
+
     uint256 private constant SHARD_SECRET = 0x42;
     VmSafe.Wallet internal SHARD;
 
@@ -84,14 +91,14 @@ contract Batching is BaseTest {
         // Encode the `IGmpReceiver.onGmpReceived` call
         uint256 gasToWaste = 1000;
         bytes memory encodedCall = abi.encodeCall(
-                IGmpReceiver.onGmpReceived,
-                (
-                    0x0000000000000000000000000000000000000000000000000000000000000000,
-                    1,
-                    0x0000000000000000000000000000000000000000000000000000000000000000,
-                    0,
-                    abi.encode(gasToWaste)
-                )
+            IGmpReceiver.onGmpReceived,
+            (
+                0x0000000000000000000000000000000000000000000000000000000000000000,
+                1,
+                0x0000000000000000000000000000000000000000000000000000000000000000,
+                0,
+                abi.encode(gasToWaste)
+            )
         );
         uint256 gasLimit = TestUtils.calculateBaseCost(encodedCall) + gasToWaste;
         TestUtils.executeCall(ADMIN.addr, address(receiver1), gasLimit, 0, encodedCall);
@@ -187,6 +194,7 @@ contract Batching is BaseTest {
         emit log_named_uint("    gas needed", gasNeeded);
 
         require(GATEWAY_PROXY.code.length > 0, "gateway proxy not found");
+        // IGatewayWithExecute(GATEWAY_PROXY).execute{gas: gasNeeded}(sig, gmp);
         Gateway(payable(GATEWAY_PROXY)).execute{gas: gasNeeded}(sig, gmp);
 
         emit log_named_uint("    total cost", GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit));
@@ -368,6 +376,8 @@ contract Batching is BaseTest {
         bytes memory result;
         // (executionCost, baseCost, success, result) = address(GATEWAY_PROXY).call(encodedCall);
         console.log("will execute..");
+        console.log("sending call to");
+        console.logAddress(GATEWAY_PROXY);
         (executionCost, baseCost, success, result) =
             TestUtils.tryExecuteCall(signer.addr(), GATEWAY_PROXY, 500_000, 0, encodedCall);
         emit log_named_uint("execution cost", executionCost);

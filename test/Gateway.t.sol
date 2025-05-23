@@ -28,12 +28,11 @@ import {
     GmpSender,
     GMP_VERSION
 } from "../src/Primitives.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 contract SigUtilsTest is GatewayEIP712, Test {
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpCallback;
-
-    constructor() GatewayEIP712(69, address(0)) {}
 
     function testPayload() public pure {
         GmpMessage memory gmp = GmpMessage({
@@ -48,15 +47,7 @@ contract SigUtilsTest is GatewayEIP712, Test {
         GmpCallback memory callback = gmp.memToCallback();
 
         bytes32 msgId = keccak256(
-            abi.encode(
-                GMP_VERSION,
-                gmp.source,
-                gmp.srcNetwork,
-                gmp.dest,
-                gmp.destNetwork,
-                gmp.gasLimit,
-                gmp.nonce
-            )
+            abi.encode(GMP_VERSION, gmp.source, gmp.srcNetwork, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.nonce)
         );
 
         assertEq(gmp.messageId(), msgId);
@@ -145,7 +136,19 @@ library GatewayUtils {
     }
 }
 
-// contract GatewayBase is Test {
+contract TestGatewayV2 is Gateway {
+    string public constant VERSION = "v2.0";
+    uint256 public newFeature;
+
+    function setNewFeature(uint256 _val) external onlyOwner {
+        newFeature = _val;
+    }
+
+    function getNewFeature() external view onlyOwner returns (uint256) {
+        return newFeature;
+    }
+}
+
 contract GatewayTest is BaseTest {
     using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
@@ -173,9 +176,7 @@ contract GatewayTest is BaseTest {
     constructor() {
         VmSafe.Wallet memory admin = vm.createWallet(SECRET);
         assertEq(ADMIN, admin.addr, "admin address mismatch");
-        gateway = Gateway(
-            payable(address(TestUtils.setupGateway(admin, DEST_NETWORK_ID)))
-        );
+        gateway = Gateway(payable(address(TestUtils.setupGateway(admin, DEST_NETWORK_ID))));
         TestUtils.setMockShard(admin, address(gateway), admin);
         TestUtils.setMockRoute(admin, address(gateway), DEST_NETWORK_ID);
         receiver = IGmpReceiver(new GasSpender());
@@ -219,7 +220,9 @@ contract GatewayTest is BaseTest {
         _sortTssKeys(keys);
 
         // Only admin can set shards keys
-        vm.expectRevert("unauthorized");
+        address notAdmin = address(0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496);
+        vm.prank(notAdmin);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, notAdmin));
         gateway.setShards(keys);
 
         // Set shards keys must work
@@ -767,7 +770,11 @@ contract GatewayTest is BaseTest {
 
         // Verify the gas cost
         uint256 expectedCost = GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 6500;
-        assertEq(ctx.executionCost, expectedCost + GasUtils.FIRST_MESSAGE_EXTRA_COST, "unexpected execution gas cost in first call");
+        assertEq(
+            ctx.executionCost,
+            expectedCost + GasUtils.FIRST_MESSAGE_EXTRA_COST,
+            "unexpected execution gas cost in first call"
+        );
 
         // Now the second GMP message nonce must be equals to previous message nonce + 1.
         gmp.nonce = gateway.nonceOf(gmp.source.toAddress());
@@ -787,5 +794,48 @@ contract GatewayTest is BaseTest {
         );
         assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
         assertEq(ctx.executionCost, expectedCost - 6800, "unexpected execution gas cost in second call");
+    }
+
+    function test_upgradeOnlyAdmin() public {
+        TestGatewayV2 gatewayv2 = new TestGatewayV2();
+        address notAdmin = address(0x0000000000000000000000000000000000000000);
+        vm.startPrank(notAdmin);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, notAdmin));
+        gateway.upgradeToAndCall(address(gatewayv2), "");
+        vm.stopPrank();
+        vm.startPrank(ADMIN);
+        gateway.upgradeToAndCall(address(gatewayv2), "");
+    }
+
+    function test_StoragePreservationAfterUpgrade() public {
+        uint256 initialNetworkId = gateway.NETWORK_ID();
+        address initialProxyAddr = gateway.PROXY_ADDRESS();
+
+        TestGatewayV2 gatewayV2 = new TestGatewayV2();
+        vm.prank(ADMIN);
+        gateway.upgradeToAndCall(address(gatewayV2), "");
+
+        TestGatewayV2 upgraded = TestGatewayV2(address(gateway));
+        assertEq(gateway.NETWORK_ID(), initialNetworkId, "Network ID changed");
+        assertEq(upgraded.PROXY_ADDRESS(), initialProxyAddr, "Proxy address changed");
+    }
+
+    function test_NewFeatureAfterUpgrade() public {
+        TestGatewayV2 gatewayV2 = new TestGatewayV2();
+        vm.prank(ADMIN);
+        gateway.upgradeToAndCall(address(gatewayV2), "");
+
+        TestGatewayV2 upgraded = TestGatewayV2(address(gateway));
+
+        address notAdmin = address(0x0000000000000000000000000000000000000000);
+        vm.prank(notAdmin);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, notAdmin));
+        upgraded.setNewFeature(100);
+
+        vm.prank(ADMIN);
+        uint256 newFeature = 100;
+        upgraded.setNewFeature(newFeature);
+        uint256 receivedFeature = upgraded.getNewFeature();
+        assertEq(newFeature, receivedFeature);
     }
 }

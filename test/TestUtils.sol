@@ -23,6 +23,7 @@ import {
     PrimitiveUtils,
     GmpSender
 } from "../src/Primitives.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 struct VerifyingKey {
     uint256 px;
@@ -336,14 +337,17 @@ library TestUtils {
     /**
      * @dev Deploy a new Gateway and GatewayProxy contracts.
      */
-    function setupGateway(
-        VmSafe.Wallet memory admin,
-        uint16 network
-    ) internal returns (IGateway gw) {
+    function setupGateway(VmSafe.Wallet memory admin, uint16 network) internal returns (IGateway gw) {
         vm.startPrank(admin.addr, admin.addr);
-        GatewayProxy proxy = new GatewayProxy(admin.addr);
-        Gateway gateway = new Gateway(network, address(proxy));
-        proxy.upgrade(address(gateway));
+        // GatewayProxy proxy = new GatewayProxy(admin.addr);
+
+        console.log("Admin is", admin.addr);
+        Gateway gateway = new Gateway();
+        bytes memory initData = abi.encodeWithSelector(Gateway.initialize.selector, network);
+        ERC1967Proxy proxy = new ERC1967Proxy(address(gateway), initData);
+        console.log("Implementation:", address(gateway));
+        console.log("Proxy:", address(proxy));
+
         vm.deal(address(proxy), 10 ether);
         vm.stopPrank();
         return IGateway(address(proxy));
@@ -351,7 +355,8 @@ library TestUtils {
 
     function setMockShard(VmSafe.Wallet memory admin, address gateway, VmSafe.Wallet memory shard) internal {
         SigningKey memory signer = TestUtils.createSigner(shard.privateKey);
-        TssKey memory key = TssKey({yParity: SigningUtils.yParity(signer) == 28 ? 3 : 2, xCoord: SigningUtils.xCoord(signer)});
+        TssKey memory key =
+            TssKey({yParity: SigningUtils.yParity(signer) == 28 ? 3 : 2, xCoord: SigningUtils.xCoord(signer)});
         Gateway gw = Gateway(payable(gateway));
         vm.startPrank(admin.addr, admin.addr);
         gw.setShard(key);
@@ -361,14 +366,16 @@ library TestUtils {
     function setMockRoute(VmSafe.Wallet memory admin, address gateway, uint16 network) internal {
         Gateway gw = Gateway(payable(gateway));
         vm.startPrank(admin.addr, admin.addr);
-        gw.setRoute(Route({
-            networkId: NetworkID.wrap(network),
-            gasLimit: 1_000_000,
-            baseFee: 0,
-            gateway: bytes32(uint(1)),
-            relativeGasPriceNumerator: 1,
-            relativeGasPriceDenominator: 1
-        }));
+        gw.setRoute(
+            Route({
+                networkId: NetworkID.wrap(network),
+                gasLimit: 1_000_000,
+                baseFee: 0,
+                gateway: bytes32(uint256(1)),
+                relativeGasPriceNumerator: 1,
+                relativeGasPriceDenominator: 1
+            })
+        );
         vm.stopPrank();
     }
 }
