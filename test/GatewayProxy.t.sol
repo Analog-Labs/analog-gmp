@@ -6,25 +6,8 @@ pragma solidity >=0.8.0;
 import {Test, console} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils} from "./TestUtils.sol";
-import {GasSpender} from "./utils/GasSpender.sol";
-import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
-import {GatewayProxy} from "../src/GatewayProxy.sol";
-import {GasUtils} from "../src/utils/GasUtils.sol";
-import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
-import {UFloat9x56, UFloatMath} from "../src/utils/Float9x56.sol";
-import {IGateway} from "../src/interfaces/IGateway.sol";
+import {GasSpender} from "./GasSpender.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
-import {IExecutor} from "../src/interfaces/IExecutor.sol";
-import {
-    GmpMessage,
-    UpdateKeysMessage,
-    Signature,
-    TssKey,
-    Network,
-    GmpStatus,
-    PrimitiveUtils,
-    GmpSender
-} from "../src/Primitives.sol";
 
 contract GatewayProxyTest is Test {
     IGmpReceiver internal receiver;
