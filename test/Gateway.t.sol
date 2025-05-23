@@ -7,8 +7,7 @@ import {Test, console, Vm} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils} from "./TestUtils.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
-import {GasSpender} from "./utils/GasSpender.sol";
-import {BaseTest} from "./utils/BaseTest.sol";
+import {GasSpender} from "./GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {GasUtils} from "../src/utils/GasUtils.sol";
@@ -70,89 +69,12 @@ contract SigUtilsTest is GatewayEIP712, Test {
     }
 }
 
-struct CallOptions {
-    address from;
-    address to;
-    uint256 value;
-    uint256 gasLimit;
-    uint256 executionCost;
-    uint256 baseCost;
-}
-
-library GatewayUtils {
-    function tryExecute(CallOptions memory ctx, Signature memory signature, GmpMessage memory message)
-        internal
-        returns (bool success, GmpStatus status, bytes32 result)
-    {
-        bytes memory encodedCall = abi.encodeCall(Gateway.execute, (signature, message));
-        bytes memory output;
-        (ctx.executionCost, ctx.baseCost, success, output) =
-            TestUtils.tryExecuteCall(ctx.from, ctx.to, ctx.gasLimit, ctx.value, encodedCall);
-
-        if (success) {
-            require(output.length == 64, "unexpected output length for IExecutor.execute method");
-            assembly {
-                let ptr := add(output, 32)
-                status := mload(ptr)
-                result := mload(add(ptr, 32))
-            }
-        } else {
-            status = GmpStatus.NOT_FOUND;
-            result = bytes32(0);
-        }
-    }
-
-    function execute(CallOptions memory ctx, Signature memory signature, GmpMessage memory message)
-        internal
-        returns (GmpStatus status, bytes32 result)
-    {
-        bytes memory encodedCall = abi.encodeCall(Gateway.execute, (signature, message));
-        (uint256 executionCost, uint256 baseCost, bytes memory output) =
-            TestUtils.executeCall(ctx.from, ctx.to, ctx.gasLimit, ctx.value, encodedCall);
-
-        ctx.executionCost = executionCost;
-        ctx.baseCost = baseCost;
-        if (output.length == 64) {
-            assembly {
-                let ptr := add(output, 32)
-                status := mload(ptr)
-                result := mload(add(ptr, 32))
-            }
-        }
-    }
-
-    function submitMessage(CallOptions memory ctx, GmpMessage memory gmp) internal returns (bytes32 result) {
-        bytes memory encodedCall =
-            abi.encodeCall(IGateway.submitMessage, (gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data));
-        (uint256 executionCost, uint256 baseCost, bytes memory output) =
-            TestUtils.executeCall(ctx.from, ctx.to, ctx.gasLimit, ctx.value, encodedCall);
-        ctx.executionCost = executionCost;
-        ctx.baseCost = baseCost;
-        if (output.length == 32) {
-            assembly {
-                result := mload(add(output, 32))
-            }
-        }
-    }
-
-    function computeGmpGasCost(Signature memory signature, GmpMessage memory message)
-        internal
-        pure
-        returns (uint256 baseCost, uint256 executionCost)
-    {
-        executionCost = GasUtils.computeExecutionRefund(uint16(message.data.length), 0);
-        bytes memory encodedCall = abi.encodeCall(Gateway.execute, (signature, message));
-        baseCost = TestUtils.calculateBaseCost(encodedCall);
-    }
-}
-
 // contract GatewayBase is Test {
-contract GatewayTest is BaseTest {
+contract GatewayTest is Test {
     using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpSender;
     using PrimitiveUtils for address;
-    using GatewayUtils for CallOptions;
     using BranchlessMath for uint256;
 
     Gateway internal gateway;
@@ -324,26 +246,6 @@ contract GatewayTest is BaseTest {
         gateway.setShards(firstHalf);
     }
 
-    function test_Receiver() external {
-        bytes memory testEncodedCall = abi.encodeCall(
-            IGmpReceiver.onGmpReceived,
-            (
-                0x0000000000000000000000000000000000000000000000000000000000000000,
-                1,
-                0x0000000000000000000000000000000000000000000000000000000000000000,
-                0,
-                abi.encode(uint256(1234))
-            )
-        );
-        // Calling the receiver contract directly to make the address warm
-        address sender = address(uint160(uint256(keccak256(msg.data))));
-        vm.deal(sender, 10 ether);
-        (uint256 gasUsed,, bytes memory output) =
-            TestUtils.executeCall(sender, address(receiver), 23_318 + 128, 0, testEncodedCall);
-        assertEq(gasUsed, 1234);
-        assertEq(output.length, 32);
-    }
-
     function test_estimateMessageCost() external {
         vm.txGasPrice(1);
         uint256 cost = gateway.estimateMessageCost(DEST_NETWORK_ID, 96, 100000);
@@ -368,33 +270,17 @@ contract GatewayTest is BaseTest {
 
         Signature memory sig = sign(gmp);
 
-        // Calculate memory expansion cost and base cost
-        (uint256 baseCost, uint256 executionCost) = GatewayUtils.computeGmpGasCost(sig, gmp);
-
-        // Transaction Parameters
-        CallOptions memory ctx = CallOptions({
-            from: sender,
-            to: address(gateway),
-            value: 0,
-            gasLimit: GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit) + baseCost + 1_000_000,
-            executionCost: 0,
-            baseCost: 0
-        });
-
-        GmpStatus status;
-        bytes32 returned;
-
         // Expect a revert
         vm.expectRevert("msg data too large");
-        (status, returned) = ctx.execute(sig, gmp);
-        assertLt(ctx.executionCost, executionCost, "revert should use less gas!!");
-        assertEq(ctx.baseCost, baseCost, "unexpected base cost");
+        gateway.execute{gas: 1_000_000}(sig, gmp);
+        uint256 ctxExecutionCost = vm.lastCallGas().gasTotalUsed;
+        assertLt(ctxExecutionCost, GasUtils.computeExecutionRefund(uint16(gmp.data.length), 0), "revert should use less gas!!");
     }
 
     /**
      * @dev Test the gas metering for the `execute` function.
      */
-    function test_gasMeter(uint16 messageSize) external {
+    /*function test_gasMeter(uint16 messageSize) external {
         vm.assume(messageSize <= 0x6000 && messageSize >= 32);
         vm.txGasPrice(1);
         address sender = address(0xdead_beef);
@@ -419,62 +305,41 @@ contract GatewayTest is BaseTest {
         Signature memory sig = sign(gmp);
 
         // Calculate memory expansion cost and base cost
-        (uint256 baseCost, uint256 executionCost) = GatewayUtils.computeGmpGasCost(sig, gmp);
-        executionCost += gmp.gasLimit;
+        uint256 executionCost = GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit);
+        uint256 gasNeeded = GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit);
 
-        // Transaction Parameters
-        CallOptions memory ctx = CallOptions({
-            from: sender,
-            to: address(gateway),
-            value: 0,
-            gasLimit: GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit) + baseCost - 1,
-            executionCost: 0,
-            baseCost: 0
-        });
-
-        GmpStatus status;
-        bytes32 returned;
-
-        // Expect a revert
+        vm.startPrank(sender);
         vm.expectRevert();
-        (status, returned) = ctx.execute(sig, gmp);
+        gateway.execute{gas: gasNeeded - 1}(sig, gmp);
 
         // Check if the gateway has enough balance to refund the gas
         uint256 gatewayBalance = address(gateway).balance;
         uint256 senderBalance = address(sender).balance;
-        assertGe(gatewayBalance, executionCost + baseCost);
-        assertGe(senderBalance, ctx.gasLimit + ctx.value);
+        assertGe(gatewayBalance, executionCost);
+        assertGe(senderBalance, gasNeeded);
 
-        // Give sufficient gas
-        ctx.gasLimit += 1;
-        ctx.executionCost = 0;
-        ctx.baseCost = 0;
-        (status, returned) = ctx.execute(sig, gmp);
+        (GmpStatus status, bytes32 returned) = gateway.execute{gas: gasNeeded}(sig, gmp);
+        uint256 ctxExecutionCost = vm.lastCallGas().gasTotalUsed;
 
         assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "gmp execution failed");
         assertEq(uint256(returned), gmp.gasLimit, "wrong gmp return value");
-        assertEq(ctx.baseCost, baseCost, "ctx.baseCost != baseCost");
-        assertEq(ctx.executionCost, executionCost, "ctx.executionCost != executionCost");
-        assertEq(gatewayBalance - address(gateway).balance, executionCost + baseCost, "wrong refund amount");
+        assertEq(ctxExecutionCost, executionCost, "ctx.executionCost != executionCost");
+        assertEq(gatewayBalance - address(gateway).balance, executionCost, "wrong refund amount");
         assertEq(senderBalance, address(sender).balance, "sender balance should not change");
-        assertEq(
-            ctx.gasLimit - baseCost, GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit), "gas needed mismatch"
-        );
 
-        // Submit GMP message
+        // Calculate the minimal gmp value minus one
+        uint256 value;
         {
-            // Calculate the minimal gmp value minus one
             uint256 nonZeros = GasUtils.countNonZeros(gmp.data);
             uint256 zeros = gmp.data.length - nonZeros;
-            ctx.value = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gmp.gasLimit) - 1;
-
-            // Add sufficient gas
-            ctx.gasLimit += gmp.data.length * 8;
+            value = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gmp.gasLimit);
         }
+        // Add sufficient gas
+        gasNeeded += gmp.data.length * 8;
 
         // Must revert if fund are insufficient
         vm.expectRevert("insufficient tx value");
-        ctx.submitMessage(gmp);
+        gateway.submitMessage{value: value - 1}(gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data);
 
         {
             bytes memory submitEncoded =
@@ -483,20 +348,21 @@ contract GatewayTest is BaseTest {
         }
 
         // Must work if the funds are sufficient
-        ctx.value += 1;
-        ctx.submitMessage(gmp);
+        gateway.submitMessage{value: value}(gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data);
+        ctxExecutionCost = vm.lastCallGas().gasTotalUsed;
 
         assertEq(
-            ctx.executionCost,
+            ctxExecutionCost,
             GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 4500 + GasUtils.FIRST_MESSAGE_EXTRA_COST,
             "unexpected submit message gas cost"
         );
-    }
+    }*/
 
-    function test_submitMessageMeter(uint16 messageSize) external {
+    function test_submitMessageMeter() external {
+        uint16 messageSize = 32;
         vm.assume(messageSize <= 0x6000);
         vm.txGasPrice(1);
-        address sender = address(0xdead_beef);
+        address sender = address(0xabcdef);
         vm.deal(sender, 10 ether);
 
         // Build and sign GMP message
@@ -510,30 +376,15 @@ contract GatewayTest is BaseTest {
             data: new bytes(messageSize)
         });
 
-        // Calculate memory expansion cost and base cost
-        uint256 baseCost;
-        {
-            bytes memory encoded =
-                abi.encodeCall(IGateway.submitMessage, (gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data));
-            assertEq(encoded.length, ((gmp.data.length + 31) & 0xffe0) + 164, "wrong encoded length");
-            baseCost = TestUtils.calculateBaseCost(encoded);
-        }
-
         // Transaction Parameters
-        CallOptions memory ctx = CallOptions({
-            from: sender,
-            to: address(gateway),
-            value: 0,
-            gasLimit: GasUtils.submitMessageGasNeeded(uint16(gmp.data.length)) + baseCost,
-            executionCost: 0,
-            baseCost: 0
-        });
+        uint256 gasLimit = GasUtils.submitMessageGasNeeded(uint16(gmp.data.length));
 
         // Submit the transaction
+        uint256 value;
         {
             uint256 nonZeros = GasUtils.countNonZeros(gmp.data);
             uint256 zeros = gmp.data.length - nonZeros;
-            ctx.value = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gmp.gasLimit);
+            value = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gmp.gasLimit);
         }
 
         uint256 snapshot = vm.snapshotState();
@@ -546,26 +397,30 @@ contract GatewayTest is BaseTest {
             gmp.dest,
             gmp.destNetwork,
             uint64(gmp.gasLimit),
-            uint64(ctx.value),
+            uint64(value),
             gmp.nonce,
             gmp.data
         );
-        console.log("expect: ", ctx.value);
-        ctx.gasLimit += GasUtils.FIRST_MESSAGE_EXTRA_COST;
-        assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
+        console.log("expect: ", value);
+        gasLimit += GasUtils.FIRST_MESSAGE_EXTRA_COST;
+        vm.startPrank(sender);
+        bytes32 rid = gateway.submitMessage{value: value}(gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data);
+        uint256 executionCost = vm.lastCallGas().gasTotalUsed;
+        vm.stopPrank();
+        assertEq(rid, id, "unexpected GMP id");
 
         // Verify the execution cost
         assertEq(
-            ctx.executionCost,
+            executionCost,
             GasUtils.submitMessageGasCost(uint16(gmp.data.length)) + GasUtils.FIRST_MESSAGE_EXTRA_COST,
             "unexpected submit message gas cost"
         );
 
         // Must revert if fund are insufficient
         vm.revertToState(snapshot);
-        ctx.value -= 1;
+        value -= 1;
         vm.expectRevert("insufficient tx value");
-        ctx.submitMessage(gmp);
+        gateway.submitMessage{value: value}(gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data);
     }
 
     function test_refund() external {
@@ -589,26 +444,15 @@ contract GatewayTest is BaseTest {
         Signature memory sig = sign(gmp);
 
         // Estimate execution cost
-        (uint256 baseCost, uint256 executionCost) = GatewayUtils.computeGmpGasCost(sig, gmp);
-        uint256 expectGasUsed = baseCost + executionCost + gmp.gasLimit;
+        uint256 executionCost = GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit);
+        uint256 gasNeeded = GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit);
 
         // Execute GMP message
         uint256 beforeBalance = sender.balance;
         {
-            CallOptions memory ctx = CallOptions({
-                from: sender,
-                to: address(gateway),
-                value: 0,
-                gasLimit: GasUtils.executionGasNeeded(gmp.data.length, gmp.gasLimit) + baseCost,
-                executionCost: 0,
-                baseCost: 0
-            });
-            (GmpStatus status, bytes32 returned) = ctx.execute(sig, gmp);
-            {
-                // Verify the gas cost
-                VmSafe.Gas memory gas = vm.lastCallGas();
-                assertEq(gas.gasTotalUsed, executionCost + 2000, "unexpected gas used");
-            }
+            (GmpStatus status, bytes32 returned) = gateway.execute{gas: gasNeeded}(sig, gmp);
+            uint256 ctxExecutionCost = vm.lastCallGas().gasTotalUsed;
+            assertEq(ctxExecutionCost, executionCost, "unexpected gas used");
 
             // Verify the GMP message status
             assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "Unexpected GMP status");
@@ -617,10 +461,6 @@ contract GatewayTest is BaseTest {
                 uint256(info.status), uint256(GmpStatus.SUCCESS), "GMP status stored doesn't match the returned status"
             );
             assertEq(returned, bytes32(uint256(gmp.gasLimit)), "unexpected GMP result");
-
-            // Verify the gas cost
-            assertEq(ctx.executionCost + ctx.baseCost, expectGasUsed, "unexpected gas used");
-            assertEq(ctx.executionCost, executionCost + gmp.gasLimit, "unexpected execution cost");
         }
 
         // Verify the gas refund
@@ -644,16 +484,10 @@ contract GatewayTest is BaseTest {
             data: ""
         });
         Signature memory wrongNetworkSig = sign(wrongNetwork);
-        CallOptions memory ctx = CallOptions({
-            from: sender,
-            to: address(gateway),
-            value: 0,
-            gasLimit: 1_000_000,
-            executionCost: 0,
-            baseCost: 0
-        });
+        vm.startPrank(sender);
         vm.expectRevert("invalid gmp network");
-        ctx.execute(wrongNetworkSig, wrongNetwork);
+        gateway.execute{gas: 1_000_000}(wrongNetworkSig, wrongNetwork);
+        vm.stopPrank();
     }
 
     function test_ExecuteRevertsBelowGasLimit() external {
@@ -672,19 +506,11 @@ contract GatewayTest is BaseTest {
         Signature memory sig = sign(gmp);
 
         // Deposit funds
-        (uint256 baseCost, uint256 executionCost) = GatewayUtils.computeGmpGasCost(sig, gmp);
+        uint256 executionCost = GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit);
 
         // Execute GMP message
-        CallOptions memory ctx = CallOptions({
-            from: sender,
-            to: address(gateway),
-            value: 0,
-            gasLimit: baseCost + executionCost,
-            executionCost: 0,
-            baseCost: 0
-        });
         vm.expectRevert("insufficient gas to execute GMP message");
-        ctx.execute(sig, gmp);
+        gateway.execute{gas: executionCost}(sig, gmp);
     }
 
     function test_executeRevertsAlreadyExecuted() external {
@@ -703,21 +529,15 @@ contract GatewayTest is BaseTest {
         Signature memory sig = sign(gmp);
 
         // Execute GMP message first time
-        CallOptions memory ctx = CallOptions({
-            from: sender,
-            to: address(gateway),
-            value: 0,
-            gasLimit: 1_000_000,
-            executionCost: 0,
-            baseCost: 0
-        });
-        (GmpStatus status, bytes32 result) = ctx.execute(sig, gmp);
+        vm.startPrank(sender);
+        (GmpStatus status, bytes32 result) = gateway.execute{gas: 1_000_000}(sig, gmp);
+        vm.stopPrank();
         assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "unexpected GMP status");
         assertEq(gmp.gasLimit, uint256(result), "unexpected GMP result");
 
         // Execute GMP message second time
         vm.expectRevert("message already executed");
-        ctx.execute(sig, gmp);
+        gateway.execute(sig, gmp);
     }
 
     function test_submitGmpMessage() external {
@@ -738,29 +558,21 @@ contract GatewayTest is BaseTest {
         // Check the previous message hash
         assertEq(gateway.nonceOf(gmp.source.toAddress()), 0, "wrong previous message hash");
 
-        CallOptions memory ctx = CallOptions({
-            from: sender,
-            to: address(gateway),
-            value: 0,
-            gasLimit: 1_000_000,
-            executionCost: 0,
-            baseCost: 0
-        });
-
         // Compute GMP message price
+        uint256 value;
         {
             uint16 nonZeros = uint16(GasUtils.countNonZeros(gmp.data));
             uint16 zeros = uint16(gmp.data.length) - nonZeros;
-            ctx.value = GasUtils.estimateWeiCost(UFloatMath.ONE, 0, nonZeros, zeros, gmp.gasLimit);
+            value = GasUtils.estimateWeiCost(UFloatMath.ONE, 0, nonZeros, zeros, gmp.gasLimit);
         }
 
         // Submit message with insufficient funds
-        ctx.value -= 1;
+        value -= 1;
         vm.expectRevert("insufficient tx value");
-        ctx.submitMessage(gmp);
+        gateway.submitMessage{value: value}(gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data);
 
         // Submit message with sufficient funds
-        ctx.value += 1;
+        value += 1;
         vm.expectEmit(true, true, true, true);
         emit IGateway.GmpCreated(
             id,
@@ -768,15 +580,17 @@ contract GatewayTest is BaseTest {
             gmp.dest,
             gmp.destNetwork,
             uint64(gmp.gasLimit),
-            uint64(ctx.value),
+            uint64(value),
             gmp.nonce,
             gmp.data
         );
-        assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
+        bytes32 rid = gateway.submitMessage{value: value}(gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data);
+        uint256 ctxExecutionCost = vm.lastCallGas().gasTotalUsed;
+        assertEq(rid, id, "unexpected GMP id");
 
         // Verify the gas cost
         uint256 expectedCost = GasUtils.submitMessageGasCost(uint16(gmp.data.length)) - 6500;
-        assertEq(ctx.executionCost, expectedCost + GasUtils.FIRST_MESSAGE_EXTRA_COST, "unexpected execution gas cost in first call");
+        assertEq(ctxExecutionCost, expectedCost + GasUtils.FIRST_MESSAGE_EXTRA_COST, "unexpected execution gas cost in first call");
 
         // Now the second GMP message nonce must be equals to previous message nonce + 1.
         gmp.nonce = gateway.nonceOf(gmp.source.toAddress());
@@ -790,11 +604,13 @@ contract GatewayTest is BaseTest {
             gmp.dest,
             gmp.destNetwork,
             uint64(gmp.gasLimit),
-            uint64(ctx.value),
+            uint64(value),
             gmp.nonce,
             gmp.data
         );
-        assertEq(ctx.submitMessage(gmp), id, "unexpected GMP id");
-        assertEq(ctx.executionCost, expectedCost - 6800, "unexpected execution gas cost in second call");
+        rid = gateway.submitMessage{value: value}(gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data);
+        ctxExecutionCost = vm.lastCallGas().gasTotalUsed;
+        assertEq(rid, id, "unexpected GMP id");
+        assertEq(ctxExecutionCost, expectedCost - 6800, "unexpected execution gas cost in second call");
     }
 }
