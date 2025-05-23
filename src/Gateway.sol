@@ -59,11 +59,11 @@ abstract contract GatewayEIP712 is Initializable {
         gs.proxyAddress = address(this);
     }
 
-    function NETWORK_ID() internal view returns (uint16) {
+    function NETWORK_ID() public view returns (uint16) {
         return _getGatewayEIP712Storage().networkId;
     }
 
-    function PROXY_ADDRESS() internal view returns (address) {
+    function PROXY_ADDRESS() public view returns (address) {
         return _getGatewayEIP712Storage().proxyAddress;
     }
 }
