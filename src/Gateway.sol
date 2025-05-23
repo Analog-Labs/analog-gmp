@@ -35,7 +35,6 @@ import {NetworkID, NetworkIDHelpers} from "./NetworkID.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {console} from "forge-std/console.sol";
 
 abstract contract GatewayEIP712 is Initializable {
     using NetworkIDHelpers for NetworkID;
@@ -124,8 +123,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
         __Ownable_init(msg.sender);
         __GatewayEIP712_init(_networkId);
         __UUPSUpgradeable_init();
-        console.log("network id after initializing", NETWORK_ID());
-        console.log("initializing with sender", msg.sender);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
@@ -456,7 +453,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
     function _checkGmpMessage(GmpMessage calldata message) private view {
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
-        console.log("network id in gateway is", NETWORK_ID());
         require(message.destNetwork == NETWORK_ID(), "invalid gmp network");
 
         // Check if the message data is too large
@@ -622,7 +618,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
         onlyOwner
         returns (bytes memory output)
     {
-        // require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         // Check if the recipient is a contract
         if (recipient.code.length > 0) {
             bool success;
@@ -715,7 +710,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
      * @dev Revoke a single shard TSS Key.
      */
     function revokeShard(TssKey calldata publicKey) external onlyOwner {
-        // require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         _revokeShard(publicKey);
     }
 
@@ -723,7 +717,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
      * @dev Revoke Shards in batch.
      */
     function revokeShards(TssKey[] calldata publicKeys) external onlyOwner {
-        // require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         TssKey[] memory revokedKeys = ShardStore.getMainStorage().revokeKeys(publicKeys);
         if (revokedKeys.length > 0) {
             emit ShardsUnregistered(revokedKeys);
@@ -745,7 +738,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
      * @dev Create or update a single route
      */
     function setRoute(Route calldata info) external onlyOwner {
-        // require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         RouteStore.getMainStorage().createOrUpdateRoute(info);
     }
 
@@ -753,7 +745,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
      * @dev Create or update an array of routes
      */
     function setRoutes(Route[] calldata values) external onlyOwner {
-        // require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         require(values.length > 0, "routes cannot be empty");
         RouteStore.MainStorage storage store = RouteStore.getMainStorage();
         for (uint256 i = 0; i < values.length; i++) {
@@ -770,14 +761,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
     }
 
     function setAdmin(address newAdmin) external payable onlyOwner {
-        // require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         transferOwnership(newAdmin);
-        // ERC1967.setAdmin(newAdmin);
     }
 
     // DANGER: This function is for migration purposes only, it allows the admin to set any storage slot.
     function sudoSetStorage(uint256[2][] calldata values) external payable onlyOwner {
-        // require(msg.sender == ERC1967.getAdmin(), "unauthorized");
         require(values.length > 0, "invalid values");
 
         uint256 prev = 0;
