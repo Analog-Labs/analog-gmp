@@ -43,19 +43,18 @@ library GasUtils {
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST =
-        EXECUTION_SELECTOR_OVERHEAD + 46960 + 144 + 22 + 5491 - 5 + 6 - 12 + 12;
+    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46960 + 144 + 22;
 
     /**
      * @dev Base cost of the `IGateway.submitMessage` method.
      */
-    uint256 internal constant SUBMIT_BASE_COST = 24064 - 66 + 133 + 44 - 5 - 17;
+    uint256 internal constant SUBMIT_BASE_COST = 24064 - 66 + 133 + 44 + 182;
 
     /**
      * @dev Extra gas cost that any account `Contract or EOA` must pay when calling `IGateway.submitMessage` method.
      * This cost is necessary for initialize the account's `nonce` storage slot.
      */
-    uint256 internal constant FIRST_MESSAGE_EXTRA_COST = 17100 + 6000 - 1 + 11;
+    uint256 internal constant FIRST_MESSAGE_EXTRA_COST = 17100 + 6000 + 2000;
 
     /**
      * @dev Solidity's reserved location for the free memory pointer.
