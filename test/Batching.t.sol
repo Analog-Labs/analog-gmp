@@ -7,8 +7,7 @@ import {Test, console, Vm} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {TestUtils} from "./TestUtils.sol";
-import {GasSpender} from "./utils/GasSpender.sol";
-import {BaseTest} from "./utils/BaseTest.sol";
+import {GasSpender} from "./GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {Hashing} from "../src/utils/Hashing.sol";
@@ -34,7 +33,7 @@ import {
     GMP_VERSION
 } from "../src/Primitives.sol";
 
-contract Batching is BaseTest {
+contract Batching is Test {
     using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpCallback;
@@ -81,20 +80,10 @@ contract Batching is BaseTest {
     }
 
     function setUp() external {
-        // Encode the `IGmpReceiver.onGmpReceived` call
         uint256 gasToWaste = 1000;
-        bytes memory encodedCall = abi.encodeCall(
-                IGmpReceiver.onGmpReceived,
-                (
-                    0x0000000000000000000000000000000000000000000000000000000000000000,
-                    1,
-                    0x0000000000000000000000000000000000000000000000000000000000000000,
-                    0,
-                    abi.encode(gasToWaste)
-                )
-        );
-        uint256 gasLimit = TestUtils.calculateBaseCost(encodedCall) + gasToWaste;
-        TestUtils.executeCall(ADMIN.addr, address(receiver1), gasLimit, 0, encodedCall);
+        vm.startPrank(ADMIN.addr);
+        receiver1.onGmpReceived{gas: gasToWaste}(0x0, 1, 0x0, 0, abi.encode(gasToWaste));
+        vm.stopPrank();
     }
 
     function sign(Signer signer, GmpMessage memory gmp) private view returns (Signature memory) {
@@ -350,10 +339,6 @@ contract Batching is BaseTest {
         // Sign the batch //
         ////////////////////
         Signature memory sig = sign(signer, inbound);
-        bytes memory encodedCall = abi.encodeCall(Gateway.batchExecute, (sig, inbound));
-
-        console.log("encoded call:");
-        console.logBytes(encodedCall);
 
         // vm.deal(DEPLOYER, 100 ether);
         // vm.startPrank(DEPLOYER, DEPLOYER);
@@ -363,22 +348,13 @@ contract Batching is BaseTest {
         emit log_named_uint("execution cost", executionCost);
         require(GATEWAY_PROXY.code.length > 0, "gateway proxy not found");
 
-        uint256 baseCost;
-        bool success;
-        bytes memory result;
-        // (executionCost, baseCost, success, result) = address(GATEWAY_PROXY).call(encodedCall);
         console.log("will execute..");
-        (executionCost, baseCost, success, result) =
-            TestUtils.tryExecuteCall(address(signer), GATEWAY_PROXY, 500_000, 0, encodedCall);
+        vm.startPrank(address(signer));
+        Gateway(GATEWAY_PROXY).batchExecute{gas: 500_000}(sig, inbound);
+        executionCost = vm.lastCallGas().gasTotalUsed;
+        vm.stopPrank();
         emit log_named_uint("execution cost", executionCost);
-        emit log_named_uint("     base cost", baseCost);
-        if (!success) {
-            console.log("reverted:");
-            console.logBytes(result);
-            assembly {
-                revert(add(result, 0x20), mload(result))
-            }
-        }
+        //emit log_named_uint("     base cost", baseCost);
 
         emit log_named_uint("    total cost", GasUtils.computeExecutionRefund(uint16(32), gasLimit));
         emit log_named_uint("execution cost", executionCost);
