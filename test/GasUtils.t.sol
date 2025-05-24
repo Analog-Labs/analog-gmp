@@ -7,8 +7,7 @@ import {Signer} from "frost-evm/sol/Signer.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils} from "./TestUtils.sol";
-import {BaseTest} from "./utils/BaseTest.sol";
-import {GasSpender} from "./utils/GasSpender.sol";
+import {GasSpender} from "./GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {GasUtils} from "../src/utils/GasUtils.sol";
@@ -17,7 +16,6 @@ import {UFloat9x56, UFloatMath} from "../src/utils/Float9x56.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
-import {CallOptions, GatewayUtils} from "./Gateway.t.sol";
 import {
     GmpMessage,
     UpdateKeysMessage,
@@ -44,107 +42,34 @@ contract GasUtilsMock {
     }
 }
 
-contract GasUtilsTest is BaseTest {
+contract GasUtilsTest is Test {
     using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpSender;
     using PrimitiveUtils for address;
-    using GatewayUtils for CallOptions;
     using BranchlessMath for uint256;
 
-    GasUtilsMock internal mock;
+    VmSafe.Wallet internal admin;
     Gateway internal gateway;
-    Signer internal signer;
-
-    // Receiver Contract, the will waste the exact amount of gas you sent to it in the data field
     IGmpReceiver internal receiver;
 
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
 
     constructor() {
-        // Create the Shard and Admin accounts
-        signer = new Signer(secret);
-        VmSafe.Wallet memory deployer = vm.createWallet(secret);
-        vm.deal(deployer.addr, 100 ether);
-
-        // Deploy the GasUtilsMock contract
-        mock = new GasUtilsMock();
-
-        // Deploy the GatewayProxy
-        gateway = Gateway(
-            payable(address(TestUtils.setupGateway(deployer, DEST_NETWORK_ID)))
-        );
-        TestUtils.setMockShard(deployer, address(gateway), deployer);
-        vm.deal(address(gateway), 100 ether);
-
-        // Deploy the GasSpender contract, which implements the IGmpReceiver interface.
+        admin = vm.createWallet(secret);
+        vm.deal(admin.addr, 100 ether);
+        gateway = TestUtils.setupGateway(admin, DEST_NETWORK_ID);
+        TestUtils.setMockShard(admin, address(gateway), admin);
+        vm.deal(admin.addr, 100 ether);
         receiver = IGmpReceiver(new GasSpender());
-    }
-
-    function sign(GmpMessage memory gmp) internal view returns (Signature memory) {
-        bytes32 hash = gmp.opHash();
-        (uint256 e, uint256 s) = signer.signPrehashed(uint256(hash), nonce);
-        return Signature({xCoord: signer.xCoord(), e: e, s: s});
-    }
-
-    /**
-     * @dev Create a GMP message with the provided parameters.
-     */
-    function _buildGmpMessage(address sender, uint64 gasLimit, uint64 gasUsed, uint256 messageSize)
-        private
-        view
-        returns (GmpMessage memory message, Signature memory signature, CallOptions memory context)
-    {
-        require(gasUsed == 0 || messageSize >= 32, "If gasUsed > 0, then messageSize must be >= 32");
-        require(messageSize <= 0x6000, "message is too big");
-
-        // Setup data and receiver addresses.
-        bytes memory data = new bytes(messageSize);
-        address gmpReceiver;
-        if (gasUsed > 0) {
-            gmpReceiver = address(receiver);
-            assembly {
-                mstore(add(data, 32), gasUsed)
-            }
-        } else {
-            // Create a new unique receiver address for each message, otherwise the gas refund will not work.
-            gmpReceiver = address(bytes20(keccak256(abi.encode(sender, gasLimit, messageSize))));
-        }
-
-        // Build the GMP message
-        message = GmpMessage({
-            source: sender.toSender(false),
-            srcNetwork: SRC_NETWORK_ID,
-            dest: gmpReceiver,
-            destNetwork: DEST_NETWORK_ID,
-            gasLimit: gasLimit,
-            nonce: 1,
-            data: data
-        });
-
-        // Sign the message
-        signature = sign(message);
-
-        // Calculate memory expansion cost and base cost
-        (uint256 baseCost, uint256 executionCost) = GatewayUtils.computeGmpGasCost(signature, message);
-
-        // Set Transaction Parameters
-        context = CallOptions({
-            from: sender,
-            to: address(gateway),
-            value: 0,
-            gasLimit: GasUtils.executionGasNeeded(message.data.length, message.gasLimit).saturatingAdd(baseCost),
-            executionCost: executionCost,
-            baseCost: baseCost
-        });
     }
 
     /**
      * Test the `GasUtils.txBaseCost` method.
      */
-    function test_txBaseCost() external view {
-        // Build and sign GMP message
+    function test_txBaseCost() external {
+        GasUtilsMock mock = new GasUtilsMock();
         GmpMessage memory gmp = GmpMessage({
             source: address(0x1111111111111111111111111111111111111111).toSender(false),
             srcNetwork: 1234,
@@ -154,12 +79,11 @@ contract GasUtilsTest is BaseTest {
             nonce: 0,
             data: hex"00"
         });
-        Signature memory sig = sign(gmp);
-        sig.xCoord = type(uint256).max;
-        sig.e = type(uint256).max;
-        sig.s = type(uint256).max;
-
-        // Check if `IExecutor.execute` match the expected base cost
+        Signature memory sig = Signature({
+            xCoord: type(uint256).max,
+            e: type(uint256).max,
+            s: type(uint256).max
+        });
         (uint256 baseCost, uint256 nonZeros, uint256 zeros) = mock.execute(sig, gmp);
         assertEq(baseCost, 24444, "Wrong calldata gas cost");
         assertEq(nonZeros, 147, "wrong number of non-zeros");
@@ -173,68 +97,49 @@ contract GasUtilsTest is BaseTest {
         vm.assume(gasLimit >= 5000);
         vm.assume(messageSize <= (0x6000 - 32));
         messageSize += 32;
-        vm.txGasPrice(1);
-        address sender = TestUtils.createTestAccount(100 ether);
+        address sender = address(0xdead_beef);
+        vm.deal(sender, 10 ether);
 
-        // Build the GMP message
-        GmpMessage memory gmp;
-        Signature memory sig;
-        CallOptions memory ctx;
-        (gmp, sig, ctx) = _buildGmpMessage(sender, gasLimit, gasLimit, messageSize);
+        bytes memory data = new bytes(messageSize);
+        address gmpReceiver;
+        if (gasLimit > 0) {
+            gmpReceiver = address(receiver);
+            assembly {
+                mstore(add(data, 32), gasLimit)
+            }
+        } else {
+            // Create a new unique receiver address for each message, otherwise the gas refund will not work.
+            gmpReceiver = address(bytes20(keccak256(abi.encode(sender, gasLimit, messageSize))));
+        }
+        GmpMessage memory gmp = GmpMessage({
+            source: sender.toSender(false),
+            srcNetwork: SRC_NETWORK_ID,
+            dest: address(receiver),
+            destNetwork: DEST_NETWORK_ID,
+            gasLimit: gasLimit,
+            nonce: 1,
+            data: data
+        });
+        Signature memory sig = TestUtils.sign(admin, gmp, nonce);
 
-        // Increase the gas limit to avoid out-of-gas errors
-        ctx.gasLimit = ctx.gasLimit.saturatingAdd(10_000_000);
+        console.log("messageSize", messageSize);
+        console.log("gasLimit", gasLimit);
 
         // Execute the GMP message
-        {
-            bytes32 gmpId = gmp.messageId();
-            vm.expectEmit(true, true, true, true);
-            emit IExecutor.GmpExecuted(gmpId, gmp.source, gmp.dest, GmpStatus.SUCCESS, bytes32(uint256(gasLimit)));
-            uint256 balanceBefore = ctx.from.balance;
-            (GmpStatus status, bytes32 result) = ctx.execute(sig, gmp);
-            assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "GMP execution failed");
-            assertEq(result, bytes32(uint256(gasLimit)), "unexpected result");
-            assertEq(balanceBefore, ctx.from.balance, "Balance should not change");
-        }
+        bytes32 gmpId = gmp.messageId();
+        vm.expectEmit(true, true, true, true);
+        emit IExecutor.GmpExecuted(gmpId, gmp.source, gmp.dest, GmpStatus.SUCCESS, bytes32(uint256(gasLimit)));
+        uint256 balanceBefore = sender.balance;
+        (GmpStatus status, bytes32 result) = gateway.execute{gas: 10_000_000}(sig, gmp);
+        VmSafe.Gas memory gas = vm.lastCallGas();
+        assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "GMP execution failed");
+        assertEq(result, bytes32(uint256(gasLimit)), "unexpected result");
+        assertEq(balanceBefore, sender.balance, "Balance should not change");
+        assertEq(gas.gasLimit - gas.gasTotalUsed, gas.gasRemaining);
 
-        emit log_named_uint("execution cost", GasUtils._executionGasCost(gmp.data.length, gmp.gasLimit));
-        uint256 executionCost = GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit);
-        assertEq(ctx.executionCost, executionCost, "execution cost mismatch");
-
-        // Calculate the expected base cost
-        uint256 dynamicCost = executionCost - GasUtils.EXECUTION_BASE_COST;
-        uint256 expectedBaseCost = ctx.executionCost - dynamicCost;
-        {
-            console.log("proxy: ", ctx.to);
-            console.logBytes(ctx.to.code);
-            address implementationAddr = address(
-                uint160(uint256(vm.load(ctx.to, 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc)))
-            );
-            console.log("implementation: ", implementationAddr);
-            console.logBytes(implementationAddr.code);
-            console.log("calldata:");
-            console.logBytes(abi.encodeCall(Gateway.execute, (sig, gmp)));
-        }
-        assertEq(expectedBaseCost, GasUtils.EXECUTION_BASE_COST, "Wrong EXECUTION_BASE_COST");
+        uint256 mGasUsed = gas.gasTotalUsed;
+        uint256 cGasUsed = GasUtils.executionGasUsed(uint16(gmp.data.length), gmp.gasLimit);
+        console.log("gasUsed", mGasUsed, cGasUsed);
+        assertEq(cGasUsed, mGasUsed, "gasUsed mismatch");
     }
-
-    /*function test_gasUtils() external pure {
-        uint256 baseCost = GasUtils.EXECUTION_BASE_COST;
-        assertEq(GasUtils.estimateGas(0, 0, 0) - baseCost, 31531);
-        assertEq(GasUtils.estimateGas(0, 33, 0) - baseCost, 31904);
-        assertEq(GasUtils.estimateGas(33, 0, 0) - baseCost, 32564);
-        assertEq(GasUtils.estimateGas(20, 13, 0) - baseCost, 32304);
-
-        UFloat9x56 one = UFloatMath.ONE;
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 0, 0) - baseCost, 31531);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 0, 33, 0) - baseCost, 31904);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 33, 0, 0) - baseCost, 32564);
-        assertEq(GasUtils.estimateWeiCost(one, 0, 20, 13, 0) - baseCost, 32304);
-
-        UFloat9x56 two = UFloat9x56.wrap(0x8080000000000000);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 0, 0) / 2 - baseCost, 31531);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 0, 33, 0) / 2 - baseCost, 31904);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 33, 0, 0) / 2 - baseCost, 32564);
-        assertEq(GasUtils.estimateWeiCost(two, 0, 20, 13, 0) / 2 - baseCost, 32304);
-    }*/
 }

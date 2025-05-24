@@ -5,9 +5,9 @@ pragma solidity >=0.8.0;
 
 import {Test, console, Vm} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {TestUtils, SigningKey, SigningUtils} from "./TestUtils.sol";
-import {GasSpender} from "./utils/GasSpender.sol";
-import {BaseTest} from "./utils/BaseTest.sol";
+import {Signer} from "../lib/frost-evm/sol/Signer.sol";
+import {TestUtils} from "./TestUtils.sol";
+import {GasSpender} from "./GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {Hashing} from "../src/utils/Hashing.sol";
@@ -33,14 +33,13 @@ import {
     GMP_VERSION
 } from "../src/Primitives.sol";
 
-contract Batching is BaseTest {
+contract Batching is Test {
     using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpCallback;
     using PrimitiveUtils for GmpSender;
     using PrimitiveUtils for address;
     using BranchlessMath for uint256;
-    using SigningUtils for SigningKey;
 
     uint256 private constant ADMIN_SECRET = 0x955acb49dbb669143455ffbf98e30ae5b2d95343c8b46ce10bf1975d722e8001;
     VmSafe.Wallet internal ADMIN;
@@ -81,25 +80,15 @@ contract Batching is BaseTest {
     }
 
     function setUp() external {
-        // Encode the `IGmpReceiver.onGmpReceived` call
         uint256 gasToWaste = 1000;
-        bytes memory encodedCall = abi.encodeCall(
-                IGmpReceiver.onGmpReceived,
-                (
-                    0x0000000000000000000000000000000000000000000000000000000000000000,
-                    1,
-                    0x0000000000000000000000000000000000000000000000000000000000000000,
-                    0,
-                    abi.encode(gasToWaste)
-                )
-        );
-        uint256 gasLimit = TestUtils.calculateBaseCost(encodedCall) + gasToWaste;
-        TestUtils.executeCall(ADMIN.addr, address(receiver1), gasLimit, 0, encodedCall);
+        vm.startPrank(ADMIN.addr);
+        receiver1.onGmpReceived{gas: gasToWaste}(0x0, 1, 0x0, 0, abi.encode(gasToWaste));
+        vm.stopPrank();
     }
 
-    function sign(SigningKey memory signer, GmpMessage memory gmp) private pure returns (Signature memory) {
+    function sign(Signer signer, GmpMessage memory gmp) private view returns (Signature memory) {
         GmpCallback memory callback = gmp.memToCallback();
-        (uint256 e, uint256 s) = signer.signPrehashed(callback.opHash, SIGNING_NONCE);
+        (uint256 e, uint256 s) = signer.signPrehashed(uint256(callback.opHash), SIGNING_NONCE);
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
     }
 
@@ -108,7 +97,7 @@ contract Batching is BaseTest {
         return message.intoCallback().messageId();
     }
 
-    function sign(SigningKey memory signer, InboundMessage memory message)
+    function sign(Signer signer, InboundMessage memory message)
         private
         view
         returns (Signature memory sig)
@@ -148,9 +137,9 @@ contract Batching is BaseTest {
         );
     }
 
-    function signAt(SigningKey memory signer, InboundMessage memory message, Signature memory sig) private view {
+    function signAt(Signer signer, InboundMessage memory message, Signature memory sig) private view {
         bytes32 signingHash = this.computeInboundMessageSigningHash(message);
-        (uint256 e, uint256 s) = signer.signPrehashed(signingHash, SIGNING_NONCE);
+        (uint256 e, uint256 s) = signer.signPrehashed(uint256(signingHash), SIGNING_NONCE);
         sig.xCoord = signer.xCoord();
         sig.e = e;
         sig.s = s;
@@ -158,7 +147,7 @@ contract Batching is BaseTest {
 
     function test_gmp_debug() external {
         vm.txGasPrice(1);
-        SigningKey memory signer = TestUtils.createSigner(SHARD_SECRET);
+        Signer signer = new Signer(SHARD_SECRET);
 
         // Build and sign GMP message
         // bytes memory data = new bytes(3070 + 32);
@@ -182,15 +171,8 @@ contract Batching is BaseTest {
 
         vm.deal(ADMIN.addr, 100 ether);
         vm.startPrank(ADMIN.addr, ADMIN.addr);
-        uint256 gasNeeded = GasUtils.executionGasNeeded(uint16(gmp.data.length), gmp.gasLimit);
-        uint256 executionCost = GasUtils._executionGasCost(uint16(gmp.data.length), gmp.gasLimit);
-        emit log_named_uint("    gas needed", gasNeeded);
-
         require(GATEWAY_PROXY.code.length > 0, "gateway proxy not found");
-        Gateway(payable(GATEWAY_PROXY)).execute{gas: gasNeeded}(sig, gmp);
-
-        emit log_named_uint("    total cost", GasUtils.computeExecutionRefund(uint16(gmp.data.length), gmp.gasLimit));
-        emit log_named_uint("execution cost", executionCost);
+        Gateway(payable(GATEWAY_PROXY)).execute(sig, gmp);
     }
 
     function batchExecute(Signature calldata, InboundMessage calldata message) external pure {
@@ -272,8 +254,8 @@ contract Batching is BaseTest {
         // assertEq(b.length, 1234);
     }
 
-    function test_buildBatch2() external view {
-        SigningKey memory signer = TestUtils.createSigner(SHARD_SECRET);
+    function test_buildBatch2() external {
+        Signer signer = new Signer(SHARD_SECRET);
 
         // Build and sign GMP
         uint64 gasLimit = 7845;
@@ -307,8 +289,8 @@ contract Batching is BaseTest {
 
     function test_batch_debug() external {
         vm.txGasPrice(1);
-        SigningKey memory signer = TestUtils.createSigner(SHARD_SECRET);
-        vm.deal(signer.addr(), 100 ether);
+        Signer signer = new Signer(SHARD_SECRET);
+        vm.deal(address(signer), 100 ether);
         uint64 gasLimit = 7845;
 
         /////////////////////
@@ -350,37 +332,17 @@ contract Batching is BaseTest {
         // Sign the batch //
         ////////////////////
         Signature memory sig = sign(signer, inbound);
-        bytes memory encodedCall = abi.encodeCall(Gateway.batchExecute, (sig, inbound));
-
-        console.log("encoded call:");
-        console.logBytes(encodedCall);
 
         // vm.deal(DEPLOYER, 100 ether);
         // vm.startPrank(DEPLOYER, DEPLOYER);
-        uint256 gasNeeded = GasUtils.executionGasNeeded(uint16(32), gasLimit);
-        uint256 executionCost = GasUtils._executionGasCost(uint16(32), gasLimit);
-        emit log_named_uint("    gas needed", gasNeeded);
-        emit log_named_uint("execution cost", executionCost);
         require(GATEWAY_PROXY.code.length > 0, "gateway proxy not found");
 
-        uint256 baseCost;
-        bool success;
-        bytes memory result;
-        // (executionCost, baseCost, success, result) = address(GATEWAY_PROXY).call(encodedCall);
         console.log("will execute..");
-        (executionCost, baseCost, success, result) =
-            TestUtils.tryExecuteCall(signer.addr(), GATEWAY_PROXY, 500_000, 0, encodedCall);
-        emit log_named_uint("execution cost", executionCost);
-        emit log_named_uint("     base cost", baseCost);
-        if (!success) {
-            console.log("reverted:");
-            console.logBytes(result);
-            assembly {
-                revert(add(result, 0x20), mload(result))
-            }
-        }
-
-        emit log_named_uint("    total cost", GasUtils.computeExecutionRefund(uint16(32), gasLimit));
-        emit log_named_uint("execution cost", executionCost);
+        vm.startPrank(address(signer));
+        Gateway(GATEWAY_PROXY).batchExecute(sig, inbound);
+        //uint256 mGasUsed = vm.lastCallGas().gasTotalUsed;
+        //uint256 cGasUsed = GasUtils.executionGasUsed(32, gasLimit);
+        //assertEq(cGasUsed, mGasUsed, "unexpected gas used");
+        vm.stopPrank();
     }
 }

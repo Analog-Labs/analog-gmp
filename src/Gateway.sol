@@ -122,13 +122,9 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712 {
         // Load shard from storage
         ShardStore.ShardInfo storage signer = ShardStore.getMainStorage().get(signature);
 
-        // Load y parity bit, it must be 27 (even), or 28 (odd)
-        // ref: https://ethereum.github.io/yellowpaper/paper.pdf
-        uint8 yParity = BranchlessMath.ternaryU8(signer.yParity > 0, 28, 27);
-
         // Verify Signature
         require(
-            Schnorr.verify(yParity, signature.xCoord, uint256(message), signature.e, signature.s),
+            Schnorr.verify(signer.yParity, signature.xCoord, uint256(message), signature.e, signature.s),
             "invalid tss signature"
         );
     }

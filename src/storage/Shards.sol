@@ -195,7 +195,7 @@ library ShardStore {
      */
     function register(MainStorage storage store, TssKey calldata newKey) internal returns (bool) {
         // Check y-parity
-        require((newKey.yParity == 2 || newKey.yParity == 3), "y parity bit must be 2 or 3, cannot register shard");
+        require((newKey.yParity == 27 || newKey.yParity == 28), "y parity bit must be 27 or 28, cannot register shard");
 
         // Read shard from storage
         ShardID id = ShardID.wrap(bytes32(newKey.xCoord));
@@ -203,7 +203,7 @@ library ShardStore {
 
         // Check if the shard is already registered
         if (!created) {
-            require(stored.nonce == 1 || newKey.yParity == (stored.yParity | 2), "tsskey.yParity mismatch");
+            require(stored.nonce == 1 || newKey.yParity == stored.yParity, "tsskey.yParity mismatch");
             return false;
         }
 
@@ -211,7 +211,7 @@ library ShardStore {
         ShardInfo memory shard = stored;
 
         require(
-            shard.createdAtBlock == 0 || (shard.yParity | 2) == newKey.yParity,
+            shard.createdAtBlock == 0 || shard.yParity == newKey.yParity,
             "the provided y-parity doesn't match the existing y-parity, cannot register shard"
         );
 
@@ -222,7 +222,7 @@ library ShardStore {
         stored.createdAtBlock =
             BranchlessMath.ternaryU64(shard.createdAtBlock > 0, shard.createdAtBlock, uint64(block.number));
         stored.nonce = shard.nonce;
-        stored.yParity = newKey.yParity & 1;
+        stored.yParity = newKey.yParity;
         return true;
     }
 
@@ -311,7 +311,7 @@ library ShardStore {
 
         if (exists) {
             // Check y-parity
-            require(stored.yParity == (key.yParity & 1), "y parity mismatch, cannot revoke key");
+            require(stored.yParity == key.yParity, "y parity mismatch, cannot revoke key");
             return _revoke(store, id);
         }
         return false;
@@ -374,7 +374,7 @@ library ShardStore {
             if (!success) {
                 revert ShardNotExists(id);
             }
-            shards[i] = TssKey(shard.yParity + 2, uint256(ShardID.unwrap(id)));
+            shards[i] = TssKey(shard.yParity, uint256(ShardID.unwrap(id)));
         }
         return shards;
     }
