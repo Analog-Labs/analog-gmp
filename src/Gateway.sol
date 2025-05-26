@@ -7,7 +7,6 @@ import {Hashing} from "./utils/Hashing.sol";
 import {Schnorr} from "./utils/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {GasUtils} from "./utils/GasUtils.sol";
-import {ERC1967} from "./utils/ERC1967.sol";
 import {UFloat9x56, UFloatMath} from "./utils/Float9x56.sol";
 import {RouteStore} from "./storage/Routes.sol";
 import {ShardStore} from "./storage/Shards.sol";
@@ -32,6 +31,7 @@ import {
     MAX_PAYLOAD_SIZE
 } from "./Primitives.sol";
 import {NetworkID, NetworkIDHelpers} from "./NetworkID.sol";
+import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -775,8 +775,8 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
             require(i == 0 || key > prev, "repeated storage slot");
 
             // Protect admin and implementation slots
-            require(key != uint256(ERC1967.ADMIN_SLOT), "use setAdmin instead");
-            require(key != uint256(ERC1967.IMPLEMENTATION_SLOT), "use upgrade instead");
+            require(key != uint256(ERC1967Utils.ADMIN_SLOT), "use setAdmin instead");
+            require(key != uint256(ERC1967Utils.IMPLEMENTATION_SLOT), "use upgrade instead");
 
             // Set storage slot
             uint256 value = entry[1];

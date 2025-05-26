@@ -59,7 +59,6 @@ contract SigUtilsTest is GatewayEIP712, Test {
     }
 }
 
-// contract GatewayBase is Test {
 contract TestGatewayV2 is Gateway {
     string public constant VERSION = "v2.0";
     uint256 public newFeature;
