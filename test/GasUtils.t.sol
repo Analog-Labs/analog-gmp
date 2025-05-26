@@ -15,16 +15,12 @@ import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {UFloat9x56, UFloatMath} from "../src/utils/Float9x56.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
-import {IExecutor} from "../src/interfaces/IExecutor.sol";
 import {
     GmpMessage,
-    UpdateKeysMessage,
     Signature,
     TssKey,
-    Network,
     GmpStatus,
-    PrimitiveUtils,
-    GmpSender
+    PrimitiveUtils
 } from "../src/Primitives.sol";
 
 uint256 constant secret = 0x42;
@@ -43,9 +39,7 @@ contract GasUtilsMock {
 }
 
 contract GasUtilsTest is Test {
-    using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
-    using PrimitiveUtils for GmpSender;
     using PrimitiveUtils for address;
     using BranchlessMath for uint256;
 
@@ -71,7 +65,7 @@ contract GasUtilsTest is Test {
     function test_txBaseCost() external {
         GasUtilsMock mock = new GasUtilsMock();
         GmpMessage memory gmp = GmpMessage({
-            source: address(0x1111111111111111111111111111111111111111).toSender(false),
+            source: address(0x1111111111111111111111111111111111111111).toSender(),
             srcNetwork: 1234,
             dest: address(0x2222222222222222222222222222222222222222),
             destNetwork: 1337,
@@ -112,7 +106,7 @@ contract GasUtilsTest is Test {
             gmpReceiver = address(bytes20(keccak256(abi.encode(sender, gasLimit, messageSize))));
         }
         GmpMessage memory gmp = GmpMessage({
-            source: sender.toSender(false),
+            source: sender.toSender(),
             srcNetwork: SRC_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
@@ -128,7 +122,7 @@ contract GasUtilsTest is Test {
         // Execute the GMP message
         bytes32 gmpId = gmp.messageId();
         vm.expectEmit(true, true, true, true);
-        emit IExecutor.GmpExecuted(gmpId, gmp.source, gmp.dest, GmpStatus.SUCCESS, bytes32(uint256(gasLimit)));
+        emit Gateway.GmpExecuted(gmpId, gmp.source, gmp.dest, GmpStatus.SUCCESS, bytes32(uint256(gasLimit)));
         uint256 balanceBefore = sender.balance;
         (GmpStatus status, bytes32 result) = gateway.execute{gas: 10_000_000}(sig, gmp);
         VmSafe.Gas memory gas = vm.lastCallGas();

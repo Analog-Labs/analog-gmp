@@ -15,21 +15,18 @@ import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {UFloat9x56, UFloatMath} from "../src/utils/Float9x56.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
-import {IExecutor} from "../src/interfaces/IExecutor.sol";
 import {
     GmpMessage,
-    UpdateKeysMessage,
     Signature,
     TssKey,
-    Network,
     GmpCallback,
     GmpStatus,
     PrimitiveUtils,
-    GmpSender,
     GMP_VERSION
 } from "../src/Primitives.sol";
 
 contract SigUtilsTest is GatewayEIP712, Test {
+    using PrimitiveUtils for address;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpCallback;
 
@@ -37,7 +34,7 @@ contract SigUtilsTest is GatewayEIP712, Test {
 
     function testPayload() public pure {
         GmpMessage memory gmp = GmpMessage({
-            source: GmpSender.wrap(bytes32(uint256(1))),
+            source: address(0x1).toSender(),
             srcNetwork: 42,
             dest: address(0x1),
             destNetwork: 69,
@@ -71,10 +68,9 @@ contract SigUtilsTest is GatewayEIP712, Test {
 
 // contract GatewayBase is Test {
 contract GatewayTest is Test {
-    using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
-    using PrimitiveUtils for GmpSender;
     using PrimitiveUtils for address;
+    using PrimitiveUtils for bytes32;
     using BranchlessMath for uint256;
 
     Gateway internal gateway;
@@ -187,7 +183,7 @@ contract GatewayTest is Test {
         // set shards
         vm.prank(ADMIN, ADMIN);
         vm.expectEmit(false, false, false, true);
-        emit IExecutor.ShardsRegistered(keys);
+        emit Gateway.ShardsRegistered(keys);
         gateway.setShards(keys);
 
         // set a shard which is already registered and verify that is does not emit a event.
@@ -212,13 +208,13 @@ contract GatewayTest is Test {
         TssKey[] memory unregisteredShardKey = new TssKey[](1);
         unregisteredShardKey[0] = keys[0];
         vm.expectEmit(false, false, false, true);
-        emit IExecutor.ShardsUnregistered(unregisteredShardKey);
+        emit Gateway.ShardsUnregistered(unregisteredShardKey);
         gateway.revokeShard(keys[0]);
 
         // Register a revoked shard
         vm.prank(ADMIN, ADMIN);
         vm.expectEmit(false, false, false, true);
-        emit IExecutor.ShardsRegistered(unregisteredShardKey);
+        emit Gateway.ShardsRegistered(unregisteredShardKey);
         gateway.setShard(unregisteredShardKey[0]);
 
         // Revoke half of the keys and verify event length
@@ -235,14 +231,14 @@ contract GatewayTest is Test {
             }
         }
         vm.expectEmit(false, false, false, true);
-        emit IExecutor.ShardsUnregistered(firstHalf);
+        emit Gateway.ShardsUnregistered(firstHalf);
         gateway.revokeShards(firstHalf);
 
         // register first half keys and check if the other half is unregistered
         vm.prank(ADMIN, ADMIN);
         vm.expectEmit(false, false, false, true);
-        emit IExecutor.ShardsRegistered(firstHalf);
-        emit IExecutor.ShardsUnregistered(secondHalf);
+        emit Gateway.ShardsRegistered(firstHalf);
+        emit Gateway.ShardsUnregistered(secondHalf);
         gateway.setShards(firstHalf);
     }
 
@@ -259,7 +255,7 @@ contract GatewayTest is Test {
 
         // Build and sign GMP message
         GmpMessage memory gmp = GmpMessage({
-            source: sender.toSender(false),
+            source: sender.toSender(),
             srcNetwork: SRC_NETWORK_ID,
             dest: address(bytes20(keccak256("dummy_address"))),
             destNetwork: DEST_NETWORK_ID,
@@ -287,7 +283,7 @@ contract GatewayTest is Test {
 
         // Build and sign GMP message
         GmpMessage memory gmp = GmpMessage({
-            source: sender.toSender(false),
+            source: sender.toSender(),
             srcNetwork: SRC_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
@@ -328,7 +324,7 @@ contract GatewayTest is Test {
 
 
         GmpMessage memory wrongNetwork = GmpMessage({
-            source: sender.toSender(false),
+            source: sender.toSender(),
             srcNetwork: SRC_NETWORK_ID,
             dest: address(0x0),
             destNetwork: SRC_NETWORK_ID,
@@ -348,7 +344,7 @@ contract GatewayTest is Test {
         address sender = address(0xdead_beef);
         vm.deal(sender, 10 ether);
         GmpMessage memory gmp = GmpMessage({
-            source: sender.toSender(false),
+            source: sender.toSender(),
             srcNetwork: SRC_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
@@ -371,7 +367,7 @@ contract GatewayTest is Test {
         address sender = address(0xdead_beef);
         vm.deal(sender, 10 ether);
         GmpMessage memory gmp = GmpMessage({
-            source: sender.toSender(false),
+            source: sender.toSender(),
             srcNetwork: SRC_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
@@ -398,7 +394,7 @@ contract GatewayTest is Test {
         address sender = address(0xdead_beef99);
         vm.deal(sender, 10 ether);
         GmpMessage memory gmp = GmpMessage({
-            source: sender.toSender(false),
+            source: sender.toSender(),
             srcNetwork: DEST_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
@@ -427,7 +423,7 @@ contract GatewayTest is Test {
         vm.expectEmit(true, true, true, true);
         emit IGateway.GmpCreated(
             id,
-            GmpSender.unwrap(gmp.source),
+            gmp.source,
             gmp.dest,
             gmp.destNetwork,
             uint64(gmp.gasLimit),
@@ -448,7 +444,7 @@ contract GatewayTest is Test {
         vm.expectEmit(true, true, true, true);
         emit IGateway.GmpCreated(
             id,
-            GmpSender.unwrap(gmp.source),
+            gmp.source,
             gmp.dest,
             gmp.destNetwork,
             uint64(gmp.gasLimit),
