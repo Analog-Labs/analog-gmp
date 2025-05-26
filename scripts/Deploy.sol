@@ -12,7 +12,6 @@ import {NetworkID, NetworkIDHelpers} from "../src/NetworkID.sol";
 import {ERC1967} from "../src/utils/ERC1967.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {UFloat9x56, UFloatMath} from "../src/utils/Float9x56.sol";
-import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {
     TssKey,
@@ -51,7 +50,7 @@ contract MigrateGateway is Script {
      * @dev The codehash of the proxy contract
      */
     bytes32 internal constant PROXY_CODEHASH = 0x54afeb06256bce71659256132ac18f1515de3011aaec4fbd6fc7b0c00c7263d8;
-    
+
     /**
      * @dev The minimal balance required to deploy the proxy contract
      */
@@ -82,7 +81,7 @@ contract MigrateGateway is Script {
      * @dev Default Proxy Admin, if none is provided, use this one.
      */
     address internal constant DEFAULT_ADMIN_ACCOUNT = 0xB41440FF80e1083350c91B21DE1061e0920A75AD;
-    
+
     /**
      * Information about the current state of the migration
      * @param forkId The network fork id, see: https://book.getfoundry.sh/forge/fork-testing#forking-cheatcodes
@@ -141,21 +140,11 @@ contract MigrateGateway is Script {
     }
 
     function _toString(string memory a, uint256 b, string memory c, uint256 d) private pure returns (string memory) {
-        return string(bytes.concat(
-            bytes(a),
-            bytes(vm.toString(b)),
-            bytes(c),
-            bytes(vm.toString(d))
-        ));
+        return string(bytes.concat(bytes(a), bytes(vm.toString(b)), bytes(c), bytes(vm.toString(d))));
     }
 
     function _toString(string memory a, address b, string memory c, address d) private pure returns (string memory) {
-        return string(bytes.concat(
-            bytes(a),
-            bytes(vm.toString(b)),
-            bytes(c),
-            bytes(vm.toString(d))
-        ));
+        return string(bytes.concat(bytes(a), bytes(vm.toString(b)), bytes(c), bytes(vm.toString(d))));
     }
 
     /**
@@ -182,18 +171,23 @@ contract MigrateGateway is Script {
     /**
      * @dev Retrieve network info and verify if the deployer is the admin of the proxy contract.
      */
-    function _setupNetwork(NetworkConfiguration memory network, address proxyAddress, address proxyDeployer, address proxyAdmin)
-        private
-        view
-    {
+    function _setupNetwork(
+        NetworkConfiguration memory network,
+        address proxyAddress,
+        address proxyDeployer,
+        address proxyAdmin
+    ) private view {
         network.chainID = block.chainid;
 
         // Check if the chain has a network id
         NetworkID networkId;
         {
             bool exists;
-            (exists,networkId) = NetworkIDHelpers.tryFromChainID(block.chainid);
-            require(exists, string(bytes.concat(bytes("network id not found for chain "), bytes(vm.toString(block.chainid)))));
+            (exists, networkId) = NetworkIDHelpers.tryFromChainID(block.chainid);
+            require(
+                exists,
+                string(bytes.concat(bytes("network id not found for chain "), bytes(vm.toString(block.chainid))))
+            );
         }
 
         //////////////////////////////////////////////////
@@ -237,7 +231,8 @@ contract MigrateGateway is Script {
             console.log("       PROXY_ADMIN", network.adminAddress);
 
             // Retrieve the current implementation
-            network.implementationContract = address(uint160(uint256(vm.load(proxyAddress, ERC1967.IMPLEMENTATION_SLOT))));
+            network.implementationContract =
+                address(uint160(uint256(vm.load(proxyAddress, ERC1967.IMPLEMENTATION_SLOT))));
             console.log("    IMPLEMENATTION", network.implementationContract);
         } else {
             console.log("       PROXY_ADMIN", "N/A");
@@ -284,7 +279,10 @@ contract MigrateGateway is Script {
         info.mortality = uint64(block.number + 128);
     }
 
-    function _setupNetworks(address proxyAddress, address proxyDeployer, address proxyAdmin) private returns (NetworkConfiguration[] memory networks) {
+    function _setupNetworks(address proxyAddress, address proxyDeployer, address proxyAdmin)
+        private
+        returns (NetworkConfiguration[] memory networks)
+    {
         string[2][] memory urls = vm.rpcUrls();
         require(urls.length > 0, "no rpc urls found, check the `foundry.toml` file");
         networks = new NetworkConfiguration[](urls.length);
@@ -332,16 +330,20 @@ contract MigrateGateway is Script {
             // Retrieve the account that must be used to deploy the proxy contract.
             address proxyDeployer = vm.envOr("PROXY_DEPLOYER", address(0));
             if (proxyDeployer == address(0)) {
-                proxyDeployer = vm.promptAddress("Enter the address of the account that must be used to deploy the proxy contract");
+                proxyDeployer =
+                    vm.promptAddress("Enter the address of the account that must be used to deploy the proxy contract");
             }
-            require(msg.sender != proxyDeployer, "The account used to deploy the implementation and the proxy cannot be the same");
+            require(
+                msg.sender != proxyDeployer,
+                "The account used to deploy the implementation and the proxy cannot be the same"
+            );
 
             // Find the nonce that must be used by the deployer to deploy the proxy contract
             uint64 proxyDeployerNonce = _findDeployerNonce(proxyDeployer, proxy);
             if (proxyDeployerNonce == type(uint64).max) {
                 revert(_toString("The provided deployer ", proxyDeployer, " cannot deploy the proxy contract"));
             }
-            
+
             // Retrieve the proxy admin account
             address proxyAdmin = vm.envOr("PROXY_ADMIN", DEFAULT_ADMIN_ACCOUNT);
 
@@ -363,12 +365,12 @@ contract MigrateGateway is Script {
 
         // Iterate over all the RPC URLs, defined in the `foundry.toml` file
         NetworkConfiguration[] memory allNetworks = config.networks;
-        
+
         // Filter the networks that need a proxy
         NetworkConfiguration[] memory needsProxy = new NetworkConfiguration[](allNetworks.length);
         {
             uint256 count = 0;
-            for (uint256 i=0; i<allNetworks.length; i++) {
+            for (uint256 i = 0; i < allNetworks.length; i++) {
                 NetworkConfiguration memory network = allNetworks[i];
                 if (network.hasProxy == false) {
                     needsProxy[count++] = network;
@@ -377,7 +379,7 @@ contract MigrateGateway is Script {
             assembly {
                 mstore(needsProxy, count)
             }
-            
+
             if (count == 0) {
                 console.log("\nTHE PROXY IS ALREADY DEPLOYED IN ALL PROVIDED NETWORKS\n");
                 return;
@@ -390,7 +392,7 @@ contract MigrateGateway is Script {
         for (uint256 i = 0; i < needsProxy.length; i++) {
             NetworkConfiguration memory network = needsProxy[i];
             console.log("     -- BLOCKCHAIN", network.name);
-            
+
             // Switch to the selected network
             vm.selectFork(network.forkID);
 
@@ -404,7 +406,7 @@ contract MigrateGateway is Script {
             if (nonce != config.proxyDeployerNonce) {
                 revert(_toString("Deployer nonce mismatch, got ", nonce, " but expected ", config.proxyDeployerNonce));
             }
-            
+
             // Send funds to the deployer account
             if (balance < MINIMAL_DEPLOYER_BALANCE) {
                 require(deployer != msg.sender, "deployer account and funding account cannot be the same");
@@ -438,10 +440,8 @@ contract MigrateGateway is Script {
                 console.log("      BLOCK NUMBER", block.number);
 
                 // Check if the the implementation is already deployed.
-                bytes memory initCode = bytes.concat(
-                    bytecode,
-                    abi.encode(uint16(network.info.networkId), address(config.proxy))
-                );
+                bytes memory initCode =
+                    bytes.concat(bytecode, abi.encode(uint16(network.info.networkId), address(config.proxy)));
                 address deployer = config.implementationDeployer;
                 network.implementationContract = FACTORY.computeCreate2Address(IMPLEMENTATION_SALT, initCode);
                 console.log("          DEPLOYER", deployer);
@@ -474,7 +474,7 @@ contract MigrateGateway is Script {
             console.log("          CHAIN ID", block.chainid);
             console.log("        NETWORK ID", network.info.networkId);
             console.log("      BLOCK NUMBER", block.number);
-            
+
             address deployer = config.proxyDeployer;
             address implementation = network.implementationContract;
             uint256 nonce = vm.getNonce(deployer);
@@ -491,11 +491,12 @@ contract MigrateGateway is Script {
             // TODO: Load the shards from the network, currently only the admin can add the shards.
             TssKey[] memory emptyShards = new TssKey[](0);
             Network[] memory emptyNetworks = new Network[](0);
-            bytes memory initializer = abi.encodeCall(Gateway.initialize, (config.proxyAdmin, emptyShards, emptyNetworks));
+            bytes memory initializer =
+                abi.encodeCall(Gateway.initialize, (config.proxyAdmin, emptyShards, emptyNetworks));
 
             vm.startBroadcast(deployer);
             // address deployed = address(new GatewayProxy(implementation, initializer));
-            address deployed = address(new GatewayProxy(config.proxyAdmin));  // TODO: fix me
+            address deployed = address(new GatewayProxy(config.proxyAdmin)); // TODO: fix me
             vm.stopBroadcast();
             console.log("     PROXY ADDRESS", deployed);
             console.log(" DEPLOYMENT STATUS", deployed == config.proxy ? "Success" : "Address Mismatch");

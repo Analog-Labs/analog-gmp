@@ -9,7 +9,6 @@ import {TestUtils} from "./TestUtils.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
-import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {GasUtils} from "../src/utils/GasUtils.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {UFloat9x56, UFloatMath} from "../src/utils/Float9x56.sol";

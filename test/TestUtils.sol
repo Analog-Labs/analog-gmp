@@ -8,7 +8,6 @@ import {console} from "forge-std/console.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {Gateway} from "../src/Gateway.sol";
-import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {
     GmpMessage,
     UpdateKeysMessage,
