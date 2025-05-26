@@ -143,7 +143,7 @@ contract GatewayTest is Test {
         _sortTssKeys(keys);
 
         // Only admin can set shards keys
-        address notAdmin = address(0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496);
+        address notAdmin = address(0x0000000000000000000000000000000000000000);
         vm.prank(notAdmin);
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, notAdmin));
         gateway.setShards(keys);
@@ -478,7 +478,7 @@ contract GatewayTest is Test {
         gateway.upgradeToAndCall(address(gatewayv2), "");
     }
 
-    function test_StoragePreservationAfterUpgrade() public {
+    function test_storagePreservationAfterUpgrade() public {
         uint256 initialNetworkId = gateway.NETWORK_ID();
         address initialProxyAddr = gateway.PROXY_ADDRESS();
 
@@ -491,7 +491,7 @@ contract GatewayTest is Test {
         assertEq(upgraded.PROXY_ADDRESS(), initialProxyAddr, "Proxy address changed");
     }
 
-    function test_NewFeatureAfterUpgrade() public {
+    function test_newFeatureAfterUpgrade() public {
         TestGatewayV2 gatewayV2 = new TestGatewayV2();
         vm.prank(ADMIN);
         gateway.upgradeToAndCall(address(gatewayV2), "");
@@ -506,6 +506,7 @@ contract GatewayTest is Test {
         vm.prank(ADMIN);
         uint256 newFeature = 100;
         upgraded.setNewFeature(newFeature);
+        vm.prank(ADMIN);
         uint256 receivedFeature = upgraded.getNewFeature();
         assertEq(newFeature, receivedFeature);
     }
