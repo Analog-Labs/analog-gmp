@@ -35,7 +35,6 @@ library TestUtils {
 
     function setupGateway(VmSafe.Wallet memory admin, uint16 network) internal returns (Gateway gw) {
         vm.startPrank(admin.addr, admin.addr);
-        // GatewayProxy proxy = new GatewayProxy(admin.addr);
 
         Gateway gateway = new Gateway();
         bytes memory initData = abi.encodeWithSelector(Gateway.initialize.selector, network);

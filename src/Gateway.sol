@@ -117,8 +117,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
         _disableInitializers();
     }
 
-    // constructor(uint16 network, address proxy) payable GatewayEIP712(network, proxy) {}
-
     function initialize(uint16 _networkId) public initializer {
         __Ownable_init(msg.sender);
         __GatewayEIP712_init(_networkId);
