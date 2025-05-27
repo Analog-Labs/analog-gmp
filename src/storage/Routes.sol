@@ -6,7 +6,7 @@ import {Signature, Route, MAX_PAYLOAD_SIZE} from "../Primitives.sol";
 import {EnumerableSet, Pointer} from "../utils/EnumerableSet.sol";
 import {BranchlessMath} from "../utils/BranchlessMath.sol";
 import {StoragePtr} from "../utils/Pointer.sol";
-import {GasUtils} from "../utils/GasUtils.sol";
+import {GasUtils} from "../GasUtils.sol";
 
 /**
  * @dev EIP-7201 Route's Storage
@@ -46,7 +46,13 @@ library RouteStore {
      * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
      * @param gasLimit The maximum amount of gas we allow on this particular network.
      */
-    event RouteUpdated(uint16 indexed networkId, uint256 relativeGasPriceNumerator, uint256 relativeGasPriceDenominator, uint128 baseFee, uint64 gasLimit);
+    event RouteUpdated(
+        uint16 indexed networkId,
+        uint256 relativeGasPriceNumerator,
+        uint256 relativeGasPriceDenominator,
+        uint128 baseFee,
+        uint64 gasLimit
+    );
 
     /**
      * @dev Shard info stored in the Gateway Contract
@@ -174,7 +180,13 @@ library RouteStore {
             stored.baseFee = route.baseFee;
         }
 
-        emit RouteUpdated(route.networkId, stored.relativeGasPriceNumerator, stored.relativeGasPriceDenominator, stored.baseFee, stored.gasLimit);
+        emit RouteUpdated(
+            route.networkId,
+            stored.relativeGasPriceNumerator,
+            stored.relativeGasPriceDenominator,
+            stored.baseFee,
+            stored.gasLimit
+        );
     }
 
     /**
@@ -235,7 +247,8 @@ library RouteStore {
         gasCost = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gasLimit);
 
         // Calculate the gas cost: gasPrice * gasCost + baseFee
-        fee = route.relativeGasPriceNumerator.saturatingMul(gasCost).saturatingDiv(route.relativeGasPriceDenominator).saturatingAdd(route.baseFee);
+        fee = route.relativeGasPriceNumerator.saturatingMul(gasCost).saturatingDiv(route.relativeGasPriceDenominator)
+            .saturatingAdd(route.baseFee);
     }
 
     /**
@@ -248,6 +261,7 @@ library RouteStore {
     {
         _checkPreconditions(route, messageSize, gasLimit);
         uint256 gas = GasUtils.estimateGas(uint16(messageSize), 0, gasLimit);
-        return gas.saturatingMul(route.relativeGasPriceNumerator).saturatingDiv(route.relativeGasPriceDenominator).saturatingAdd(route.baseFee);
+        return gas.saturatingMul(route.relativeGasPriceNumerator).saturatingDiv(route.relativeGasPriceDenominator)
+            .saturatingAdd(route.baseFee);
     }
 }

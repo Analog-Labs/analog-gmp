@@ -3,7 +3,7 @@
 
 pragma solidity >=0.8.20;
 
-import {BranchlessMath} from "./BranchlessMath.sol";
+import {BranchlessMath} from "./utils/BranchlessMath.sol";
 
 /**
  * @dev Utilities for compute the GMP gas price, gas cost and gas needed.

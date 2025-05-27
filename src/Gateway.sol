@@ -6,7 +6,7 @@ pragma solidity >=0.8.0;
 import {Hashing} from "./utils/Hashing.sol";
 import {Schnorr} from "../lib/frost-evm/sol/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
-import {GasUtils} from "./utils/GasUtils.sol";
+import {GasUtils} from "./GasUtils.sol";
 import {RouteStore} from "./storage/Routes.sol";
 import {ShardStore} from "./storage/Shards.sol";
 import {IGateway} from "./interfaces/IGateway.sol";
@@ -198,7 +198,7 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
         _checkGmpMessage(gmp);
         // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
         // see `src/Primitives.sol` for more details.
-        GmpCallback memory callback = gmp.intoCallback();
+        GmpCallback memory callback = gmp.toCallback();
         operationHash = callback.opHash;
         _execute(callback);
     }
@@ -460,7 +460,7 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
 
         // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
         // see `src/Primitives.sol` for more details.
-        GmpCallback memory callback = message.intoCallback();
+        GmpCallback memory callback = message.toCallback();
 
         // Verify the TSS Schnorr Signature
         _verifySignature(signature, callback.opHash);
@@ -521,7 +521,7 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
 
             // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
             _emitGmpCreated(
-                message.messageId(),
+                message.memMessageId(),
                 source,
                 destinationAddress,
                 network,

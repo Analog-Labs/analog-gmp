@@ -12,8 +12,12 @@ import {
     Signature,
     TssKey,
     Route,
-    PrimitiveUtils
+    PrimitiveUtils,
+    InboundMessage,
+    GatewayOp,
+    Command
 } from "../src/Primitives.sol";
+import {Hashing} from "../src/utils/Hashing.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
@@ -65,13 +69,61 @@ library TestUtils {
         vm.stopPrank();
     }
 
+    function computeInboundMessageSigningHash(Gateway gateway, InboundMessage memory message)
+        private
+        view
+        returns (bytes32)
+    {
+        bytes32 rootHash = bytes32(0);
+
+        GatewayOp[] memory ops = message.ops;
+        for (uint256 i = 0; i < ops.length; i++) {
+            GatewayOp memory op = ops[i];
+            bytes memory params = op.params;
+
+            bytes32 operationHash;
+            if (op.command == Command.GMP) {
+                GmpMessage memory gmp;
+                assembly {
+                    gmp := add(params, 0x20)
+                }
+                operationHash = gmp.memOpHash();
+            } else {
+                TssKey memory tssKey;
+                assembly {
+                    tssKey := params
+                }
+                operationHash = Hashing.hash(tssKey.yParity, tssKey.xCoord);
+            }
+            rootHash = Hashing.hash(uint256(rootHash), uint256(op.command), uint256(operationHash));
+        }
+        rootHash = Hashing.hash(message.version, message.batchID, uint256(rootHash));
+        return keccak256(
+            abi.encodePacked(
+                "Analog GMP v2", gateway.networkId(), bytes32(uint256(uint160(address(gateway)))), rootHash
+            )
+        );
+    }
+
+    function sign(VmSafe.Wallet memory shard, bytes32 hash, uint256 nonce) internal returns (Signature memory sig) {
+        Signer signer = new Signer(shard.privateKey);
+        (uint256 e, uint256 s) = signer.signPrehashed(uint256(hash), nonce);
+        return Signature({xCoord: signer.xCoord(), e: e, s: s});
+    }
+
     function sign(VmSafe.Wallet memory shard, GmpMessage memory gmp, uint256 nonce)
         internal
         returns (Signature memory sig)
     {
-        bytes32 hash = gmp.opHash();
-        Signer signer = new Signer(shard.privateKey);
-        (uint256 e, uint256 s) = signer.signPrehashed(uint256(hash), nonce);
-        return Signature({xCoord: signer.xCoord(), e: e, s: s});
+        bytes32 hash = gmp.memOpHash();
+        return TestUtils.sign(shard, hash, nonce);
+    }
+
+    function sign(VmSafe.Wallet memory shard, Gateway gateway, InboundMessage memory gmp, uint256 nonce)
+        internal
+        returns (Signature memory sig)
+    {
+        bytes32 hash = computeInboundMessageSigningHash(gateway, gmp);
+        return TestUtils.sign(shard, hash, nonce);
     }
 }

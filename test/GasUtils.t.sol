@@ -9,17 +9,9 @@ import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils} from "./TestUtils.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
-import {GasUtils} from "../src/utils/GasUtils.sol";
-import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
-import {IGateway} from "../src/interfaces/IGateway.sol";
+import {GasUtils} from "../src/GasUtils.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
-import {
-    GmpMessage,
-    Signature,
-    TssKey,
-    GmpStatus,
-    PrimitiveUtils
-} from "../src/Primitives.sol";
+import {GmpMessage, Signature, TssKey, GmpStatus, PrimitiveUtils} from "../src/Primitives.sol";
 
 uint256 constant secret = 0x42;
 uint256 constant nonce = 0x69;
@@ -39,7 +31,6 @@ contract GasUtilsMock {
 contract GasUtilsTest is Test {
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for address;
-    using BranchlessMath for uint256;
 
     VmSafe.Wallet internal admin;
     Gateway internal gateway;
@@ -114,7 +105,7 @@ contract GasUtilsTest is Test {
         console.log("gasLimit", gasLimit);
 
         // Execute the GMP message
-        bytes32 gmpId = gmp.messageId();
+        bytes32 gmpId = gmp.memMessageId();
         vm.expectEmit(true, true, true, true);
         emit Gateway.GmpExecuted(gmpId, gmp.source, gmp.dest, GmpStatus.SUCCESS, bytes32(uint256(gasLimit)));
         uint256 balanceBefore = sender.balance;

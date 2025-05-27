@@ -9,18 +9,12 @@ import {TestUtils} from "./TestUtils.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
-import {GasUtils} from "../src/utils/GasUtils.sol";
+import {GasUtils} from "../src/GasUtils.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {
-    GmpMessage,
-    Signature,
-    TssKey,
-    GmpCallback,
-    GmpStatus,
-    PrimitiveUtils,
-    GMP_VERSION
+    GmpMessage, Signature, TssKey, GmpCallback, GmpStatus, PrimitiveUtils, GMP_VERSION
 } from "../src/Primitives.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
@@ -39,19 +33,14 @@ contract SigUtilsTest is GatewayEIP712, Test {
             nonce: 2,
             data: "42"
         });
-        GmpCallback memory callback = gmp.memToCallback();
-
         bytes32 msgId = keccak256(
             abi.encode(GMP_VERSION, gmp.source, gmp.srcNetwork, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.nonce)
         );
-
-        assertEq(gmp.messageId(), msgId);
-        assertEq(callback.messageId(), msgId);
+        assertEq(gmp.memMessageId(), msgId);
 
         bytes32 dataHash = keccak256(gmp.data);
         bytes32 opHash = keccak256(abi.encode(msgId, dataHash));
-        assertEq(opHash, gmp.opHash());
-        assertEq(opHash, callback.opHash);
+        assertEq(opHash, gmp.memOpHash());
     }
 }
 
@@ -105,7 +94,7 @@ contract GatewayTest is Test {
     }
 
     function sign(GmpMessage memory gmp) internal returns (Signature memory) {
-        bytes32 hash = gmp.opHash();
+        bytes32 hash = gmp.memOpHash();
         Signer signer = new Signer(SECRET);
         (uint256 e, uint256 s) = signer.signPrehashed(uint256(hash), SIGNING_NONCE);
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
@@ -308,7 +297,7 @@ contract GatewayTest is Test {
 
             // Verify the GMP message status
             assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "Unexpected GMP status");
-            Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.messageId());
+            Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.memMessageId());
             assertEq(
                 uint256(info.status), uint256(GmpStatus.SUCCESS), "GMP status stored doesn't match the returned status"
             );
@@ -404,7 +393,7 @@ contract GatewayTest is Test {
             nonce: 0,
             data: abi.encodePacked(uint256(100_000))
         });
-        bytes32 id = gmp.messageId();
+        bytes32 id = gmp.memMessageId();
 
         // Check the previous message hash
         assertEq(gateway.nonceOf(gmp.source.toAddress()), 0, "wrong previous message hash");
@@ -424,14 +413,7 @@ contract GatewayTest is Test {
         // Submit message with sufficient funds
         vm.expectEmit(true, true, true, true);
         emit IGateway.GmpCreated(
-            id,
-            gmp.source,
-            gmp.dest,
-            gmp.destNetwork,
-            uint64(gmp.gasLimit),
-            uint64(value),
-            gmp.nonce,
-            gmp.data
+            id, gmp.source, gmp.dest, gmp.destNetwork, uint64(gmp.gasLimit), uint64(value), gmp.nonce, gmp.data
         );
         vm.startPrank(sender);
         bytes32 rid = gateway.submitMessage{value: value}(gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data);
@@ -440,19 +422,12 @@ contract GatewayTest is Test {
 
         // Now the second GMP message nonce must be equals to previous message nonce + 1.
         gmp.nonce = gateway.nonceOf(gmp.source.toAddress());
-        id = gmp.messageId();
+        id = gmp.memMessageId();
 
         // Expect event
         vm.expectEmit(true, true, true, true);
         emit IGateway.GmpCreated(
-            id,
-            gmp.source,
-            gmp.dest,
-            gmp.destNetwork,
-            uint64(gmp.gasLimit),
-            uint64(value),
-            gmp.nonce,
-            gmp.data
+            id, gmp.source, gmp.dest, gmp.destNetwork, uint64(gmp.gasLimit), uint64(value), gmp.nonce, gmp.data
         );
         vm.startPrank(sender);
         rid = gateway.submitMessage{value: value}(gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data);
