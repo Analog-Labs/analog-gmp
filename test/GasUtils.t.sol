@@ -9,7 +9,6 @@ import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils} from "./TestUtils.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
-import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {GasUtils} from "../src/utils/GasUtils.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {UFloat9x56, UFloatMath} from "../src/utils/Float9x56.sol";
@@ -73,11 +72,7 @@ contract GasUtilsTest is Test {
             nonce: 0,
             data: hex"00"
         });
-        Signature memory sig = Signature({
-            xCoord: type(uint256).max,
-            e: type(uint256).max,
-            s: type(uint256).max
-        });
+        Signature memory sig = Signature({xCoord: type(uint256).max, e: type(uint256).max, s: type(uint256).max});
         (uint256 baseCost, uint256 nonZeros, uint256 zeros) = mock.execute(sig, gmp);
         assertEq(baseCost, 24444, "Wrong calldata gas cost");
         assertEq(nonZeros, 147, "wrong number of non-zeros");

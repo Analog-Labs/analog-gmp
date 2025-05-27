@@ -38,12 +38,12 @@ library GasUtils {
      * Obs: To guarantee the overhead is constant regardless the input size, always use `calldata` instead of `memory`
      * for external functions.
      */
-    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 496 - 44;
+    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 452;
 
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46960 + 144 + 22 - 10 + 43;
+    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46960 + 264 + 2180;
 
     /**
      * @dev Solidity's reserved location for the free memory pointer.
@@ -140,8 +140,7 @@ library GasUtils {
         uint256 messageSize = uint256(dataNonZeros) + uint256(dataZeros);
         unchecked {
             // add execution cost
-            uint256 gasCost =
-                executionGasUsed(uint16(BranchlessMath.min(messageSize, type(uint16).max)), gasLimit);
+            uint256 gasCost = executionGasUsed(uint16(BranchlessMath.min(messageSize, type(uint16).max)), gasLimit);
             // add base cost
             gasCost = gasCost.saturatingAdd(21000);
 
@@ -207,11 +206,7 @@ library GasUtils {
      * @param messageSize The size of the message.
      * @param gasUsed The gas used by the gmp message.
      */
-    function executionGasUsed(uint16 messageSize, uint256 gasUsed)
-        internal
-        pure
-        returns (uint256 executionCost)
-    {
+    function executionGasUsed(uint16 messageSize, uint256 gasUsed) internal pure returns (uint256 executionCost) {
         // Add the base `IExecutor.execute` gas cost.
         executionCost = _executionGasCost(messageSize, gasUsed);
 
