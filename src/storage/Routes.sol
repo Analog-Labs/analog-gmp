@@ -5,7 +5,6 @@ pragma solidity ^0.8.20;
 import {Signature, Route, MAX_PAYLOAD_SIZE} from "../Primitives.sol";
 import {EnumerableSet, Pointer} from "../utils/EnumerableSet.sol";
 import {BranchlessMath} from "../utils/BranchlessMath.sol";
-import {UFloat9x56, UFloatMath} from "../utils/Float9x56.sol";
 import {StoragePtr} from "../utils/Pointer.sol";
 import {GasUtils} from "../utils/GasUtils.sol";
 
@@ -16,7 +15,6 @@ library RouteStore {
     using Pointer for StoragePtr;
     using Pointer for uint256;
     using EnumerableSet for EnumerableSet.Map;
-    using UFloatMath for UFloat9x56;
     using BranchlessMath for uint256;
 
     /**
@@ -249,9 +247,7 @@ library RouteStore {
         returns (uint256)
     {
         _checkPreconditions(route, messageSize, gasLimit);
-
-        UFloat9x56 relativeGasPrice =
-            UFloatMath.fromRational(route.relativeGasPriceNumerator, route.relativeGasPriceDenominator);
-        return GasUtils.estimateWeiCost(relativeGasPrice, route.baseFee, uint16(messageSize), 0, gasLimit);
+        uint256 gas = GasUtils.estimateGas(uint16(messageSize), 0, gasLimit);
+        return gas.saturatingMul(route.relativeGasPriceNumerator).saturatingDiv(route.relativeGasPriceDenominator).saturatingAdd(route.baseFee);
     }
 }

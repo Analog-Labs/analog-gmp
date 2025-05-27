@@ -3,7 +3,6 @@
 
 pragma solidity >=0.8.20;
 
-import {UFloat9x56, UFloatMath} from "./Float9x56.sol";
 import {BranchlessMath} from "./BranchlessMath.sol";
 
 /**
@@ -108,26 +107,6 @@ library GasUtils {
             gasCost = gasCost.saturatingAdd(memoryExpansionGasCost(words));
             return gasCost;
         }
-    }
-
-    /**
-     * @dev Estimate the price in wei for send an GMP message.
-     * @param gasPrice The gas price in UFloat9x56 format.
-     * @param baseFee The base fee in wei.
-     * @param nonZeros The number of non-zero bytes in the gmp data.
-     * @param zeros The number of zero bytes in the gmp data.
-     * @param gasLimit The message gas limit.
-     */
-    function estimateWeiCost(UFloat9x56 gasPrice, uint256 baseFee, uint16 nonZeros, uint16 zeros, uint256 gasLimit)
-        internal
-        pure
-        returns (uint256)
-    {
-        // Add execution cost
-        uint256 gasCost = estimateGas(nonZeros, zeros, gasLimit);
-
-        // Calculate the gas cost: gasPrice * gasCost + baseFee
-        return UFloatMath.saturatingMul(gasPrice, gasCost).saturatingAdd(baseFee);
     }
 
     /**

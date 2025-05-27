@@ -7,7 +7,6 @@ import {Hashing} from "./utils/Hashing.sol";
 import {Schnorr} from "./utils/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {GasUtils} from "./utils/GasUtils.sol";
-import {UFloat9x56, UFloatMath} from "./utils/Float9x56.sol";
 import {RouteStore} from "./storage/Routes.sol";
 import {ShardStore} from "./storage/Shards.sol";
 import {IGateway} from "./interfaces/IGateway.sol";
@@ -65,7 +64,6 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
     using PrimitiveUtils for GmpCallback;
     using PrimitiveUtils for address;
     using BranchlessMath for uint256;
-    using UFloatMath for UFloat9x56;
     using ShardStore for ShardStore.MainStorage;
     using RouteStore for RouteStore.MainStorage;
     using RouteStore for RouteStore.NetworkInfo;

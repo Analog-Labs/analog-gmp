@@ -11,7 +11,6 @@ import {GasSpender} from "./GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GasUtils} from "../src/utils/GasUtils.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
-import {UFloat9x56, UFloatMath} from "../src/utils/Float9x56.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {
@@ -415,7 +414,7 @@ contract GatewayTest is Test {
         {
             uint16 nonZeros = uint16(GasUtils.countNonZeros(gmp.data));
             uint16 zeros = uint16(gmp.data.length) - nonZeros;
-            value = GasUtils.estimateWeiCost(UFloatMath.ONE, 0, nonZeros, zeros, gmp.gasLimit);
+            value = GasUtils.estimateGas(nonZeros, zeros, gmp.gasLimit);
         }
 
         // Submit message with insufficient funds
