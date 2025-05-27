@@ -9,7 +9,6 @@ import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {TestUtils} from "./TestUtils.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
-import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {Hashing} from "../src/utils/Hashing.sol";
 import {GasUtils} from "../src/utils/GasUtils.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
@@ -30,7 +29,8 @@ import {
     GmpStatus,
     PrimitiveUtils,
     GmpSender,
-    GMP_VERSION
+    GMP_VERSION,
+    GmpMessage
 } from "../src/Primitives.sol";
 
 contract Batching is Test {
@@ -43,7 +43,7 @@ contract Batching is Test {
 
     uint256 private constant ADMIN_SECRET = 0x955acb49dbb669143455ffbf98e30ae5b2d95343c8b46ce10bf1975d722e8001;
     VmSafe.Wallet internal ADMIN;
-    
+
     uint256 private constant SHARD_SECRET = 0x42;
     VmSafe.Wallet internal SHARD;
 
@@ -97,11 +97,7 @@ contract Batching is Test {
         return message.intoCallback().messageId();
     }
 
-    function sign(Signer signer, InboundMessage memory message)
-        private
-        view
-        returns (Signature memory sig)
-    {
+    function sign(Signer signer, InboundMessage memory message) private view returns (Signature memory sig) {
         signAt(signer, message, sig);
     }
 

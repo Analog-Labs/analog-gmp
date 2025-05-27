@@ -8,7 +8,6 @@ import {console} from "forge-std/console.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {Gateway} from "../src/Gateway.sol";
-import {GatewayProxy} from "../src/GatewayProxy.sol";
 import {
     GmpMessage,
     UpdateKeysMessage,
@@ -21,6 +20,7 @@ import {
     PrimitiveUtils,
     GmpSender
 } from "../src/Primitives.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @dev Utilities for testing purposes
@@ -32,14 +32,15 @@ library TestUtils {
     address internal constant VM_ADDRESS = address(uint160(uint256(keccak256("hevm cheat code"))));
     Vm internal constant vm = Vm(VM_ADDRESS);
 
-    function setupGateway(
-        VmSafe.Wallet memory admin,
-        uint16 network
-    ) internal returns (Gateway gw) {
+    function setupGateway(VmSafe.Wallet memory admin, uint16 network) internal returns (Gateway gw) {
         vm.startPrank(admin.addr, admin.addr);
-        GatewayProxy proxy = new GatewayProxy(admin.addr);
-        Gateway gateway = new Gateway(network, address(proxy));
-        proxy.upgrade(address(gateway));
+
+        Gateway gateway = new Gateway();
+        bytes memory initData = abi.encodeWithSelector(Gateway.initialize.selector, network);
+        ERC1967Proxy proxy = new ERC1967Proxy(address(gateway), initData);
+        console.log("Implementation:", address(gateway));
+        console.log("Proxy:", address(proxy));
+
         vm.deal(address(proxy), 10 ether);
         vm.stopPrank();
         return Gateway(payable(address(proxy)));
@@ -57,18 +58,23 @@ library TestUtils {
     function setMockRoute(VmSafe.Wallet memory admin, address gateway, uint16 network) internal {
         Gateway gw = Gateway(payable(gateway));
         vm.startPrank(admin.addr, admin.addr);
-        gw.setRoute(Route({
-            networkId: NetworkID.wrap(network),
-            gasLimit: 1_000_000,
-            baseFee: 0,
-            gateway: bytes32(uint(1)),
-            relativeGasPriceNumerator: 1,
-            relativeGasPriceDenominator: 1
-        }));
+        gw.setRoute(
+            Route({
+                networkId: NetworkID.wrap(network),
+                gasLimit: 1_000_000,
+                baseFee: 0,
+                gateway: bytes32(uint256(1)),
+                relativeGasPriceNumerator: 1,
+                relativeGasPriceDenominator: 1
+            })
+        );
         vm.stopPrank();
     }
 
-    function sign(VmSafe.Wallet memory shard, GmpMessage memory gmp, uint256 nonce) internal returns (Signature memory sig){
+    function sign(VmSafe.Wallet memory shard, GmpMessage memory gmp, uint256 nonce)
+        internal
+        returns (Signature memory sig)
+    {
         bytes32 hash = gmp.opHash();
         Signer signer = new Signer(shard.privateKey);
         (uint256 e, uint256 s) = signer.signPrehashed(uint256(hash), nonce);
