@@ -354,8 +354,6 @@ library ShardStore {
         return revokedKeys;
     }
 
-    function _t(MainStorage storage store) internal view returns (TssKey[] memory) {}
-
     /**
      * @dev Return all shards registered currently registered.
      *
