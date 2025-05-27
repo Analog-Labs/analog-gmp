@@ -38,12 +38,12 @@ library GasUtils {
      * Obs: To guarantee the overhead is constant regardless the input size, always use `calldata` instead of `memory`
      * for external functions.
      */
-    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 496 - 44;
+    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 452;
 
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46960 + 144 + 22 - 28 + 43 + 2180;
+    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46960 + 264 + 2180;
 
     /**
      * @dev Solidity's reserved location for the free memory pointer.

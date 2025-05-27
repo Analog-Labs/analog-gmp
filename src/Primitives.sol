@@ -5,7 +5,6 @@ pragma solidity >=0.8.0;
 
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {UFloatMath, UFloat9x56} from "./utils/Float9x56.sol";
-import {NetworkID} from "./NetworkID.sol";
 
 /**
  * @dev GMP message EIP-712 Type Hash.
@@ -18,11 +17,6 @@ uint256 constant GMP_VERSION = 0;
  * @dev Maximum size of the GMP payload
  */
 uint256 constant MAX_PAYLOAD_SIZE = 0x6000;
-
-/**
- * @dev GmpSender is the sender of a GMP message
- */
-type GmpSender is bytes32;
 
 /**
  * @dev Tss public key
@@ -59,23 +53,13 @@ struct Signature {
  * @param data message data with no specified format
  */
 struct GmpMessage {
-    GmpSender source;
+    bytes32 source;
     uint16 srcNetwork;
     address dest;
     uint16 destNetwork;
     uint64 gasLimit;
     uint64 nonce;
     bytes data;
-}
-
-/**
- * @dev Message payload used to revoke or/and register new shards
- * @param revoke Shard's keys to revoke
- * @param register Shard's keys to register
- */
-struct UpdateKeysMessage {
-    TssKey[] revoke;
-    TssKey[] register;
 }
 
 /**
@@ -124,22 +108,12 @@ struct InboundMessage {
  * @param relativeGasPriceDenominator Gas price denominator in terms of the source chain token.
  */
 struct Route {
-    NetworkID networkId;
+    uint16 networkId;
     uint64 gasLimit;
     uint128 baseFee;
     bytes32 gateway;
     uint256 relativeGasPriceNumerator;
     uint256 relativeGasPriceDenominator;
-}
-
-/**
- * @dev Message payload used to revoke or/and register new shards
- * @param revoke Shard's keys to revoke
- * @param register Shard's keys to register
- */
-struct Network {
-    uint16 id;
-    address gateway;
 }
 
 /**
@@ -166,7 +140,7 @@ enum GmpStatus {
  */
 struct GmpCallback {
     bytes32 opHash;
-    GmpSender source;
+    bytes32 source;
     uint16 srcNetwork;
     address dest;
     uint16 destNetwork;
@@ -179,13 +153,12 @@ struct GmpCallback {
  * @dev EIP-712 utility functions for primitives
  */
 library PrimitiveUtils {
-    function toAddress(GmpSender sender) internal pure returns (address) {
-        return address(uint160(uint256(GmpSender.unwrap(sender))));
+    function toAddress(bytes32 sender) internal pure returns (address) {
+        return address(uint160(uint256(sender)));
     }
 
-    function toSender(address addr, bool isContract) internal pure returns (GmpSender) {
-        uint256 sender = BranchlessMath.toUint(isContract) << 160 | uint256(uint160(addr));
-        return GmpSender.wrap(bytes32(sender));
+    function toSender(address addr) internal pure returns (bytes32) {
+        return bytes32(uint256(uint160(addr)));
     }
 
     // computes the hash of an array of tss keys
@@ -208,17 +181,6 @@ library PrimitiveUtils {
             }
         }
         return keccak256(keysHashed);
-    }
-
-    // computes the hash of the fully encoded EIP-712 message for the domain, which can be used to recover the signer
-    function eip712hash(UpdateKeysMessage memory message) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                keccak256("UpdateKeysMessage(TssKey[] revoke,TssKey[] register)TssKey(uint8 yParity,uint256 xCoord)"),
-                eip712hash(message.revoke),
-                eip712hash(message.register)
-            )
-        );
     }
 
     function messageId(GmpMessage memory message) internal pure returns (bytes32 id) {
@@ -305,8 +267,8 @@ library PrimitiveUtils {
         bytes32 dataHash = keccak256(data);
 
         callback.opHash = msgId;
-        GmpSender backup = callback.source;
-        callback.source = GmpSender.wrap(dataHash);
+        bytes32 backup = callback.source;
+        callback.source = dataHash;
         assembly ("memory-safe") {
             dataHash := keccak256(callback, 0x40)
         }

@@ -6,19 +6,13 @@ pragma solidity >=0.8.0;
 import {VmSafe, Vm} from "forge-std/Vm.sol";
 import {console} from "forge-std/console.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
-import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {
     GmpMessage,
-    UpdateKeysMessage,
     Signature,
     TssKey,
-    Network,
-    NetworkID,
     Route,
-    GmpStatus,
-    PrimitiveUtils,
-    GmpSender
+    PrimitiveUtils
 } from "../src/Primitives.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -60,7 +54,7 @@ library TestUtils {
         vm.startPrank(admin.addr, admin.addr);
         gw.setRoute(
             Route({
-                networkId: NetworkID.wrap(network),
+                networkId: network,
                 gasLimit: 1_000_000,
                 baseFee: 0,
                 gateway: bytes32(uint256(1)),

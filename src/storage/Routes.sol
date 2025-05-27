@@ -2,8 +2,7 @@
 // Analog's Contracts (last updated v0.1.0) (src/storage/Routes.sol)
 pragma solidity ^0.8.20;
 
-import {Signature, Network, Route, MAX_PAYLOAD_SIZE} from "../Primitives.sol";
-import {NetworkIDHelpers, NetworkID} from "../NetworkID.sol";
+import {Signature, Route, MAX_PAYLOAD_SIZE} from "../Primitives.sol";
 import {EnumerableSet, Pointer} from "../utils/EnumerableSet.sol";
 import {BranchlessMath} from "../utils/BranchlessMath.sol";
 import {UFloat9x56, UFloatMath} from "../utils/Float9x56.sol";
@@ -17,7 +16,6 @@ library RouteStore {
     using Pointer for StoragePtr;
     using Pointer for uint256;
     using EnumerableSet for EnumerableSet.Map;
-    using NetworkIDHelpers for NetworkID;
     using UFloatMath for UFloat9x56;
     using BranchlessMath for uint256;
 
@@ -64,7 +62,7 @@ library RouteStore {
         EnumerableSet.Map routes;
     }
 
-    error RouteNotExists(NetworkID id);
+    error RouteNotExists(uint16 id);
     error IndexOutOfBounds(uint256 index);
 
     function getMainStorage() internal pure returns (MainStorage storage $) {
@@ -85,8 +83,8 @@ library RouteStore {
     /**
      * @dev Returns true if the value is in the set. O(1).
      */
-    function has(MainStorage storage store, NetworkID id) internal view returns (bool) {
-        return store.routes.has(bytes32(uint256(id.asUint())));
+    function has(MainStorage storage store, uint16 networkId) internal view returns (bool) {
+        return store.routes.has(bytes32(uint256(networkId)));
     }
 
     /**
@@ -95,8 +93,8 @@ library RouteStore {
      * Returns true if the value was added to the set, that is if it was not
      * already present.
      */
-    function getOrAdd(MainStorage storage store, NetworkID id) private returns (bool, NetworkInfo storage) {
-        (bool success, StoragePtr ptr) = store.routes.tryAdd(bytes32(uint256(id.asUint())));
+    function getOrAdd(MainStorage storage store, uint16 networkId) private returns (bool, NetworkInfo storage) {
+        (bool success, StoragePtr ptr) = store.routes.tryAdd(bytes32(uint256(networkId)));
         return (success, pointerToRoute(ptr));
     }
 
@@ -106,8 +104,8 @@ library RouteStore {
      * Returns true if the value was removed from the set, that is if it was
      * present.
      */
-    function remove(MainStorage storage store, NetworkID id) internal returns (bool) {
-        StoragePtr ptr = store.routes.remove(bytes32(uint256(id.asUint())));
+    function remove(MainStorage storage store, uint16 id) internal returns (bool) {
+        StoragePtr ptr = store.routes.remove(bytes32(uint256(id)));
         if (ptr.isNull()) {
             return false;
         }
@@ -131,12 +129,12 @@ library RouteStore {
      *
      * - `index` must be strictly less than {length}.
      */
-    function at(MainStorage storage store, uint256 index) internal view returns (NetworkID, NetworkInfo storage) {
+    function at(MainStorage storage store, uint256 index) internal view returns (uint16, NetworkInfo storage) {
         (bytes32 key, StoragePtr value) = store.routes.at(index);
         if (value.isNull()) {
             revert IndexOutOfBounds(index);
         }
-        return (NetworkID.wrap(uint16(uint256(key))), pointerToRoute(value));
+        return (uint16(uint256(key)), pointerToRoute(value));
     }
 
     /**
@@ -145,8 +143,8 @@ library RouteStore {
      * Requirements:
      * - `NetworkInfo` must be in the map.
      */
-    function get(MainStorage storage store, NetworkID id) internal view returns (NetworkInfo storage) {
-        StoragePtr ptr = store.routes.get(bytes32(uint256(id.asUint())));
+    function get(MainStorage storage store, uint16 id) internal view returns (NetworkInfo storage) {
+        StoragePtr ptr = store.routes.get(bytes32(uint256(id)));
         if (ptr.isNull()) {
             revert RouteNotExists(id);
         }
@@ -156,8 +154,8 @@ library RouteStore {
     /**
      * @dev Returns the value associated with `NetworkInfo`. O(1).
      */
-    function tryGet(MainStorage storage store, NetworkID id) internal view returns (bool, NetworkInfo storage) {
-        (bool exists, StoragePtr ptr) = store.routes.tryGet(bytes32(uint256(id.asUint())));
+    function tryGet(MainStorage storage store, uint16 id) internal view returns (bool, NetworkInfo storage) {
+        (bool exists, StoragePtr ptr) = store.routes.tryGet(bytes32(uint256(id)));
         return (exists, pointerToRoute(ptr));
     }
 
@@ -178,26 +176,7 @@ library RouteStore {
             stored.baseFee = route.baseFee;
         }
 
-        emit RouteUpdated(route.networkId.asUint(), stored.relativeGasPriceNumerator, stored.relativeGasPriceDenominator, stored.baseFee, stored.gasLimit);
-    }
-
-    /**
-     * @dev Storage initializer function, used to set up the initial storage of the contract.
-     * @param store Storage location.
-     * @param networks List of networks to initialize.
-     * @param networkdID The network id of this chain.
-     */
-    function initialize(MainStorage storage store, Network[] calldata networks, NetworkID networkdID) internal {
-        for (uint256 i = 0; i < networks.length; i++) {
-            Network calldata network = networks[i];
-            (bool created, NetworkInfo storage info) = getOrAdd(store, NetworkID.wrap(network.id));
-            require(created, "network already initialized");
-            require(network.id != networkdID.asUint() || network.gateway == address(this), "wrong gateway address");
-            info.gasLimit = 15_000_000; // Default to 15M gas
-            info.relativeGasPriceNumerator = 1;
-            info.relativeGasPriceDenominator = 1;
-            info.baseFee = 0;
-        }
+        emit RouteUpdated(route.networkId, stored.relativeGasPriceNumerator, stored.relativeGasPriceDenominator, stored.baseFee, stored.gasLimit);
     }
 
     /**
@@ -212,7 +191,7 @@ library RouteStore {
         bytes32[] memory idx = store.routes.keys;
         Route[] memory routes = new Route[](idx.length);
         for (uint256 i = 0; i < idx.length; i++) {
-            NetworkID networkId = NetworkID.wrap(uint16(uint256(idx[i])));
+            uint16 networkId = uint16(uint256(idx[i]));
             (bool success, NetworkInfo storage route) = tryGet(store, networkId);
             require(success, "route not found");
             routes[i] = Route({

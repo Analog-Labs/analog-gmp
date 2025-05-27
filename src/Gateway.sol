@@ -11,9 +11,7 @@ import {UFloat9x56, UFloatMath} from "./utils/Float9x56.sol";
 import {RouteStore} from "./storage/Routes.sol";
 import {ShardStore} from "./storage/Shards.sol";
 import {IGateway} from "./interfaces/IGateway.sol";
-import {IUpgradable} from "./interfaces/IUpgradable.sol";
 import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
-import {IExecutor} from "./interfaces/IExecutor.sol";
 import {
     Command,
     InboundMessage,
@@ -21,24 +19,18 @@ import {
     GmpCallback,
     GmpMessage,
     GmpStatus,
-    GmpSender,
-    Network,
     Route,
     PrimitiveUtils,
-    UpdateKeysMessage,
     Signature,
     TssKey,
     MAX_PAYLOAD_SIZE
 } from "./Primitives.sol";
-import {NetworkID, NetworkIDHelpers} from "./NetworkID.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 abstract contract GatewayEIP712 is Initializable {
-    using NetworkIDHelpers for NetworkID;
-
     bytes32 private constant GATEWAY_STORAGE_SLOT = keccak256("analog.gateway.storage");
 
     struct GatewayEIP712Storage {
@@ -68,8 +60,7 @@ abstract contract GatewayEIP712 is Initializable {
     }
 }
 
-contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable {
-    using PrimitiveUtils for UpdateKeysMessage;
+contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable {
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpCallback;
     using PrimitiveUtils for address;
@@ -78,7 +69,36 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
     using ShardStore for ShardStore.MainStorage;
     using RouteStore for RouteStore.MainStorage;
     using RouteStore for RouteStore.NetworkInfo;
-    using NetworkIDHelpers for NetworkID;
+
+    /**
+     * @dev Emitted when `GmpMessage` is executed.
+     * @param id EIP-712 hash of the `GmpPayload`, which is it's unique identifier
+     * @param source sender pubkey/address (the format depends on src chain)
+     * @param dest recipient address
+     * @param status GMP message execution status
+     * @param result GMP result
+     */
+    event GmpExecuted(
+        bytes32 indexed id, bytes32 indexed source, address indexed dest, GmpStatus status, bytes32 result
+    );
+
+    /**
+     * @dev Emitted when a Batch is executed.
+     * @param batch batch_id which is executed
+     */
+    event BatchExecuted(uint64 batch);
+
+    /**
+     * @dev Emitted when shards are registered.
+     * @param keys registered shard's keys
+     */
+    event ShardsRegistered(TssKey[] keys);
+
+    /**
+     * @dev Emitted when shards are unregistered.
+     * @param keys unregistered shard's keys
+     */
+    event ShardsUnregistered(TssKey[] keys);
 
     /**
      * @dev Selector of `GmpCreated` event.
@@ -86,11 +106,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
      */
     bytes32 private constant GMP_CREATED_EVENT_SELECTOR =
         0x081a0b65828c1720ce022ffb992d4a5ec86e2abc4c383acd4029ba8486e41b4f;
-
-    /**
-     * @dev The address of the `UniversalFactory` contract, must be the same on all networks.
-     */
-    address internal constant FACTORY = 0x0000000000001C4Bf962dF86e38F0c10c7972C6E;
 
     // GMP message status
     mapping(bytes32 => GmpInfo) private _messages;
@@ -143,7 +158,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
     }
 
     function networkInfo(uint16 id) external view returns (RouteStore.NetworkInfo memory) {
-        return RouteStore.getMainStorage().get(NetworkID.wrap(id));
+        return RouteStore.getMainStorage().get(id);
     }
 
     /**
@@ -158,35 +173,6 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
             Schnorr.verify(signer.yParity, signature.xCoord, uint256(message), signature.e, signature.s),
             "invalid tss signature"
         );
-    }
-
-    // Register/Revoke TSS keys using shard TSS signature
-    function updateKeys(Signature calldata signature, UpdateKeysMessage calldata message) external {
-        // Check if the message was already executed to prevent replay attacks
-        bytes32 messageHash = message.eip712hash();
-        require(_executedMessages[messageHash] == bytes32(0), "message already executed");
-
-        // Verify the signature and store the message hash
-        _verifySignature(signature, messageHash);
-        _executedMessages[messageHash] = bytes32(signature.xCoord);
-
-        // Register/Revoke shards pubkeys
-        ShardStore.MainStorage storage store = ShardStore.getMainStorage();
-
-        // Revoke tss keys (revoked keys can be registred again keeping the previous nonce)
-        store.revokeKeys(message.revoke);
-
-        // Register or activate revoked keys
-        store.registerTssKeys(message.register);
-
-        // Emit event
-        if (message.revoke.length > 0) {
-            emit ShardsUnregistered(message.revoke);
-        }
-
-        if (message.register.length > 0) {
-            emit ShardsRegistered(message.register);
-        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -505,11 +491,11 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
     /**
      * @dev Send message from this chain to another chain.
      * @param destinationAddress the target address on the destination chain
-     * @param routeId the target chain where the contract call will be made
+     * @param network the target chain where the contract call will be made
      * @param executionGasLimit the gas limit available for the contract call
      * @param data message data with no specified format
      */
-    function submitMessage(address destinationAddress, uint16 routeId, uint256 executionGasLimit, bytes calldata data)
+    function submitMessage(address destinationAddress, uint16 network, uint256 executionGasLimit, bytes calldata data)
         external
         payable
         returns (bytes32)
@@ -519,12 +505,12 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
 
         // Check if the provided parameters are valid
         // See `RouteStorage.estimateWeiCost` at `storage/Routes.sol` for more details.
-        RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(NetworkID.wrap(routeId));
+        RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(network);
         (uint256 gasCost, uint256 fee) = route.estimateCost(data, executionGasLimit);
         require(msg.value >= fee, "insufficient tx value");
 
         // We use 20 bytes for represent the address and 1 bit for the contract flag
-        GmpSender source = msg.sender.toSender(false);
+        bytes32 source = msg.sender.toSender();
 
         unchecked {
             // Nonce is per sender, it's incremented for every message sent.
@@ -532,7 +518,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
 
             // Create GMP message and update nonce
             GmpMessage memory message = GmpMessage(
-                source, NETWORK_ID(), destinationAddress, routeId, uint64(executionGasLimit), nextNonce, data
+                source, NETWORK_ID(), destinationAddress, network, uint64(executionGasLimit), nextNonce, data
             );
 
             // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
@@ -540,7 +526,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
                 message.messageId(),
                 source,
                 destinationAddress,
-                routeId,
+                network,
                 executionGasLimit,
                 gasCost,
                 nextNonce,
@@ -554,7 +540,7 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
      */
     function _emitGmpCreated(
         bytes32 messageID,
-        GmpSender source,
+        bytes32 source,
         address destinationAddress,
         uint16 destinationNetwork,
         uint256 executionGasLimit,
@@ -590,16 +576,16 @@ contract Gateway is IGateway, IExecutor, IUpgradable, GatewayEIP712, UUPSUpgrade
     /**
      * @notice Estimate the gas cost of execute a GMP message.
      * @dev This function is called on the destination chain before calling the gateway to execute a source contract.
-     * @param networkid The target chain where the contract call will be made
+     * @param network The target chain where the contract call will be made
      * @param messageSize Message size
      * @param messageSize Message gas limit
      */
-    function estimateMessageCost(uint16 networkid, uint256 messageSize, uint256 gasLimit)
+    function estimateMessageCost(uint16 network, uint256 messageSize, uint256 gasLimit)
         external
         view
         returns (uint256)
     {
-        RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(NetworkID.wrap(networkid));
+        RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(network);
 
         // Estimate the cost
         return route.estimateWeiCost(uint16(messageSize), gasLimit);

@@ -15,29 +15,22 @@ import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {UFloat9x56, UFloatMath} from "../src/utils/Float9x56.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
-import {IExecutor} from "../src/interfaces/IExecutor.sol";
 import {
     InboundMessage,
     GatewayOp,
     Command,
     GmpMessage,
     GmpCallback,
-    UpdateKeysMessage,
     Signature,
     TssKey,
-    Network,
     GmpStatus,
     PrimitiveUtils,
-    GmpSender,
-    GMP_VERSION,
-    GmpMessage
+    GMP_VERSION
 } from "../src/Primitives.sol";
 
 contract Batching is Test {
-    using PrimitiveUtils for UpdateKeysMessage;
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpCallback;
-    using PrimitiveUtils for GmpSender;
     using PrimitiveUtils for address;
     using BranchlessMath for uint256;
 
@@ -148,7 +141,7 @@ contract Batching is Test {
         // Build and sign GMP message
         // bytes memory data = new bytes(3070 + 32);
         GmpMessage memory gmp = GmpMessage({
-            source: ADMIN.addr.toSender(false),
+            source: ADMIN.addr.toSender(),
             srcNetwork: SRC_NETWORK_ID,
             dest: address(receiver1),
             destNetwork: DEST_NETWORK_ID,
@@ -205,7 +198,7 @@ contract Batching is Test {
             command: Command.GMP,
             params: abi.encode(
                 GmpMessage({
-                    source: GmpSender.wrap(0x7777777777777777777777777777777777777777777777777777777777777777),
+                    source: 0x7777777777777777777777777777777777777777777777777777777777777777,
                     srcNetwork: 0x8888,
                     dest: 0x9999999999999999999999999999999999999999,
                     destNetwork: 0xAAAA,
@@ -221,7 +214,7 @@ contract Batching is Test {
             command: Command.GMP,
             params: abi.encode(
                 GmpMessage({
-                    source: GmpSender.wrap(0x7070707070707070707070707070707070707070707070707070707070707070),
+                    source: 0x7070707070707070707070707070707070707070707070707070707070707070,
                     srcNetwork: 0x8080,
                     dest: 0x9090909090909090909090909090909090909090,
                     destNetwork: 0xA0A0,
@@ -260,7 +253,7 @@ contract Batching is Test {
             command: Command.GMP,
             params: abi.encode(
                 GmpMessage({
-                    source: ADMIN.addr.toSender(false),
+                    source: ADMIN.addr.toSender(),
                     srcNetwork: SRC_NETWORK_ID,
                     dest: address(receiver1),
                     destNetwork: DEST_NETWORK_ID,
@@ -297,7 +290,7 @@ contract Batching is Test {
             command: Command.GMP,
             params: abi.encode(
                 GmpMessage({
-                    source: ADMIN.addr.toSender(false),
+                    source: ADMIN.addr.toSender(),
                     srcNetwork: SRC_NETWORK_ID,
                     dest: address(receiver1),
                     destNetwork: DEST_NETWORK_ID,
@@ -311,7 +304,7 @@ contract Batching is Test {
             command: Command.GMP,
             params: abi.encode(
                 GmpMessage({
-                    source: ADMIN.addr.toSender(false),
+                    source: ADMIN.addr.toSender(),
                     srcNetwork: SRC_NETWORK_ID,
                     dest: address(receiver2),
                     destNetwork: DEST_NETWORK_ID,
