@@ -18,20 +18,11 @@ contract MockGateway is IGateway {
         return _networkId;
     }
 
-    function estimateMessageCost(
-        uint16,
-        uint256,
-        uint256
-    ) external pure returns (uint256) {
+    function estimateMessageCost(uint16, uint256, uint256) external pure returns (uint256) {
         return 0;
     }
 
-    function submitMessage(
-        address,
-        uint16,
-        uint256,
-        bytes calldata
-    ) external payable returns (bytes32) {
+    function submitMessage(address, uint16, uint256, bytes calldata) external payable returns (bytes32) {
         return 0x0;
     }
 }
@@ -46,12 +37,6 @@ contract GmpProxyTest is Test {
     }
 
     function test_onGmpReceived() external {
-        proxy.onGmpReceived{gas: 300000}(
-            0x0,
-            0,
-            0x0,
-            0,
-            abi.encode(0x0)
-        );
+        proxy.onGmpReceived{gas: 300000}(0x0, 0, 0x0, 0, abi.encode(0x0));
     }
 }

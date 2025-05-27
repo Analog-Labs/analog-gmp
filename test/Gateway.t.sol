@@ -9,19 +9,12 @@ import {TestUtils} from "./TestUtils.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
-import {GasUtils} from "../src/utils/GasUtils.sol";
+import {GasUtils} from "../src/GasUtils.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
-import {UFloat9x56, UFloatMath} from "../src/utils/Float9x56.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {
-    GmpMessage,
-    Signature,
-    TssKey,
-    GmpCallback,
-    GmpStatus,
-    PrimitiveUtils,
-    GMP_VERSION
+    GmpMessage, Signature, TssKey, GmpCallback, GmpStatus, PrimitiveUtils, GMP_VERSION
 } from "../src/Primitives.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
@@ -40,19 +33,10 @@ contract SigUtilsTest is GatewayEIP712, Test {
             nonce: 2,
             data: "42"
         });
-        GmpCallback memory callback = gmp.memToCallback();
-
         bytes32 msgId = keccak256(
             abi.encode(GMP_VERSION, gmp.source, gmp.srcNetwork, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.nonce)
         );
-
         assertEq(gmp.messageId(), msgId);
-        assertEq(callback.messageId(), msgId);
-
-        bytes32 dataHash = keccak256(gmp.data);
-        bytes32 opHash = keccak256(abi.encode(msgId, dataHash));
-        assertEq(opHash, gmp.opHash());
-        assertEq(opHash, callback.opHash);
     }
 }
 
@@ -76,6 +60,7 @@ contract GatewayTest is Test {
     using BranchlessMath for uint256;
 
     Gateway internal gateway;
+    VmSafe.Wallet internal admin;
 
     // Chronicle TSS Secret
     uint256 private constant SECRET = 0x42;
@@ -88,11 +73,8 @@ contract GatewayTest is Test {
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
 
-    address internal constant ADMIN = 0x6f4c950442e1Af093BcfF730381E63Ae9171b87a;
-
     constructor() {
-        VmSafe.Wallet memory admin = vm.createWallet(SECRET);
-        assertEq(ADMIN, admin.addr, "admin address mismatch");
+        admin = vm.createWallet(SECRET);
         gateway = Gateway(payable(address(TestUtils.setupGateway(admin, DEST_NETWORK_ID))));
         TestUtils.setMockShard(admin, address(gateway), admin);
         TestUtils.setMockRoute(admin, address(gateway), DEST_NETWORK_ID);
@@ -103,13 +85,6 @@ contract GatewayTest is Test {
         // check block gas limit as gas left
         assertEq(block.gaslimit, 30_000_000);
         assertTrue(gasleft() >= 10_000_000);
-    }
-
-    function sign(GmpMessage memory gmp) internal returns (Signature memory) {
-        bytes32 hash = gmp.opHash();
-        Signer signer = new Signer(SECRET);
-        (uint256 e, uint256 s) = signer.signPrehashed(uint256(hash), SIGNING_NONCE);
-        return Signature({xCoord: signer.xCoord(), e: e, s: s});
     }
 
     function _sortTssKeys(TssKey[] memory keys) private pure {
@@ -143,7 +118,7 @@ contract GatewayTest is Test {
         gateway.setShards(keys);
 
         // Set shards keys must work
-        vm.prank(ADMIN, ADMIN);
+        vm.prank(admin.addr, admin.addr);
         gateway.setShards(keys);
 
         // Check shards keys
@@ -159,7 +134,7 @@ contract GatewayTest is Test {
         keys[0].xCoord = signer.xCoord();
         keys[0].yParity = signer.yParity();
         _sortTssKeys(keys);
-        vm.prank(ADMIN, ADMIN);
+        vm.prank(admin.addr, admin.addr);
         gateway.setShards(keys);
 
         // Check shards keys
@@ -183,13 +158,13 @@ contract GatewayTest is Test {
         _sortTssKeys(keys);
 
         // set shards
-        vm.prank(ADMIN, ADMIN);
+        vm.prank(admin.addr, admin.addr);
         vm.expectEmit(false, false, false, true);
         emit Gateway.ShardsRegistered(keys);
         gateway.setShards(keys);
 
         // set a shard which is already registered and verify that is does not emit a event.
-        vm.prank(ADMIN, ADMIN);
+        vm.prank(admin.addr, admin.addr);
         vm.recordLogs();
         gateway.setShard(keys[0]);
         Vm.Log[] memory entries = vm.getRecordedLogs();
@@ -199,14 +174,14 @@ contract GatewayTest is Test {
         uint256 unregisteredSignerKey = 11;
         signer = new Signer(unregisteredSignerKey);
         TssKey memory nonRegisteredKey = TssKey({yParity: signer.yParity(), xCoord: signer.xCoord()});
-        vm.prank(ADMIN, ADMIN);
+        vm.prank(admin.addr, admin.addr);
         vm.recordLogs();
         gateway.revokeShard(nonRegisteredKey);
         Vm.Log[] memory entries1 = vm.getRecordedLogs();
         assertEq(entries1.length, 0);
 
         // Revoke a registered shard
-        vm.prank(ADMIN, ADMIN);
+        vm.prank(admin.addr, admin.addr);
         TssKey[] memory unregisteredShardKey = new TssKey[](1);
         unregisteredShardKey[0] = keys[0];
         vm.expectEmit(false, false, false, true);
@@ -214,13 +189,13 @@ contract GatewayTest is Test {
         gateway.revokeShard(keys[0]);
 
         // Register a revoked shard
-        vm.prank(ADMIN, ADMIN);
+        vm.prank(admin.addr, admin.addr);
         vm.expectEmit(false, false, false, true);
         emit Gateway.ShardsRegistered(unregisteredShardKey);
         gateway.setShard(unregisteredShardKey[0]);
 
         // Revoke half of the keys and verify event length
-        vm.prank(ADMIN, ADMIN);
+        vm.prank(admin.addr, admin.addr);
         uint256 halfKeysLength = keys.length / 2;
         uint256 secondHalfLength = keys.length - halfKeysLength;
         TssKey[] memory firstHalf = new TssKey[](halfKeysLength);
@@ -237,7 +212,7 @@ contract GatewayTest is Test {
         gateway.revokeShards(firstHalf);
 
         // register first half keys and check if the other half is unregistered
-        vm.prank(ADMIN, ADMIN);
+        vm.prank(admin.addr, admin.addr);
         vm.expectEmit(false, false, false, true);
         emit Gateway.ShardsRegistered(firstHalf);
         emit Gateway.ShardsUnregistered(secondHalf);
@@ -266,7 +241,7 @@ contract GatewayTest is Test {
             data: new bytes(24576 + 1)
         });
 
-        Signature memory sig = sign(gmp);
+        Signature memory sig = TestUtils.sign(admin, gmp, SIGNING_NONCE);
 
         // Expect a revert
         vm.expectRevert("msg data too large");
@@ -292,10 +267,10 @@ contract GatewayTest is Test {
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: gmpGasUsed,
-            nonce: 1,
+            nonce: 0,
             data: abi.encodePacked(uint256(gmpGasUsed))
         });
-        Signature memory sig = sign(gmp);
+        Signature memory sig = TestUtils.sign(admin, gmp, SIGNING_NONCE);
 
         // Estimate execution cost
 
@@ -335,7 +310,7 @@ contract GatewayTest is Test {
             nonce: 1,
             data: ""
         });
-        Signature memory wrongNetworkSig = sign(wrongNetwork);
+        Signature memory wrongNetworkSig = TestUtils.sign(admin, wrongNetwork, SIGNING_NONCE);
         vm.startPrank(sender);
         vm.expectRevert("invalid gmp network");
         gateway.execute{gas: 1_000_000}(wrongNetworkSig, wrongNetwork);
@@ -355,7 +330,7 @@ contract GatewayTest is Test {
             nonce: 1,
             data: abi.encode(uint256(100_000))
         });
-        Signature memory sig = sign(gmp);
+        Signature memory sig = TestUtils.sign(admin, gmp, SIGNING_NONCE);
 
         // Deposit funds
         uint256 cGasUsed = GasUtils.executionGasUsed(uint16(gmp.data.length), 0);
@@ -378,7 +353,7 @@ contract GatewayTest is Test {
             nonce: 1,
             data: abi.encode(uint256(1000))
         });
-        Signature memory sig = sign(gmp);
+        Signature memory sig = TestUtils.sign(admin, gmp, SIGNING_NONCE);
 
         // Execute GMP message first time
         vm.startPrank(sender);
@@ -415,7 +390,7 @@ contract GatewayTest is Test {
         {
             uint16 nonZeros = uint16(GasUtils.countNonZeros(gmp.data));
             uint16 zeros = uint16(gmp.data.length) - nonZeros;
-            value = GasUtils.estimateWeiCost(UFloatMath.ONE, 0, nonZeros, zeros, gmp.gasLimit);
+            value = GasUtils.estimateGas(nonZeros, zeros, gmp.gasLimit);
         }
 
         // Submit message with insufficient funds
@@ -425,14 +400,7 @@ contract GatewayTest is Test {
         // Submit message with sufficient funds
         vm.expectEmit(true, true, true, true);
         emit IGateway.GmpCreated(
-            id,
-            gmp.source,
-            gmp.dest,
-            gmp.destNetwork,
-            uint64(gmp.gasLimit),
-            uint64(value),
-            gmp.nonce,
-            gmp.data
+            id, gmp.source, gmp.dest, gmp.destNetwork, uint64(gmp.gasLimit), uint64(value), gmp.nonce, gmp.data
         );
         vm.startPrank(sender);
         bytes32 rid = gateway.submitMessage{value: value}(gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data);
@@ -446,14 +414,7 @@ contract GatewayTest is Test {
         // Expect event
         vm.expectEmit(true, true, true, true);
         emit IGateway.GmpCreated(
-            id,
-            gmp.source,
-            gmp.dest,
-            gmp.destNetwork,
-            uint64(gmp.gasLimit),
-            uint64(value),
-            gmp.nonce,
-            gmp.data
+            id, gmp.source, gmp.dest, gmp.destNetwork, uint64(gmp.gasLimit), uint64(value), gmp.nonce, gmp.data
         );
         vm.startPrank(sender);
         rid = gateway.submitMessage{value: value}(gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data);
@@ -468,7 +429,7 @@ contract GatewayTest is Test {
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, notAdmin));
         gateway.upgradeToAndCall(address(gatewayv2), "");
         vm.stopPrank();
-        vm.startPrank(ADMIN);
+        vm.startPrank(admin.addr);
         gateway.upgradeToAndCall(address(gatewayv2), "");
     }
 
@@ -477,7 +438,7 @@ contract GatewayTest is Test {
         address initialProxyAddr = gateway.PROXY_ADDRESS();
 
         TestGatewayV2 gatewayV2 = new TestGatewayV2();
-        vm.prank(ADMIN);
+        vm.prank(admin.addr);
         gateway.upgradeToAndCall(address(gatewayV2), "");
 
         TestGatewayV2 upgraded = TestGatewayV2(address(gateway));
@@ -487,7 +448,7 @@ contract GatewayTest is Test {
 
     function test_newFeatureAfterUpgrade() public {
         TestGatewayV2 gatewayV2 = new TestGatewayV2();
-        vm.prank(ADMIN);
+        vm.prank(admin.addr);
         gateway.upgradeToAndCall(address(gatewayV2), "");
 
         TestGatewayV2 upgraded = TestGatewayV2(address(gateway));
@@ -497,10 +458,10 @@ contract GatewayTest is Test {
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, notAdmin));
         upgraded.setNewFeature(100);
 
-        vm.prank(ADMIN);
+        vm.prank(admin.addr);
         uint256 newFeature = 100;
         upgraded.setNewFeature(newFeature);
-        vm.prank(ADMIN);
+        vm.prank(admin.addr);
         uint256 receivedFeature = upgraded.getNewFeature();
         assertEq(newFeature, receivedFeature);
     }

@@ -4,10 +4,9 @@
 pragma solidity >=0.8.0;
 
 import {Hashing} from "./utils/Hashing.sol";
-import {Schnorr} from "./utils/Schnorr.sol";
+import {Schnorr} from "../lib/frost-evm/sol/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
-import {GasUtils} from "./utils/GasUtils.sol";
-import {UFloat9x56, UFloatMath} from "./utils/Float9x56.sol";
+import {GasUtils} from "./GasUtils.sol";
 import {RouteStore} from "./storage/Routes.sol";
 import {ShardStore} from "./storage/Shards.sol";
 import {IGateway} from "./interfaces/IGateway.sol";
@@ -65,7 +64,6 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
     using PrimitiveUtils for GmpCallback;
     using PrimitiveUtils for address;
     using BranchlessMath for uint256;
-    using UFloatMath for UFloat9x56;
     using ShardStore for ShardStore.MainStorage;
     using RouteStore for RouteStore.MainStorage;
     using RouteStore for RouteStore.NetworkInfo;
@@ -200,7 +198,7 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
         _checkGmpMessage(gmp);
         // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
         // see `src/Primitives.sol` for more details.
-        GmpCallback memory callback = gmp.intoCallback();
+        GmpCallback memory callback = gmp.toCallback();
         operationHash = callback.opHash;
         _execute(callback);
     }
@@ -462,7 +460,7 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
 
         // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
         // see `src/Primitives.sol` for more details.
-        GmpCallback memory callback = message.intoCallback();
+        GmpCallback memory callback = message.toCallback();
 
         // Verify the TSS Schnorr Signature
         _verifySignature(signature, callback.opHash);

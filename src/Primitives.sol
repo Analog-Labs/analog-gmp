@@ -4,7 +4,6 @@
 pragma solidity >=0.8.0;
 
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
-import {UFloatMath, UFloat9x56} from "./utils/Float9x56.sol";
 
 /**
  * @dev GMP message EIP-712 Type Hash.
@@ -150,7 +149,7 @@ struct GmpCallback {
 }
 
 /**
- * @dev EIP-712 utility functions for primitives
+ * @dev Utility functions for primitives
  */
 library PrimitiveUtils {
     function toAddress(bytes32 sender) internal pure returns (address) {
@@ -159,28 +158,6 @@ library PrimitiveUtils {
 
     function toSender(address addr) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(addr)));
-    }
-
-    // computes the hash of an array of tss keys
-    function eip712hash(TssKey memory tssKey) internal pure returns (bytes32) {
-        return keccak256(abi.encode(keccak256("TssKey(uint8 yParity,uint256 xCoord)"), tssKey.yParity, tssKey.xCoord));
-    }
-
-    // computes the hash of an array of tss keys
-    function eip712hash(TssKey[] memory tssKeys) internal pure returns (bytes32) {
-        bytes memory keysHashed = new bytes(tssKeys.length * 32);
-        uint256 ptr;
-        assembly {
-            ptr := keysHashed
-        }
-        for (uint256 i = 0; i < tssKeys.length; i++) {
-            bytes32 hash = eip712hash(tssKeys[i]);
-            assembly {
-                ptr := add(ptr, 32)
-                mstore(ptr, hash)
-            }
-        }
-        return keccak256(keysHashed);
     }
 
     function messageId(GmpMessage memory message) internal pure returns (bytes32 id) {
@@ -195,54 +172,63 @@ library PrimitiveUtils {
         }
     }
 
-    function opHash(GmpMessage memory message) internal pure returns (bytes32 id) {
+    function opHash(GmpMessage memory message) internal pure returns (bytes32) {
+        bytes32 msgId = PrimitiveUtils.messageId(message);
         bytes32 dataHash = keccak256(message.data);
-        assembly ("memory-safe") {
-            // now compute the GmpMessage Type Hash without memory copying
-            let offset1 := sub(message, 32)
-            let backup1 := mload(offset1)
-            let backup2 := mload(message)
-
-            mstore(offset1, GMP_VERSION)
-            id := keccak256(offset1, 0xe0)
-
-            mstore(offset1, id)
-            mstore(message, dataHash)
-            id := keccak256(offset1, 64)
-
-            mstore(offset1, backup1)
-            mstore(message, backup2)
-        }
+        return keccak256(abi.encode(msgId, dataHash));
     }
 
-    type MessagePtr is uint256;
-
-    function _intoMemoryPointer(MessagePtr ptr) private pure returns (GmpMessage memory r) {
-        assembly {
-            r := ptr
-        }
-    }
-
-    function _intoCalldataPointer(MessagePtr ptr) private pure returns (GmpMessage calldata r) {
-        assembly {
-            r := ptr
-        }
-    }
-
-    function memToCallback(GmpMessage memory message) internal pure returns (GmpCallback memory callback) {
-        MessagePtr ptr;
-        assembly {
-            ptr := message
-        }
-        _intoCallback(ptr, false, callback);
-    }
-
-    function intoCallback(GmpMessage calldata message) internal pure returns (GmpCallback memory callback) {
-        MessagePtr ptr;
-        assembly {
-            ptr := message
-        }
-        _intoCallback(ptr, true, callback);
+    /**
+     * @dev Converts the `GmpMessage` into a `GmpCallback` struct, which contains all fields from
+     * `GmpMessage`, plus the EIP-712 hash and `IGmpReceiver.onGmpReceived` callback.
+     *
+     * This method also prevents copying the `message.data` to memory twice, which is expensive if
+     * the data is large.
+     * Example: using solidity high-level `abi.encode` method does the following.
+     *   1. Copy the `message.data` to memory to compute the `GmpMessage` EIP-712 hash.
+     *   2. Copy again to encode the `IGmpReceiver.onGmpReceived` callback.
+     *
+     * Instead we copy it once and use the same memory location to compute the EIP-712 hash and
+     * create he `IGmpReceiver.onGmpReceived` callback, unfortunately this requires inline assembly.
+     *
+     * @param m GmpMessage from calldata to be encoded
+     * @param callback `GmpCallback` struct
+     */
+    function toCallback(GmpMessage calldata m) internal pure returns (GmpCallback memory callback) {
+        // |  MEMORY OFFSET  |     RESERVED FIELD     |
+        // | 0x0000..0x0020 <- GmpCallback.opHash
+        // | 0x0020..0x0040 <- GmpCallback.source
+        // | 0x0040..0x0060 <- GmpCallback.srcNetwork
+        // | 0x0060..0x0080 <- GmpCallback.dest
+        // | 0x0080..0x00a0 <- GmpCallback.destNetwork
+        // | 0x00a0..0x00c0 <- GmpCallback.gasLimit
+        // | 0x00c0..0x00e0 <- GmpCallback.nonce
+        // | 0x00e0..0x0100 <- GmpCallback.callback.offset
+        // | 0x0100..0x0120 <- GmpCallback.callback.length
+        // | 0x0120..0x0124 <- onGmpReceived.selector (4 bytes)
+        // | 0x0124..0x0144 <- onGmpReceived.id
+        // | 0x0144..0x0164 <- onGmpReceived.network
+        // | 0x0164..0x0184 <- onGmpReceived.source
+        // | 0x0184..0x01a4 <- onGmpReceived.nonce
+        // | 0x01a4..0x01c4 <- onGmpReceived.data.offset
+        // | 0x01c4..0x01e4 <- onGmpReceived.data.length
+        // | 0x01e4........ <- onGmpReceived.data
+        callback.source = m.source;
+        callback.srcNetwork = m.srcNetwork;
+        callback.dest = m.dest;
+        callback.destNetwork = m.destNetwork;
+        callback.gasLimit = m.gasLimit;
+        callback.nonce = m.nonce;
+        bytes calldata data = m.data;
+        callback.callback = abi.encodeWithSignature(
+            "onGmpReceived(bytes32,uint128,bytes32,uint64,bytes)",
+            callback.opHash,
+            callback.srcNetwork,
+            callback.source,
+            callback.nonce,
+            data
+        );
+        _computeMessageID(callback);
     }
 
     /**
@@ -281,78 +267,5 @@ library PrimitiveUtils {
         assembly ("memory-safe") {
             msgId := mload(add(onGmpReceived, 0x24))
         }
-    }
-
-    /**
-     * @dev Converts the `GmpMessage` into a `GmpCallback` struct, which contains all fields from
-     * `GmpMessage`, plus the EIP-712 hash and `IGmpReceiver.onGmpReceived` callback.
-     *
-     * This method also prevents copying the `message.data` to memory twice, which is expensive if
-     * the data is large.
-     * Example: using solidity high-level `abi.encode` method does the following.
-     *   1. Copy the `message.data` to memory to compute the `GmpMessage` EIP-712 hash.
-     *   2. Copy again to encode the `IGmpReceiver.onGmpReceived` callback.
-     *
-     * Instead we copy it once and use the same memory location to compute the EIP-712 hash and
-     * create he `IGmpReceiver.onGmpReceived` callback, unfortunately this requires inline assembly.
-     *
-     * @param message GmpMessage from calldata to be encoded
-     * @param callback `GmpCallback` struct
-     */
-    function _intoCallback(MessagePtr message, bool isCalldata, GmpCallback memory callback) private pure {
-        // |  MEMORY OFFSET  |     RESERVED FIELD     |
-        // | 0x0000..0x0020 <- GmpCallback.opHash
-        // | 0x0020..0x0040 <- GmpCallback.source
-        // | 0x0040..0x0060 <- GmpCallback.srcNetwork
-        // | 0x0060..0x0080 <- GmpCallback.dest
-        // | 0x0080..0x00a0 <- GmpCallback.destNetwork
-        // | 0x00a0..0x00c0 <- GmpCallback.gasLimit
-        // | 0x00c0..0x00e0 <- GmpCallback.nonce
-        // | 0x00e0..0x0100 <- GmpCallback.callback.offset
-        // | 0x0100..0x0120 <- GmpCallback.callback.length
-        // | 0x0120..0x0124 <- onGmpReceived.selector (4 bytes)
-        // | 0x0124..0x0144 <- onGmpReceived.id
-        // | 0x0144..0x0164 <- onGmpReceived.network
-        // | 0x0164..0x0184 <- onGmpReceived.source
-        // | 0x0184..0x01a4 <- onGmpReceived.nonce
-        // | 0x01a4..0x01c4 <- onGmpReceived.data.offset
-        // | 0x01c4..0x01e4 <- onGmpReceived.data.length
-        // | 0x01e4........ <- onGmpReceived.data
-        if (isCalldata) {
-            GmpMessage calldata m = _intoCalldataPointer(message);
-            callback.source = m.source;
-            callback.srcNetwork = m.srcNetwork;
-            callback.dest = m.dest;
-            callback.destNetwork = m.destNetwork;
-            callback.gasLimit = m.gasLimit;
-            callback.nonce = m.nonce;
-            bytes calldata data = m.data;
-            callback.callback = abi.encodeWithSignature(
-                "onGmpReceived(bytes32,uint128,bytes32,uint64,bytes)",
-                callback.opHash,
-                callback.srcNetwork,
-                callback.source,
-                callback.nonce,
-                data
-            );
-        } else {
-            GmpMessage memory m = _intoMemoryPointer(message);
-            callback.source = m.source;
-            callback.srcNetwork = m.srcNetwork;
-            callback.dest = m.dest;
-            callback.destNetwork = m.destNetwork;
-            callback.gasLimit = m.gasLimit;
-            callback.nonce = m.nonce;
-            callback.callback = abi.encodeWithSignature(
-                "onGmpReceived(bytes32,uint128,bytes32,uint64,bytes)",
-                callback.opHash,
-                callback.srcNetwork,
-                callback.source,
-                callback.nonce,
-                m.data
-            );
-        }
-        // Compute the message ID
-        _computeMessageID(callback);
     }
 }

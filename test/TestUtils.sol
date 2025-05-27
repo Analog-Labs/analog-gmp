@@ -12,7 +12,10 @@ import {
     Signature,
     TssKey,
     Route,
-    PrimitiveUtils
+    PrimitiveUtils,
+    InboundMessage,
+    GatewayOp,
+    Command
 } from "../src/Primitives.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -65,13 +68,19 @@ library TestUtils {
         vm.stopPrank();
     }
 
+    function sign(VmSafe.Wallet memory shard, bytes32 hash, uint256 nonce) internal returns (Signature memory sig) {
+        console.log("signing");
+        console.logBytes32(hash);
+        Signer signer = new Signer(shard.privateKey);
+        (uint256 e, uint256 s) = signer.signPrehashed(uint256(hash), nonce);
+        return Signature({xCoord: signer.xCoord(), e: e, s: s});
+    }
+
     function sign(VmSafe.Wallet memory shard, GmpMessage memory gmp, uint256 nonce)
         internal
         returns (Signature memory sig)
     {
         bytes32 hash = gmp.opHash();
-        Signer signer = new Signer(shard.privateKey);
-        (uint256 e, uint256 s) = signer.signPrehashed(uint256(hash), nonce);
-        return Signature({xCoord: signer.xCoord(), e: e, s: s});
+        return TestUtils.sign(shard, hash, nonce);
     }
 }
