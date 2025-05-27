@@ -4,7 +4,7 @@
 pragma solidity >=0.8.0;
 
 import {Hashing} from "./utils/Hashing.sol";
-import {Schnorr} from "./utils/Schnorr.sol";
+import {Schnorr} from "../lib/frost-evm/sol/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {GasUtils} from "./utils/GasUtils.sol";
 import {RouteStore} from "./storage/Routes.sol";
