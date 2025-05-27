@@ -11,7 +11,7 @@ import {GasSpender} from "./GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
-import {IGateway} from "../src/interfaces/IGateway.sol";
+import {Hashing} from "../src/utils/Hashing.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {
     InboundMessage,
@@ -33,12 +33,12 @@ contract Batching is Test {
     using BranchlessMath for uint256;
 
     uint256 private constant ADMIN_SECRET = 0x955acb49dbb669143455ffbf98e30ae5b2d95343c8b46ce10bf1975d722e8001;
-    VmSafe.Wallet internal ADMIN;
+    VmSafe.Wallet internal admin;
 
     uint256 private constant SHARD_SECRET = 0x42;
-    VmSafe.Wallet internal SHARD;
+    VmSafe.Wallet internal shard;
 
-    address internal GATEWAY_PROXY;
+    Gateway internal gateway;
 
     // Chronicle TSS Secret
     uint256 private constant SIGNING_NONCE = 0x69;
@@ -52,109 +52,92 @@ contract Batching is Test {
 
     constructor() {
         // Create the Admin account
-        ADMIN = vm.createWallet(ADMIN_SECRET);
-        vm.deal(ADMIN.addr, 100 ether);
+        admin = vm.createWallet(ADMIN_SECRET);
+        vm.deal(admin.addr, 100 ether);
 
         // Create the Shard account
-        SHARD = vm.createWallet(SHARD_SECRET);
-        vm.deal(SHARD.addr, 10 ether);
+        shard = vm.createWallet(SHARD_SECRET);
+        vm.deal(shard.addr, 10 ether);
 
-        IGateway gw = TestUtils.setupGateway(ADMIN, DEST_NETWORK_ID);
-        GATEWAY_PROXY = address(gw);
-        TestUtils.setMockShard(ADMIN, address(gw), SHARD);
-        TestUtils.setMockRoute(ADMIN, address(gw), SRC_NETWORK_ID);
-        TestUtils.setMockRoute(ADMIN, address(gw), DEST_NETWORK_ID);
-        vm.deal(address(gw), 10 ether);
+        gateway = TestUtils.setupGateway(admin, DEST_NETWORK_ID);
+        TestUtils.setMockShard(admin, address(gateway), shard);
+        TestUtils.setMockRoute(admin, address(gateway), DEST_NETWORK_ID);
+        vm.deal(address(gateway), 10 ether);
 
         receiver1 = IGmpReceiver(new GasSpender());
         receiver2 = IGmpReceiver(new GasSpender());
     }
 
-    function test_buildBatch() external {
-        GatewayOp[] memory ops = new GatewayOp[](2);
-        ops[0] = GatewayOp({
-            command: Command.GMP,
-            params: abi.encode(
-                GmpMessage({
-                    source: 0x7777777777777777777777777777777777777777777777777777777777777777,
-                    srcNetwork: 0x8888,
-                    dest: 0x9999999999999999999999999999999999999999,
-                    destNetwork: 0xAAAA,
-                    gasLimit: 0xBBBBBBBBBBBBBBBB,
-                    nonce: 0xCCCCCCCCCCCCCCCC,
-                    data: abi.encode(uint256(0xDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD))
-                })
-            )
-        });
-        // data: hex"DDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+    function _signingHash(InboundMessage calldata message) external view returns (bytes32) {
+        bytes32 rootHash = bytes32(0);
 
-        ops[1] = GatewayOp({
-            command: Command.GMP,
-            params: abi.encode(
-                GmpMessage({
-                    source: 0x7070707070707070707070707070707070707070707070707070707070707070,
-                    srcNetwork: 0x8080,
-                    dest: 0x9090909090909090909090909090909090909090,
-                    destNetwork: 0xA0A0,
-                    gasLimit: 0xB0B0B0B0B0B0B0B0,
-                    nonce: 0xC0C0C0C0C0C0C0C0,
-                    data: abi.encode(uint256(0xD0D0D0D0D0D0D0D0D0D0D0D0D0D0D0))
-                })
-            )
-        });
-        // data: hex"D0D0D0D0D0D0D0D0D0D0D0D0D0D0D0"
+        GatewayOp[] calldata ops = message.ops;
+        for (uint256 i = 0; i < ops.length; i++) {
+            GatewayOp calldata op = ops[i];
+            bytes calldata params = op.params;
 
-        InboundMessage memory inbound = InboundMessage({version: 0x44, batchID: 0x5555555555555555, ops: ops});
-        Signature memory sig = Signature({
-            xCoord: 0x1111111111111111111111111111111111111111111111111111111111111111,
-            e: 0x2222222222222222222222222222222222222222222222222222222222222222,
-            s: 0x3333333333333333333333333333333333333333333333333333333333333333
-        });
-        Gateway(GATEWAY_PROXY).batchExecute(sig, inbound);
+            bytes32 operationHash;
+            if (op.command == Command.GMP) {
+                GmpMessage calldata gmp;
+                assembly {
+                    gmp := add(params.offset, 0x20)
+                }
+                operationHash = gmp.opHash();
+            } else {
+                TssKey calldata tssKey;
+                assembly {
+                    tssKey := params.offset
+                }
+                operationHash = Hashing.hash(tssKey.yParity, tssKey.xCoord);
+            }
+            rootHash = Hashing.hash(uint256(rootHash), uint256(op.command), uint256(operationHash));
+        }
+        rootHash = Hashing.hash(message.version, message.batchID, uint256(rootHash));
+        return keccak256(
+            abi.encodePacked("Analog GMP v2", DEST_NETWORK_ID, bytes32(uint256(uint160(address(gateway)))), rootHash)
+        );
     }
 
-    function test_buildBatch2() external {
+    function test_execute_batch() external {
         uint64 gasLimit = 7845;
         GatewayOp[] memory ops = new GatewayOp[](1);
         ops[0] = GatewayOp({
             command: Command.GMP,
             params: abi.encode(
                 GmpMessage({
-                    source: ADMIN.addr.toSender(),
+                    source: admin.addr.toSender(),
                     srcNetwork: SRC_NETWORK_ID,
                     dest: address(receiver1),
                     destNetwork: DEST_NETWORK_ID,
                     gasLimit: gasLimit,
-                    nonce: 0,
+                    nonce: gateway.nonceOf(admin.addr),
                     data: abi.encode(gasLimit)
                 })
             )
         });
         InboundMessage memory inbound =
-            InboundMessage({version: 1, batchID: uint64(uint256(keccak256("some batch"))), ops: ops});
+            InboundMessage({version: 0, batchID: uint64(uint256(keccak256("some batch"))), ops: ops});
 
-        Signature memory sig = TestUtils.sign(SHARD, Gateway(GATEWAY_PROXY), inbound, SIGNING_NONCE);
-        Gateway(GATEWAY_PROXY).batchExecute(sig, inbound);
+        bytes32 hash = this._signingHash(inbound);
+        Signature memory sig = TestUtils.sign(shard, hash, SIGNING_NONCE);
+        gateway.batchExecute(sig, inbound);
     }
 
-    function test_batch_debug() external {
+    function test_execute_batch_2() external {
         vm.txGasPrice(1);
         uint64 gasLimit = 7845;
 
-        /////////////////////
-        // Build the batch //
-        /////////////////////
         GatewayOp[] memory ops = new GatewayOp[](2);
         ops[0] = GatewayOp({
             command: Command.GMP,
             params: abi.encode(
                 GmpMessage({
-                    source: ADMIN.addr.toSender(),
+                    source: admin.addr.toSender(),
                     srcNetwork: SRC_NETWORK_ID,
                     dest: address(receiver1),
                     destNetwork: DEST_NETWORK_ID,
                     gasLimit: gasLimit,
-                    nonce: 0,
+                    nonce: gateway.nonceOf(admin.addr),
                     data: abi.encode(gasLimit)
                 })
             )
@@ -163,20 +146,21 @@ contract Batching is Test {
             command: Command.GMP,
             params: abi.encode(
                 GmpMessage({
-                    source: ADMIN.addr.toSender(),
+                    source: admin.addr.toSender(),
                     srcNetwork: SRC_NETWORK_ID,
                     dest: address(receiver2),
                     destNetwork: DEST_NETWORK_ID,
                     gasLimit: gasLimit,
-                    nonce: 0,
+                    nonce: gateway.nonceOf(admin.addr) + 1,
                     data: abi.encode(gasLimit)
                 })
             )
         });
         InboundMessage memory inbound =
-            InboundMessage({version: 1, batchID: uint64(uint256(keccak256("some batch"))), ops: ops});
+            InboundMessage({version: 0, batchID: uint64(uint256(keccak256("some batch"))), ops: ops});
 
-        Signature memory sig = TestUtils.sign(SHARD, Gateway(GATEWAY_PROXY), inbound, SIGNING_NONCE);
-        Gateway(GATEWAY_PROXY).batchExecute(sig, inbound);
+        bytes32 hash = this._signingHash(inbound);
+        Signature memory sig = TestUtils.sign(shard, hash, SIGNING_NONCE);
+        gateway.batchExecute(sig, inbound);
     }
 }

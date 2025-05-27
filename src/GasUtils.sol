@@ -42,7 +42,7 @@ library GasUtils {
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46960 + 185 + 2180;
+    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46960 + 69 + 2180;
 
     /**
      * @dev Solidity's reserved location for the free memory pointer.

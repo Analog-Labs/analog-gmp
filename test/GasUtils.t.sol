@@ -105,7 +105,7 @@ contract GasUtilsTest is Test {
         console.log("gasLimit", gasLimit);
 
         // Execute the GMP message
-        bytes32 gmpId = gmp.memMessageId();
+        bytes32 gmpId = gmp.messageId();
         vm.expectEmit(true, true, true, true);
         emit Gateway.GmpExecuted(gmpId, gmp.source, gmp.dest, GmpStatus.SUCCESS, bytes32(uint256(gasLimit)));
         uint256 balanceBefore = sender.balance;

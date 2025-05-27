@@ -521,7 +521,7 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
 
             // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
             _emitGmpCreated(
-                message.memMessageId(),
+                message.messageId(),
                 source,
                 destinationAddress,
                 network,

@@ -160,7 +160,7 @@ library PrimitiveUtils {
         return bytes32(uint256(uint160(addr)));
     }
 
-    function memMessageId(GmpMessage memory message) internal pure returns (bytes32 id) {
+    function messageId(GmpMessage memory message) internal pure returns (bytes32 id) {
         assembly ("memory-safe") {
             // now compute the GmpMessage Type Hash without memory copying
             let offset1 := sub(message, 32)
@@ -172,56 +172,10 @@ library PrimitiveUtils {
         }
     }
 
-    function messageId(GmpMessage calldata message) internal pure returns (bytes32 id) {
-        assembly ("memory-safe") {
-            // now compute the GmpMessage Type Hash without memory copying
-            let offset1 := sub(message, 32)
-            let backup1 := mload(offset1)
-
-            mstore(offset1, GMP_VERSION)
-            id := keccak256(offset1, 0xe0)
-            mstore(offset1, backup1)
-        }
-    }
-
-    function memOpHash(GmpMessage memory message) internal pure returns (bytes32 id) {
+    function opHash(GmpMessage memory message) internal pure returns (bytes32) {
+        bytes32 msgId = PrimitiveUtils.messageId(message);
         bytes32 dataHash = keccak256(message.data);
-        assembly ("memory-safe") {
-            // now compute the GmpMessage Type Hash without memory copying
-            let offset1 := sub(message, 32)
-            let backup1 := mload(offset1)
-            let backup2 := mload(message)
-
-            mstore(offset1, GMP_VERSION)
-            id := keccak256(offset1, 0xe0)
-
-            mstore(offset1, id)
-            mstore(message, dataHash)
-            id := keccak256(offset1, 64)
-
-            mstore(offset1, backup1)
-            mstore(message, backup2)
-        }
-    }
-
-    function opHash(GmpMessage calldata message) internal pure returns (bytes32 id) {
-        bytes32 dataHash = keccak256(message.data);
-        assembly ("memory-safe") {
-            // now compute the GmpMessage Type Hash without memory copying
-            let offset1 := sub(message, 32)
-            let backup1 := mload(offset1)
-            let backup2 := mload(message)
-
-            mstore(offset1, GMP_VERSION)
-            id := keccak256(offset1, 0xe0)
-
-            mstore(offset1, id)
-            mstore(message, dataHash)
-            id := keccak256(offset1, 64)
-
-            mstore(offset1, backup1)
-            mstore(message, backup2)
-        }
+        return keccak256(abi.encode(msgId, dataHash));
     }
 
     /**
@@ -259,8 +213,6 @@ library PrimitiveUtils {
         // | 0x01a4..0x01c4 <- onGmpReceived.data.offset
         // | 0x01c4..0x01e4 <- onGmpReceived.data.length
         // | 0x01e4........ <- onGmpReceived.data
-        bytes32 msgId = PrimitiveUtils.messageId(m);
-        callback.opHash = PrimitiveUtils.opHash(m);
         callback.source = m.source;
         callback.srcNetwork = m.srcNetwork;
         callback.dest = m.dest;
@@ -270,12 +222,44 @@ library PrimitiveUtils {
         bytes calldata data = m.data;
         callback.callback = abi.encodeWithSignature(
             "onGmpReceived(bytes32,uint128,bytes32,uint64,bytes)",
-            msgId,
+            callback.opHash,
             callback.srcNetwork,
             callback.source,
             callback.nonce,
             data
         );
+        _computeMessageID(callback);
+    }
+
+    /**
+     * @dev Computes the message ID from the provided `GmpCallback` struct.
+     */
+    function _computeMessageID(GmpCallback memory callback) private pure {
+        bytes memory onGmpReceived = callback.callback;
+        callback.opHash = bytes32(GMP_VERSION);
+
+        bytes32 msgId;
+        assembly ("memory-safe") {
+            // Compute `keccak256(abi.encode(GMP_VERSION, message.source, ...))`
+            msgId := keccak256(callback, 0x00e0)
+            // Replace the `id` in `onGmpReceived(uint256 id,...)` in the callback.
+            mstore(add(onGmpReceived, 0x24), msgId)
+        }
+
+        bytes memory data;
+        assembly ("memory-safe") {
+            data := add(onGmpReceived, 0xc4)
+        }
+        bytes32 dataHash = keccak256(data);
+
+        callback.opHash = msgId;
+        bytes32 backup = callback.source;
+        callback.source = dataHash;
+        assembly ("memory-safe") {
+            dataHash := keccak256(callback, 0x40)
+        }
+        callback.opHash = dataHash;
+        callback.source = backup;
     }
 
     function messageId(GmpCallback memory callback) internal pure returns (bytes32 msgId) {
