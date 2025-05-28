@@ -3,7 +3,7 @@
 pragma solidity ^0.8.20;
 
 import {TssKey, Signature} from "../Primitives.sol";
-import {EnumerableSet, Pointer} from "../utils/EnumerableSet.sol";
+import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import {BranchlessMath} from "../utils/BranchlessMath.sol";
 import {StoragePtr} from "../utils/Pointer.sol";
 
@@ -35,21 +35,13 @@ library _ShardStore {
  * @dev EIP-7201 Shard's Storage
  */
 library ShardStore {
-    using Pointer for StoragePtr;
-    using Pointer for uint256;
-    using EnumerableSet for EnumerableSet.Map;
-    using _ShardStore for uint256;
-    using _ShardStore for StoragePtr;
-    using _ShardStore for ShardInfo;
+    using EnumerableMap for EnumerableMap.UintToUintMap;
 
     /**
      * @dev Namespace of the shards storage `analog.one.gateway.shards`.
      * keccak256(abi.encode(uint256(keccak256("analog.one.gateway.shards")) - 1)) & ~bytes32(uint256(0xff));
      */
     bytes32 internal constant _EIP7201_NAMESPACE = 0x582bcdebbeef4fb96dde802cfe96e9942657f4bedb5cfe94e8786bb683eb1f00;
-
-    uint8 internal constant SHARD_ACTIVE = (1 << 0); // Shard active bitflag
-    uint8 internal constant SHARD_Y_PARITY = (1 << 1); // Pubkey y parity bitflag
 
     /**
      * @dev Shard ID, this is the xCoord of the TssKey
@@ -78,12 +70,15 @@ library ShardStore {
      *
      */
     struct MainStorage {
-        EnumerableSet.Map shards;
+        EnumerableMap.UintToUintMap shardIds;
+        mapping(uint256 => ShardInfo) shards;
     }
 
     error ShardAlreadyRegistered(ShardID id);
     error ShardNotExists(ShardID id);
     error IndexOutOfBounds(uint256 index);
+    error InvalidYParity();
+    error YParityMismatch();
 
     function getMainStorage() internal pure returns (MainStorage storage $) {
         assembly {
@@ -95,7 +90,7 @@ library ShardStore {
      * @dev Returns true if the value is in the set. O(1).
      */
     function has(MainStorage storage store, ShardID id) internal view returns (bool) {
-        return store.shards.has(ShardID.unwrap(id));
+        return store.shardIds.contains(uint256(ShardID.unwrap(id)));
     }
 
     /**
@@ -104,9 +99,13 @@ library ShardStore {
      * Returns true if the value was added to the set, that is if it was not
      * already present.
      */
-    function getOrAdd(MainStorage storage store, ShardID xCoord) private returns (bool, ShardInfo storage) {
-        (bool success, StoragePtr ptr) = store.shards.tryAdd(ShardID.unwrap(xCoord));
-        return (success, ptr.asShardInfo());
+    function getOrAdd(MainStorage storage store, ShardID shardId) private returns (bool, ShardInfo storage) {
+        uint256 id = uint256(ShardID.unwrap(shardId));
+        bool exists = store.shardIds.contains(id);
+        if (!exists) {
+            store.shardIds.set(id, 1);
+        }
+        return (!exists, store.shards[id]);
     }
 
     /**
@@ -115,17 +114,19 @@ library ShardStore {
      * Reverts if the value does not exist in the set.
      */
     function remove(MainStorage storage store, ShardID id) internal {
-        StoragePtr ptr = store.shards.remove(ShardID.unwrap(id));
-        if (ptr.isNull()) {
-            revert ShardNotExists(id);
+        uint256 shardId = uint256(ShardID.unwrap(id));
+        bool existed = store.shardIds.remove(shardId);
+        if (existed) {
+            delete store.shards[shardId];
         }
+        revert ShardNotExists(id);
     }
 
     /**
      * @dev Returns the number of values on the set. O(1).
      */
     function length(MainStorage storage store) internal view returns (uint256) {
-        return store.shards.length();
+        return store.shardIds.length();
     }
 
     /**
@@ -139,11 +140,11 @@ library ShardStore {
      * - `index` must be strictly less than {length}.
      */
     function at(MainStorage storage store, uint256 index) internal view returns (ShardID, ShardInfo storage) {
-        (bytes32 xCoord, StoragePtr ptr) = store.shards.at(index);
-        if (ptr.isNull()) {
+        if (index >= store.shardIds.length()) {
             revert IndexOutOfBounds(index);
         }
-        return (ShardID.wrap(xCoord), ptr.asShardInfo());
+        (uint256 key,) = store.shardIds.at(index);
+        return (ShardID.wrap(bytes32(key)), store.shards[key]);
     }
 
     /**
@@ -153,11 +154,11 @@ library ShardStore {
      * - `key` must be in the map.
      */
     function get(MainStorage storage store, ShardID key) internal view returns (ShardInfo storage) {
-        StoragePtr ptr = store.shards.get(ShardID.unwrap(key));
-        if (ptr.isNull()) {
+        uint256 shardId = uint256(ShardID.unwrap(key));
+        if (!store.shardIds.contains(shardId)) {
             revert ShardNotExists(key);
         }
-        return ptr.asShardInfo();
+        return store.shards[shardId];
     }
 
     /**
@@ -184,8 +185,9 @@ library ShardStore {
      * @dev Returns the value associated with `key`. O(1).
      */
     function tryGet(MainStorage storage store, ShardID key) private view returns (bool, ShardInfo storage) {
-        (bool exists, StoragePtr ptr) = store.shards.tryGet(ShardID.unwrap(key));
-        return (exists, ptr.asShardInfo());
+        uint256 shardId = uint256(ShardID.unwrap(key));
+        bool exists = store.shardIds.contains(shardId);
+        return (exists, store.shards[shardId]);
     }
 
     /**
@@ -195,7 +197,9 @@ library ShardStore {
      */
     function register(MainStorage storage store, TssKey calldata newKey) internal returns (bool) {
         // Check y-parity
-        require((newKey.yParity == 27 || newKey.yParity == 28), "y parity bit must be 27 or 28, cannot register shard");
+        if (newKey.yParity != 27 && newKey.yParity != 28) {
+            revert InvalidYParity();
+        }
 
         // Read shard from storage
         ShardID id = ShardID.wrap(bytes32(newKey.xCoord));
@@ -203,17 +207,18 @@ library ShardStore {
 
         // Check if the shard is already registered
         if (!created) {
-            require(stored.nonce == 1 || newKey.yParity == stored.yParity, "tsskey.yParity mismatch");
+            if (stored.nonce != 1 && newKey.yParity != stored.yParity) {
+                revert YParityMismatch();
+            }
             return false;
         }
 
         // Get the current status and nonce
         ShardInfo memory shard = stored;
 
-        require(
-            shard.createdAtBlock == 0 || shard.yParity == newKey.yParity,
-            "the provided y-parity doesn't match the existing y-parity, cannot register shard"
-        );
+        if (shard.createdAtBlock != 0 && shard.yParity != newKey.yParity) {
+            revert YParityMismatch();
+        }
 
         // Update nonce
         shard.nonce |= uint32(BranchlessMath.toUint(shard.nonce == 0));
@@ -311,7 +316,9 @@ library ShardStore {
 
         if (exists) {
             // Check y-parity
-            require(stored.yParity == key.yParity, "y parity mismatch, cannot revoke key");
+            if (stored.yParity != key.yParity) {
+                revert YParityMismatch();
+            }
             return _revoke(store, id);
         }
         return false;
@@ -321,9 +328,12 @@ library ShardStore {
      * @dev Revoke Shards keys.
      */
     function _revoke(MainStorage storage store, ShardID id) private returns (bool) {
-        // Remove from the set
-        StoragePtr ptr = store.shards.remove(ShardID.unwrap(id));
-        return !ptr.isNull();
+        uint256 shardId = uint256(ShardID.unwrap(id));
+        bool existed = store.shardIds.remove(shardId);
+        if (existed) {
+            delete store.shards[shardId];
+        }
+        return existed;
     }
 
     /**
@@ -363,16 +373,13 @@ library ShardStore {
      * uncallable if the set grows to a point where copying to memory consumes too much gas to fit in a block.
      */
     function listShards(MainStorage storage store) internal view returns (TssKey[] memory) {
-        bytes32[] storage idx = store.shards.keys;
-        uint256 len = idx.length;
+        uint256 len = store.shardIds.length();
         TssKey[] memory shards = new TssKey[](len);
+
         for (uint256 i = 0; i < len; i++) {
-            ShardID id = ShardID.wrap(idx[i]);
-            (bool success, ShardInfo storage shard) = tryGet(store, id);
-            if (!success) {
-                revert ShardNotExists(id);
-            }
-            shards[i] = TssKey(shard.yParity, uint256(ShardID.unwrap(id)));
+            (uint256 key,) = store.shardIds.at(i);
+            ShardInfo storage shard = store.shards[key];
+            shards[i] = TssKey(shard.yParity, key);
         }
         return shards;
     }

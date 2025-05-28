@@ -3,7 +3,6 @@
 pragma solidity ^0.8.20;
 
 import {Signature, Route, MAX_PAYLOAD_SIZE} from "../Primitives.sol";
-// import {EnumerableSet, Pointer} from "../utils/EnumerableSet.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import {BranchlessMath} from "../utils/BranchlessMath.sol";
 import {StoragePtr} from "../utils/Pointer.sol";
@@ -13,9 +12,6 @@ import {GasUtils} from "../GasUtils.sol";
  * @dev EIP-7201 Route's Storage
  */
 library RouteStore {
-    // using Pointer for StoragePtr;
-    // using Pointer for uint256;
-    // using EnumerableSet for EnumerableSet.Map;
     using EnumerableMap for EnumerableMap.UintToUintMap;
     using BranchlessMath for uint256;
 
@@ -85,15 +81,6 @@ library RouteStore {
             $.slot := _EIP7201_NAMESPACE
         }
     }
-
-    /**
-     * @dev Converts a `StoragePtr` into an `NetworkInfo`.
-     */
-    // function pointerToRoute(StoragePtr ptr) private pure returns (NetworkInfo storage route) {
-    //     assembly {
-    //         route.slot := ptr
-    //     }
-    // }
 
     /**
      * @dev Returns true if the value is in the set. O(1).
