@@ -22,7 +22,7 @@ contract GasUtilsMock {
         pure
         returns (uint256 baseCost, uint256 nonZeros, uint256 zeros)
     {
-        baseCost = GasUtils.txBaseCost();
+        baseCost = GasUtils.txBaseGas();
         nonZeros = GasUtils.countNonZerosCalldata(msg.data);
         zeros = msg.data.length - nonZeros;
     }
@@ -116,7 +116,7 @@ contract GasUtilsTest is Test {
         assertEq(gas.gasLimit - gas.gasTotalUsed, gas.gasRemaining);
 
         uint256 mGasUsed = gas.gasTotalUsed;
-        uint256 cGasUsed = GasUtils.executionGasUsed(uint16(gmp.data.length), gmp.gasLimit);
+        uint256 cGasUsed = GasUtils.estimateGas(uint16(gmp.data.length), 0, gmp.gasLimit);
         console.log("gasUsed", mGasUsed, cGasUsed);
         assertEq(cGasUsed, mGasUsed, "gasUsed mismatch");
     }

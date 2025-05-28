@@ -219,9 +219,7 @@ contract GatewayTest is Test {
         vm.expectRevert("msg data too large");
         gateway.execute{gas: 1_000_000}(sig, batch);
         uint256 ctxExecutionCost = vm.lastCallGas().gasTotalUsed;
-        assertLt(
-            ctxExecutionCost, GasUtils.executionGasUsed(uint16(gmp.data.length), 0), "revert should use less gas!!"
-        );
+        assertLt(ctxExecutionCost, GasUtils.estimateGas(uint16(gmp.data.length), 0, 0), "revert should use less gas!!");
     }
 
     function test_refund() external {
@@ -251,7 +249,7 @@ contract GatewayTest is Test {
         uint256 beforeBalance = sender.balance;
         {
             gateway.execute(sig, batch);
-            uint256 cGasUsed = GasUtils.executionGasUsed(uint16(gmp.data.length), gmp.gasLimit);
+            uint256 cGasUsed = GasUtils.estimateGas(uint16(gmp.data.length), 0, gmp.gasLimit);
             uint256 mGasUsed = vm.lastCallGas().gasTotalUsed;
             assertEq(cGasUsed, mGasUsed, "unexpected gas used");
             GmpStatus status = gateway.messages(gmp.messageId());
@@ -302,7 +300,7 @@ contract GatewayTest is Test {
         Signature memory sig = TestUtils.sign(admin, gateway, batch, SIGNING_NONCE);
 
         // Deposit funds
-        uint256 cGasUsed = GasUtils.executionGasUsed(uint16(gmp.data.length), 0);
+        uint256 cGasUsed = GasUtils.estimateGas(uint16(gmp.data.length), 0, 0);
 
         // Execute GMP message
         vm.expectRevert("insufficient gas to execute GMP message");

@@ -37,60 +37,31 @@ library GasUtils {
      * @param gasLimit The message gas limit.
      */
     function estimateGas(uint16 dataNonZeros, uint16 dataZeros, uint256 gasLimit) internal pure returns (uint256) {
-        uint256 messageSize = uint256(dataNonZeros) + uint256(dataZeros);
         unchecked {
-            // add execution cost
-            uint256 gasCost = executionGasUsed(uint16(BranchlessMath.min(messageSize, type(uint16).max)), gasLimit);
-            // add base cost
-            gasCost = gasCost.saturatingAdd(21000);
-
-            // calldata zero bytes
-            uint256 zeros = 31 + 30 + 12 + 30 + 31 + 30;
-            zeros = zeros.saturatingAdd((messageSize.saturatingAdd(31) & 0xffffe0) - uint256(dataZeros));
-            gasCost = gasCost.saturatingAdd(zeros.saturatingMul(4));
-
-            // calldata non-zero bytes
-            uint256 nonZeros = uint256(dataNonZeros).saturatingAdd(4 + 96 + 1 + 32 + 2 + 20 + 2 + 32 + 32 + 1 + 2);
-            gasCost = gasCost.saturatingAdd(nonZeros.saturatingMul(16));
-
-            return gasCost;
-        }
-    }
-
-    /**
-     * @dev Compute the gas that should be refunded to the executor for the execution.
-     * @param messageSize The size of the message.
-     * @param gasUsed The gas used by the gmp message.
-     */
-    function executionGasUsed(uint16 messageSize, uint256 gasUsed) internal pure returns (uint256 executionCost) {
-        // Add the base `IExecutor.execute` gas cost.
-        executionCost = _executionGasCost(messageSize, gasUsed);
-
-        // Add `GatewayProxy` gas overhead
-        unchecked {
-            // Safety: The operations below can't overflow because the message size can't be greater than 2**16
+            uint256 messageSize = uint256(dataNonZeros) + uint256(dataZeros);
             uint256 calldataSize = ((uint256(messageSize) + 31) & 0xffffe0) + 388; // selector + Signature + GmpMessage
-            executionCost = executionCost.saturatingAdd(proxyOverheadGasCost(calldataSize, 64));
-        }
-    }
-
-    function _executionGasCost(uint256 messageSize, uint256 gasUsed) private pure returns (uint256) {
-        // Safety: The operations below can't overflow because the message size can't be greater than 2**16
-        unchecked {
+            uint256 calldataNonZeros = dataNonZeros + 224;
+            uint256 calldataZeros = calldataSize - calldataNonZeros;
+            // base gas
+            uint256 gas = 21000 + (calldataNonZeros * 16) + (calldataZeros * 4);
+            // proxy overhead
+            gas += proxyOverheadGas(calldataSize, 0);
             // cost of calldata copy
-            uint256 gas = _toWord(messageSize) * 3;
+            gas += _toWord(messageSize) * 3;
             // cost of hashing the payload
-            gas = gas.saturatingAdd(_toWord(messageSize) * 6);
-            gas = gas.saturatingAdd(gasUsed);
+            gas += _toWord(messageSize) * 6;
+            // execution base cost
+            gas += EXECUTION_BASE_COST;
+            // destination contract gas limit
+            gas += gasLimit;
+            // memory expansion cost
             uint256 memoryExpansion = messageSize.align32() + 676;
+            gas += memoryExpansionGas(_toWord(memoryExpansion));
             {
                 // Selector + Signature + GmpMessage
-                uint256 words = messageSize.align32().saturatingAdd(388 + 31) >> 5;
-                words = (words * 106) + (((words.saturatingSub(255) + 254) / 255) * 214);
-                gas = gas.saturatingAdd(words);
+                uint256 words = (messageSize.align32() + 388 + 31) >> 5;
+                gas += (words * 106) + (((words - 255 + 254) / 255) * 214);
             }
-            gas = gas.saturatingAdd(EXECUTION_BASE_COST);
-            gas = gas.saturatingAdd(memoryExpansionGasCost(_toWord(memoryExpansion)));
             return gas;
         }
     }
@@ -100,7 +71,7 @@ library GasUtils {
      * @param calldataLen The length of the calldata in bytes
      * @param returnLen The length of the return data in bytes
      */
-    function proxyOverheadGasCost(uint256 calldataLen, uint256 returnLen) internal pure returns (uint256) {
+    function proxyOverheadGas(uint256 calldataLen, uint256 returnLen) internal pure returns (uint256) {
         unchecked {
             // Convert the calldata and return data length to words
             calldataLen = _toWord(calldataLen);
@@ -118,7 +89,7 @@ library GasUtils {
 
             // MEMORY EXPANSION (minimal 3 due mstore(0x40, 0x80))
             uint256 words = calldataLen.max(returnLen).max(3);
-            gasCost = gasCost.saturatingAdd(memoryExpansionGasCost(words));
+            gasCost = gasCost.saturatingAdd(memoryExpansionGas(words));
             return gasCost;
         }
     }
@@ -127,7 +98,7 @@ library GasUtils {
      * @dev Compute the gas cost of memory expansion.
      * @param words number of words, where a word is 32 bytes
      */
-    function memoryExpansionGasCost(uint256 words) private pure returns (uint256) {
+    function memoryExpansionGas(uint256 words) private pure returns (uint256) {
         unchecked {
             return (words.saturatingMul(words) >> 9).saturatingAdd(words.saturatingMul(3));
         }
@@ -145,7 +116,7 @@ library GasUtils {
     /**
      * @dev Compute the transaction base cost.
      */
-    function txBaseCost() internal pure returns (uint256) {
+    function txBaseGas() internal pure returns (uint256) {
         unchecked {
             uint256 nonZeros = countNonZerosCalldata(msg.data);
             uint256 zeros = msg.data.length - nonZeros;

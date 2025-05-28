@@ -38,7 +38,7 @@ interface IGateway {
      * @param messageSize Message size
      * @param messageSize Message gas limit
      */
-    function estimateMessageCost(uint16 networkid, uint64 messageSize, uint64 gasLimit)
+    function estimateMessageCost(uint16 networkid, uint16 messageSize, uint64 gasLimit)
         external
         view
         returns (uint256);

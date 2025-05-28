@@ -219,48 +219,40 @@ library RouteStore {
     /**
      * @dev Check a few preconditions before estimate the GMP wei cost.
      */
-    function _checkPreconditions(NetworkInfo memory route, uint256 messageSize, uint256 gasLimit) private pure {
-        // Verify if the network exists
-        require(route.baseFee > 0 || route.relativeGasPriceDenominator > 0, "route is temporarily disabled");
-
+    function _checkPreconditions(NetworkInfo memory route, uint256 messageSize, uint64 gasLimit) private pure {
         // Verify if the gas limit and message size are within the limits
         require(gasLimit <= route.gasLimit, "gas limit exceeded");
         require(messageSize <= MAX_PAYLOAD_SIZE, "maximum payload size exceeded");
     }
 
     /**
-     * @dev Utility function for measure the wei cost of a GMP message.
+     * @dev Utility function for measure the gas cost of a GMP message.
      */
-    function estimateCost(NetworkInfo memory route, bytes calldata data, uint256 gasLimit)
+    function estimateGas(NetworkInfo memory route, bytes calldata data, uint64 gasLimit)
         internal
         pure
-        returns (uint256 gasCost, uint256 fee)
+        returns (uint256)
     {
-        // Guarantee the networks exists and `data` is less than `MAX_PAYLOAD_SIZE`
         _checkPreconditions(route, data.length, gasLimit);
-
-        // Compute base cost
         uint256 nonZeros = GasUtils.countNonZerosCalldata(data);
         uint256 zeros = data.length - nonZeros;
-
-        // Compute execution cost
-        gasCost = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gasLimit);
-
-        // Calculate the gas cost: gasPrice * gasCost + baseFee
-        fee = route.relativeGasPriceNumerator.saturatingMul(gasCost).saturatingDiv(route.relativeGasPriceDenominator)
-            .saturatingAdd(route.baseFee);
+        return GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gasLimit);
     }
 
     /**
-     * @dev Utility function for measure the wei cost of a GMP message.
+     * @dev Utility function for measure the gas cost of a GMP message.
      */
-    function estimateWeiCost(NetworkInfo memory route, uint256 messageSize, uint256 gasLimit)
+    function estimateGas(NetworkInfo memory route, uint16 messageSize, uint64 gasLimit)
         internal
         pure
         returns (uint256)
     {
         _checkPreconditions(route, messageSize, gasLimit);
-        uint256 gas = GasUtils.estimateGas(uint16(messageSize), 0, gasLimit);
+        return GasUtils.estimateGas(messageSize, 0, gasLimit);
+    }
+
+    function estimateCost(NetworkInfo memory route, uint256 gas) internal pure returns (uint256) {
+        require(route.baseFee > 0 || route.relativeGasPriceDenominator > 0, "route is temporarily disabled");
         return gas.saturatingMul(route.relativeGasPriceNumerator).saturatingDiv(route.relativeGasPriceDenominator)
             .saturatingAdd(route.baseFee);
     }

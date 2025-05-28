@@ -183,11 +183,10 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
      * @param messageSize Message size
      * @param messageSize Message gas limit
      */
-    function estimateMessageCost(uint16 network, uint64 messageSize, uint64 gasLimit) external view returns (uint256) {
+    function estimateMessageCost(uint16 network, uint16 messageSize, uint64 gasLimit) external view returns (uint256) {
         RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(network);
-
-        // Estimate the cost
-        return route.estimateWeiCost(uint16(messageSize), gasLimit);
+        uint256 gas = route.estimateGas(messageSize, gasLimit);
+        return route.estimateCost(gas);
     }
 
     /**
@@ -208,7 +207,8 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         // Check if the provided parameters are valid
         // See `RouteStorage.estimateWeiCost` at `storage/Routes.sol` for more details.
         RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(network);
-        (uint256 gasCost, uint256 fee) = route.estimateCost(data, executionGasLimit);
+        uint256 gas = route.estimateGas(data, executionGasLimit);
+        uint256 fee = route.estimateCost(gas);
         require(msg.value >= fee, "insufficient tx value");
 
         // We use 20 bytes for represent the address and 1 bit for the contract flag
@@ -225,14 +225,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
 
             bytes32 messageId = message.messageId();
             emit GmpCreated(
-                messageId,
-                source,
-                destinationAddress,
-                network,
-                executionGasLimit,
-                uint64(gasCost),
-                nextNonce,
-                message.data
+                messageId, source, destinationAddress, network, executionGasLimit, uint64(gas), nextNonce, message.data
             );
             return messageId;
         }
@@ -498,8 +491,8 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
             uint256 gasUsed = 7188;
 
             // Compute the gas used + base cost + proxy overhead
-            gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseCost());
-            gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 0));
+            gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseGas());
+            gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGas(uint16(msg.data.length), 0));
             gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
 
             // Compute refund amount
