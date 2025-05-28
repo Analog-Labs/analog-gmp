@@ -77,6 +77,8 @@ library RouteStore {
 
     error RouteNotExists(uint16 id);
     error IndexOutOfBounds(uint256 index);
+    error ZeroGatewayForNewRoute();
+    error InvalidRouteParameters();
 
     function getMainStorage() internal pure returns (MainStorage storage $) {
         assembly {
