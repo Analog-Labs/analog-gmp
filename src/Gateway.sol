@@ -29,37 +29,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-abstract contract GatewayEIP712 is Initializable {
-    bytes32 private constant GATEWAY_STORAGE_SLOT = keccak256("analog.gateway.storage");
-
-    struct GatewayEIP712Storage {
-        uint16 networkId;
-        address proxyAddress;
-    }
-
-    function _getGatewayEIP712Storage() internal pure returns (GatewayEIP712Storage storage gs) {
-        bytes32 slot = GATEWAY_STORAGE_SLOT;
-        assembly {
-            gs.slot := slot
-        }
-    }
-
-    function __GatewayEIP712_init(uint16 networkId) internal onlyInitializing {
-        GatewayEIP712Storage storage gs = _getGatewayEIP712Storage();
-        gs.networkId = networkId;
-        gs.proxyAddress = address(this);
-    }
-
-    function NETWORK_ID() public view returns (uint16) {
-        return _getGatewayEIP712Storage().networkId;
-    }
-
-    function PROXY_ADDRESS() public view returns (address) {
-        return _getGatewayEIP712Storage().proxyAddress;
-    }
-}
-
-contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable {
+contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpCallback;
     using PrimitiveUtils for address;
@@ -104,14 +74,29 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
     // Address nonce
     mapping(address => uint64) public nonces;
 
+    bytes32 private constant GATEWAY_STORAGE_SLOT = keccak256("analog.gateway.storage");
+
+    struct GatewayConfig {
+        uint16 networkId;
+    }
+
+    function _getGatewayConfig() internal pure returns (GatewayConfig storage gs) {
+        bytes32 slot = GATEWAY_STORAGE_SLOT;
+        assembly {
+            gs.slot := slot
+        }
+    }
+
     constructor() {
         _disableInitializers();
     }
 
     function initialize(uint16 _networkId) public initializer {
         __Ownable_init(msg.sender);
-        __GatewayEIP712_init(_networkId);
         __UUPSUpgradeable_init();
+
+        GatewayConfig storage gs = _getGatewayConfig();
+        gs.networkId = _networkId;
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
@@ -189,7 +174,7 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
     // IGateway implementation
 
     function networkId() external view returns (uint16) {
-        return NETWORK_ID();
+        return _getGatewayConfig().networkId;
     }
 
     /**
@@ -235,8 +220,9 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
             uint64 nextNonce = uint64(nonces[msg.sender]++);
 
             // Create GMP message and update nonce
-            GmpMessage memory message =
-                GmpMessage(source, NETWORK_ID(), destinationAddress, network, executionGasLimit, nextNonce, data);
+            GmpMessage memory message = GmpMessage(
+                source, _getGatewayConfig().networkId, destinationAddress, network, executionGasLimit, nextNonce, data
+            );
 
             bytes32 messageId = message.messageId();
             emit GmpCreated(
@@ -276,7 +262,7 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
 
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
-        require(gmp.destNetwork == NETWORK_ID(), "invalid gmp network");
+        require(gmp.destNetwork == _getGatewayConfig().networkId, "invalid gmp network");
 
         // Check if the message data is too large
         require(gmp.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
@@ -493,7 +479,9 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
         // Compute the Batch signing hash
         rootHash = Hashing.hash(batch.version, batch.batchId, uint256(rootHash));
         bytes32 signingHash = keccak256(
-            abi.encodePacked("Analog GMP v2", NETWORK_ID(), bytes32(uint256(uint160(address(this)))), rootHash)
+            abi.encodePacked(
+                "Analog GMP v2", _getGatewayConfig().networkId, bytes32(uint256(uint160(address(this)))), rootHash
+            )
         );
 
         // Load shard from storage

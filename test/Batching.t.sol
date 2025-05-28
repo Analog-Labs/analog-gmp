@@ -8,7 +8,7 @@ import {VmSafe} from "forge-std/Vm.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {TestUtils} from "./TestUtils.sol";
 import {GasSpender} from "./GasSpender.sol";
-import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
+import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";

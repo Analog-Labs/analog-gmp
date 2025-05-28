@@ -8,7 +8,7 @@ import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils} from "./TestUtils.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {GasSpender} from "./GasSpender.sol";
-import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
+import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
@@ -24,28 +24,6 @@ import {
     GMP_VERSION
 } from "../src/Primitives.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-
-contract SigUtilsTest is GatewayEIP712, Test {
-    using PrimitiveUtils for address;
-    using PrimitiveUtils for GmpMessage;
-    using PrimitiveUtils for GmpCallback;
-
-    function testPayload() public pure {
-        GmpMessage memory gmp = GmpMessage({
-            source: address(0x1).toSender(),
-            srcNetwork: 42,
-            dest: address(0x1),
-            destNetwork: 69,
-            gasLimit: 0,
-            nonce: 2,
-            data: "42"
-        });
-        bytes32 msgId = keccak256(
-            abi.encode(GMP_VERSION, gmp.source, gmp.srcNetwork, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.nonce)
-        );
-        assertEq(gmp.messageId(), msgId);
-    }
-}
 
 contract TestGatewayV2 is Gateway {
     string public constant VERSION = "v2.0";
@@ -105,6 +83,22 @@ contract GatewayTest is Test {
                 }
             }
         }
+    }
+
+    function testMessageId() public pure {
+        GmpMessage memory gmp = GmpMessage({
+            source: address(0x1).toSender(),
+            srcNetwork: 42,
+            dest: address(0x1),
+            destNetwork: 69,
+            gasLimit: 0,
+            nonce: 2,
+            data: "42"
+        });
+        bytes32 msgId = keccak256(
+            abi.encode(GMP_VERSION, gmp.source, gmp.srcNetwork, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.nonce)
+        );
+        assertEq(gmp.messageId(), msgId);
     }
 
     function test_setShards() external {
@@ -416,16 +410,12 @@ contract GatewayTest is Test {
     }
 
     function test_storagePreservationAfterUpgrade() public {
-        uint256 initialNetworkId = gateway.NETWORK_ID();
-        address initialProxyAddr = gateway.PROXY_ADDRESS();
+        uint256 initialNetworkId = gateway.networkId();
 
         TestGatewayV2 gatewayV2 = new TestGatewayV2();
         vm.prank(admin.addr);
         gateway.upgradeToAndCall(address(gatewayV2), "");
-
-        TestGatewayV2 upgraded = TestGatewayV2(address(gateway));
-        assertEq(gateway.NETWORK_ID(), initialNetworkId, "Network ID changed");
-        assertEq(upgraded.PROXY_ADDRESS(), initialProxyAddr, "Proxy address changed");
+        assertEq(gateway.networkId(), initialNetworkId, "Network ID changed");
     }
 
     function test_newFeatureAfterUpgrade() public {

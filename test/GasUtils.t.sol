@@ -8,7 +8,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils} from "./TestUtils.sol";
 import {GasSpender} from "./GasSpender.sol";
-import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
+import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {GmpMessage, Signature, TssKey, GmpStatus, PrimitiveUtils, Batch} from "../src/Primitives.sol";
