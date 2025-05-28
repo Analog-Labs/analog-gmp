@@ -169,14 +169,6 @@ library RouteStore {
         return store.routes[id];
     }
 
-    /**
-     * @dev Returns the value associated with `NetworkInfo`. O(1).
-     */
-    function tryGet(MainStorage storage store, uint16 id) internal view returns (bool, NetworkInfo storage) {
-        bool exists = store.routeIds.contains(uint256(id));
-        return (exists, store.routes[id]);
-    }
-
     function createOrUpdateRoute(MainStorage storage store, Route calldata route) internal {
         (bool created, NetworkInfo storage stored) = getOrAdd(store, route.networkId);
         if (created) {
