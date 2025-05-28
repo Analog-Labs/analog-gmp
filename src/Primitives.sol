@@ -152,6 +152,66 @@ struct GmpCallback {
  * @dev Utility functions for primitives
  */
 library PrimitiveUtils {
+    /**
+     * @dev Solidity's reserved location for the free memory pointer.
+     * Reference: https://docs.soliditylang.org/en/v0.8.28/internals/layout_in_memory.html
+     */
+    uint256 internal constant ALLOCATED_MEMORY = 0x40;
+
+    /**
+     * @dev Read the current allocated size (a.k.a free memory pointer).
+     */
+    function readAllocatedMemory() internal pure returns (uint256 pointer) {
+        assembly ("memory-safe") {
+            pointer := mload(ALLOCATED_MEMORY)
+        }
+    }
+
+    /**
+     * @dev Replace the current allocated size by the `newPointer`, and returns the old value stored.
+     * CAUTION: Only use this method if you know what you are doing. Make sure you don't overwrite any
+     * memory location that is still in use by the current call context.
+     */
+    function unsafeReplaceAllocatedMemory(uint256 newPointer) internal pure returns (uint256 oldPointer) {
+        assembly ("memory-safe") {
+            oldPointer := mload(ALLOCATED_MEMORY)
+            mstore(ALLOCATED_MEMORY, newPointer)
+        }
+    }
+
+    /**
+     * @dev Hashes two 256-bit words without memory allocation, uses the memory between 0x00~0x40.
+     */
+    function hash(uint256 a, uint256 b) internal pure returns (bytes32 h) {
+        assembly ("memory-safe") {
+            mstore(0x00, a)
+            mstore(0x20, b)
+            h := keccak256(0x00, 0x40)
+        }
+    }
+
+    /**
+     * @dev Hashes three 256-bit words without memory allocation, uses the memory between 0x00~0x60.
+     *
+     * The reserverd memory region `0x40~0x60` is restored to its previous state after execution.
+     * See https://docs.soliditylang.org/en/v0.8.28/internals/layout_in_memory.html for more details.
+     */
+    function hash(uint256 a, uint256 b, uint256 c) internal pure returns (bytes32 h) {
+        assembly ("memory-safe") {
+            mstore(0x00, a)
+            mstore(0x20, b)
+
+            // Backup the free memory pointer
+            let freeMemBackup := mload(ALLOCATED_MEMORY)
+
+            mstore(ALLOCATED_MEMORY, c)
+            h := keccak256(0x00, 0x60)
+
+            // Restore the free memory pointer
+            mstore(ALLOCATED_MEMORY, freeMemBackup)
+        }
+    }
+
     function toAddress(bytes32 sender) internal pure returns (address) {
         return address(uint160(uint256(sender)));
     }

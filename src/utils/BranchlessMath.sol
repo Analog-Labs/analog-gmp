@@ -4,19 +4,6 @@
 pragma solidity >=0.8.20;
 
 /**
- * Rounding mode used when divide an integer.
- */
-enum Rounding {
-    // Rounds towards zero
-    Floor,
-    // Rounds to the nearest value; if the number falls midway,
-    // it is rounded to the value above.
-    Nearest,
-    // Rounds towards positive infinite
-    Ceil
-}
-
-/**
  * @dev Utilities for branchless operations, useful when a constant gas cost is required.
  */
 library BranchlessMath {
@@ -46,36 +33,6 @@ library BranchlessMath {
         // - Consumes less gas
         // - Constant gas cost regardless the inputs
         // - Reduces the final bytecode size
-        assembly {
-            r := xor(b, mul(xor(a, b), condition))
-        }
-    }
-
-    /**
-     * @dev If `condition` is true returns `a`, otherwise returns `b`.
-     * see `BranchlessMath.ternary`
-     */
-    function ternary(bool condition, int256 a, int256 b) internal pure returns (int256 r) {
-        assembly {
-            r := xor(b, mul(xor(a, b), condition))
-        }
-    }
-
-    /**
-     * @dev If `condition` is true returns `a`, otherwise returns `b`.
-     * see `BranchlessMath.ternary`
-     */
-    function ternary(bool condition, address a, address b) internal pure returns (address r) {
-        assembly {
-            r := xor(b, mul(xor(a, b), condition))
-        }
-    }
-
-    /**
-     * @dev If `condition` is true returns `a`, otherwise returns `b`.
-     * see `BranchlessMath.ternary`
-     */
-    function ternary(bool condition, bytes32 a, bytes32 b) internal pure returns (bytes32 r) {
         assembly {
             r := xor(b, mul(xor(a, b), condition))
         }
@@ -141,19 +98,6 @@ library BranchlessMath {
             // not revert, it returns zero.
             // Reference: https://github.com/ethereum/solidity/issues/15200
             r := div(x, y)
-        }
-    }
-
-    /**
-     * @dev Unsigned saturating left shift, bounds to `2 ** 256 - 1` instead of overflowing.
-     */
-    function saturatingShl(uint256 x, uint8 shift) internal pure returns (uint256 r) {
-        assembly {
-            // Detect overflow by checking if (x >> (256 - shift)) > 0
-            r := gt(shr(sub(256, shift), x), 0)
-
-            // Bounds to `type(uint256).max` if an overflow happened
-            r := or(shl(shift, x), sub(0, r))
         }
     }
 

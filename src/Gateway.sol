@@ -3,7 +3,6 @@
 
 pragma solidity >=0.8.0;
 
-import {Hashing} from "./utils/Hashing.sol";
 import {Schnorr} from "../lib/frost-evm/sol/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {GasUtils} from "./GasUtils.sol";
@@ -338,7 +337,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         assembly {
             publicKey := params.offset
         }
-        operationHash = Hashing.hash(publicKey.yParity, publicKey.xCoord);
+        operationHash = PrimitiveUtils.hash(publicKey.yParity, publicKey.xCoord);
 
         bool isSuccess = ShardStore.getMainStorage().register(publicKey);
         if (isSuccess) {
@@ -357,7 +356,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         assembly {
             publicKey := params.offset
         }
-        operationHash = Hashing.hash(publicKey.yParity, publicKey.xCoord);
+        operationHash = PrimitiveUtils.hash(publicKey.yParity, publicKey.xCoord);
 
         bool isSuccess = ShardStore.getMainStorage().revoke(publicKey);
         if (isSuccess) {
@@ -430,7 +429,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
      */
     function _executeCommands(GatewayOp[] calldata operations) private returns (uint256, bytes32) {
         // Track the free memory pointer, to reset the memory after each command executed.
-        uint256 freeMemPointer = GasUtils.readAllocatedMemory();
+        uint256 freeMemPointer = PrimitiveUtils.readAllocatedMemory();
         uint256 maxAllocatedMemory = freeMemPointer;
 
         // Create the Command LookUp Table
@@ -448,10 +447,10 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
 
             // Update the operations root hash
             operationsRootHash =
-                Hashing.hash(uint256(operationsRootHash), uint256(operation.command), uint256(operationHash));
+                PrimitiveUtils.hash(uint256(operationsRootHash), uint256(operation.command), uint256(operationHash));
 
             // Restore the memory, to prevent the memory expansion costs to increase exponentially.
-            uint256 newFreeMemPointer = GasUtils.unsafeReplaceAllocatedMemory(freeMemPointer);
+            uint256 newFreeMemPointer = PrimitiveUtils.unsafeReplaceAllocatedMemory(freeMemPointer);
 
             // Update the Max Allocated Memory
             maxAllocatedMemory = maxAllocatedMemory.max(newFreeMemPointer);
@@ -477,7 +476,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         emit BatchExecuted(batch.batchId);
 
         // Compute the Batch signing hash
-        rootHash = Hashing.hash(batch.version, batch.batchId, uint256(rootHash));
+        rootHash = PrimitiveUtils.hash(batch.version, batch.batchId, uint256(rootHash));
         bytes32 signingHash = keccak256(
             abi.encodePacked(
                 "Analog GMP v2", _getGatewayConfig().networkId, bytes32(uint256(uint160(address(this)))), rootHash

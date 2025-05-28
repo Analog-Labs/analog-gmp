@@ -7,7 +7,6 @@ import {VmSafe, Vm} from "forge-std/Vm.sol";
 import {console} from "forge-std/console.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {Gateway} from "../src/Gateway.sol";
-import {Hashing} from "../src/utils/Hashing.sol";
 import {GmpMessage, Signature, TssKey, Route, PrimitiveUtils, Batch, GatewayOp, Command} from "../src/Primitives.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -40,11 +39,11 @@ contract SigningHash {
                 assembly {
                     tssKey := params.offset
                 }
-                operationHash = Hashing.hash(tssKey.yParity, tssKey.xCoord);
+                operationHash = PrimitiveUtils.hash(tssKey.yParity, tssKey.xCoord);
             }
-            rootHash = Hashing.hash(uint256(rootHash), uint256(op.command), uint256(operationHash));
+            rootHash = PrimitiveUtils.hash(uint256(rootHash), uint256(op.command), uint256(operationHash));
         }
-        rootHash = Hashing.hash(batch.version, batch.batchId, uint256(rootHash));
+        rootHash = PrimitiveUtils.hash(batch.version, batch.batchId, uint256(rootHash));
         return keccak256(
             abi.encodePacked("Analog GMP v2", gw.networkId(), bytes32(uint256(uint160(address(gw)))), rootHash)
         );
@@ -130,5 +129,13 @@ library TestUtils {
         SigningHash hasher = new SigningHash(address(gw));
         bytes32 hash = hasher.signingHash(batch);
         return TestUtils.sign(shard, hash, nonce);
+    }
+
+    function countNonZeros(bytes memory data) internal pure returns (uint256 count) {
+        for (uint256 i = 0; i < data.length; i++) {
+            if (data[i] != 0x0) {
+                count += 1;
+            }
+        }
     }
 }

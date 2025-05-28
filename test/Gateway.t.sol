@@ -364,7 +364,7 @@ contract GatewayTest is Test {
         // Compute GMP message price
         uint256 value;
         {
-            uint16 nonZeros = uint16(GasUtils.countNonZeros(gmp.data));
+            uint16 nonZeros = uint16(TestUtils.countNonZeros(gmp.data));
             uint16 zeros = uint16(gmp.data.length) - nonZeros;
             value = GasUtils.estimateGas(nonZeros, zeros, gmp.gasLimit);
         }
