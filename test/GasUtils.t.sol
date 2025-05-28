@@ -11,7 +11,7 @@ import {GasSpender} from "./GasSpender.sol";
 import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
-import {GmpMessage, Signature, TssKey, GmpStatus, PrimitiveUtils} from "../src/Primitives.sol";
+import {GmpMessage, Signature, TssKey, GmpStatus, PrimitiveUtils, Batch} from "../src/Primitives.sol";
 
 uint256 constant secret = 0x42;
 uint256 constant nonce = 0x69;
@@ -43,7 +43,7 @@ contract GasUtilsTest is Test {
         admin = vm.createWallet(secret);
         vm.deal(admin.addr, 100 ether);
         gateway = TestUtils.setupGateway(admin, DEST_NETWORK_ID);
-        TestUtils.setMockShard(admin, address(gateway), admin);
+        TestUtils.setMockShards(admin, address(gateway), admin);
         vm.deal(admin.addr, 100 ether);
         receiver = IGmpReceiver(new GasSpender());
     }
@@ -99,7 +99,8 @@ contract GasUtilsTest is Test {
             nonce: 1,
             data: data
         });
-        Signature memory sig = TestUtils.sign(admin, gmp, nonce);
+        Batch memory batch = TestUtils.makeBatch(0, gmp);
+        Signature memory sig = TestUtils.sign(admin, gateway, batch, nonce);
 
         console.log("messageSize", messageSize);
         console.log("gasLimit", gasLimit);
@@ -109,10 +110,8 @@ contract GasUtilsTest is Test {
         vm.expectEmit(true, true, true, true);
         emit Gateway.GmpExecuted(gmpId, gmp.source, gmp.dest, GmpStatus.SUCCESS, bytes32(uint256(gasLimit)));
         uint256 balanceBefore = sender.balance;
-        (GmpStatus status, bytes32 result) = gateway.execute{gas: 10_000_000}(sig, gmp);
+        gateway.execute{gas: 10_000_000}(sig, batch);
         VmSafe.Gas memory gas = vm.lastCallGas();
-        assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "GMP execution failed");
-        assertEq(result, bytes32(uint256(gasLimit)), "unexpected result");
         assertEq(balanceBefore, sender.balance, "Balance should not change");
         assertEq(gas.gasLimit - gas.gasTotalUsed, gas.gasRemaining);
 

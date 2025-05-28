@@ -12,20 +12,6 @@ library GasUtils {
     using BranchlessMath for uint256;
 
     /**
-     * @dev How much gas is used until the first `gasleft()` instruction is executed in the `Gateway.batchExecute` method.
-     *
-     * HOW TO UPDATE THIS VALUE:
-     * 1. Run `forge test --match-test=test_gasMeter --fuzz-runs=1 --debug`
-     * 2. Move the cursor until you enter the `src/Gateway.sol` file.
-     * 3. Execute the opcodes until you reach the first `GAS` opcode.
-     * 4. Execute the GAS opcode then copy the `Gas used in call` value to the constant below.
-     *
-     * Obs: To guarantee the overhead is constant regardless the input size, always use `calldata` instead of `memory`
-     * for external functions.
-     */
-    uint256 internal constant BATCH_SELECTOR_OVERHEAD = 465;
-
-    /**
      * @dev How much gas is used until the first `gasleft()` instruction is executed.
      *
      * HOW TO UPDATE THIS VALUE:
@@ -37,12 +23,12 @@ library GasUtils {
      * Obs: To guarantee the overhead is constant regardless the input size, always use `calldata` instead of `memory`
      * for external functions.
      */
-    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 452;
+    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 464;
 
     /**
      * @dev Base cost of the `IExecutor.execute` method.
      */
-    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46960 + 69 + 2180;
+    uint256 internal constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46960 + 99 + 19;
 
     /**
      * @dev Solidity's reserved location for the free memory pointer.

@@ -87,13 +87,13 @@ struct GatewayOp {
 /**
  * @dev Inbound message from a Timechain
  * @param version Message version, will change if the message format changes.
- * @param batchID Sequence number representing the batch order.
+ * @param batchId Sequence number representing the batch order.
  * @param ops List of operations to execute.
  */
-struct InboundMessage {
+struct Batch {
     uint8 version;
-    /// @dev The batch ID
-    uint64 batchID;
+    /// @dev The batch identifier
+    uint64 batchId;
     /// @dev
     GatewayOp[] ops;
 }

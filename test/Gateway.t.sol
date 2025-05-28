@@ -14,7 +14,14 @@ import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {
-    GmpMessage, Signature, TssKey, GmpCallback, GmpStatus, PrimitiveUtils, GMP_VERSION
+    Batch,
+    GmpMessage,
+    Signature,
+    TssKey,
+    GmpCallback,
+    GmpStatus,
+    PrimitiveUtils,
+    GMP_VERSION
 } from "../src/Primitives.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
@@ -76,7 +83,7 @@ contract GatewayTest is Test {
     constructor() {
         admin = vm.createWallet(SECRET);
         gateway = Gateway(payable(address(TestUtils.setupGateway(admin, DEST_NETWORK_ID))));
-        TestUtils.setMockShard(admin, address(gateway), admin);
+        TestUtils.setMockShards(admin, address(gateway), admin);
         TestUtils.setMockRoute(admin, address(gateway), DEST_NETWORK_ID);
         receiver = IGmpReceiver(new GasSpender());
     }
@@ -147,7 +154,7 @@ contract GatewayTest is Test {
     }
 
     function test_shardEvents() external {
-        TssKey[] memory keys = new TssKey[](10);
+        TssKey[] memory keys = new TssKey[](2);
 
         // create random shard keys
         Signer signer;
@@ -166,33 +173,9 @@ contract GatewayTest is Test {
         // set a shard which is already registered and verify that is does not emit a event.
         vm.prank(admin.addr, admin.addr);
         vm.recordLogs();
-        gateway.setShard(keys[0]);
+        gateway.setShards(keys);
         Vm.Log[] memory entries = vm.getRecordedLogs();
         assertEq(entries.length, 0);
-
-        // Revoke a registered shard thats not registered.
-        uint256 unregisteredSignerKey = 11;
-        signer = new Signer(unregisteredSignerKey);
-        TssKey memory nonRegisteredKey = TssKey({yParity: signer.yParity(), xCoord: signer.xCoord()});
-        vm.prank(admin.addr, admin.addr);
-        vm.recordLogs();
-        gateway.revokeShard(nonRegisteredKey);
-        Vm.Log[] memory entries1 = vm.getRecordedLogs();
-        assertEq(entries1.length, 0);
-
-        // Revoke a registered shard
-        vm.prank(admin.addr, admin.addr);
-        TssKey[] memory unregisteredShardKey = new TssKey[](1);
-        unregisteredShardKey[0] = keys[0];
-        vm.expectEmit(false, false, false, true);
-        emit Gateway.ShardsUnregistered(unregisteredShardKey);
-        gateway.revokeShard(keys[0]);
-
-        // Register a revoked shard
-        vm.prank(admin.addr, admin.addr);
-        vm.expectEmit(false, false, false, true);
-        emit Gateway.ShardsRegistered(unregisteredShardKey);
-        gateway.setShard(unregisteredShardKey[0]);
 
         // Revoke half of the keys and verify event length
         vm.prank(admin.addr, admin.addr);
@@ -207,9 +190,10 @@ contract GatewayTest is Test {
                 secondHalf[i - halfKeysLength] = keys[i];
             }
         }
+        vm.recordLogs();
         vm.expectEmit(false, false, false, true);
         emit Gateway.ShardsUnregistered(firstHalf);
-        gateway.revokeShards(firstHalf);
+        gateway.setShards(secondHalf);
 
         // register first half keys and check if the other half is unregistered
         vm.prank(admin.addr, admin.addr);
@@ -240,12 +224,12 @@ contract GatewayTest is Test {
             nonce: 0,
             data: new bytes(24576 + 1)
         });
-
-        Signature memory sig = TestUtils.sign(admin, gmp, SIGNING_NONCE);
+        Batch memory batch = TestUtils.makeBatch(0, gmp);
+        Signature memory sig = TestUtils.sign(admin, gateway, batch, SIGNING_NONCE);
 
         // Expect a revert
         vm.expectRevert("msg data too large");
-        gateway.execute{gas: 1_000_000}(sig, gmp);
+        gateway.execute{gas: 1_000_000}(sig, batch);
         uint256 ctxExecutionCost = vm.lastCallGas().gasTotalUsed;
         assertLt(
             ctxExecutionCost, GasUtils.executionGasUsed(uint16(gmp.data.length), 0), "revert should use less gas!!"
@@ -270,25 +254,20 @@ contract GatewayTest is Test {
             nonce: 0,
             data: abi.encodePacked(uint256(gmpGasUsed))
         });
-        Signature memory sig = TestUtils.sign(admin, gmp, SIGNING_NONCE);
+        Batch memory batch = TestUtils.makeBatch(0, gmp);
+        Signature memory sig = TestUtils.sign(admin, gateway, batch, SIGNING_NONCE);
 
         // Estimate execution cost
 
         // Execute GMP message
         uint256 beforeBalance = sender.balance;
         {
-            (GmpStatus status, bytes32 returned) = gateway.execute(sig, gmp);
+            gateway.execute(sig, batch);
             uint256 cGasUsed = GasUtils.executionGasUsed(uint16(gmp.data.length), gmp.gasLimit);
             uint256 mGasUsed = vm.lastCallGas().gasTotalUsed;
             assertEq(cGasUsed, mGasUsed, "unexpected gas used");
-
-            // Verify the GMP message status
+            GmpStatus status = gateway.messages(gmp.messageId());
             assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "Unexpected GMP status");
-            Gateway.GmpInfo memory info = gateway.gmpInfo(gmp.messageId());
-            assertEq(
-                uint256(info.status), uint256(GmpStatus.SUCCESS), "GMP status stored doesn't match the returned status"
-            );
-            assertEq(returned, bytes32(uint256(gmp.gasLimit)), "unexpected GMP result");
         }
 
         // Verify the gas refund
@@ -310,10 +289,11 @@ contract GatewayTest is Test {
             nonce: 1,
             data: ""
         });
-        Signature memory wrongNetworkSig = TestUtils.sign(admin, wrongNetwork, SIGNING_NONCE);
+        Batch memory batch = TestUtils.makeBatch(0, wrongNetwork);
+        Signature memory wrongNetworkSig = TestUtils.sign(admin, gateway, batch, SIGNING_NONCE);
         vm.startPrank(sender);
         vm.expectRevert("invalid gmp network");
-        gateway.execute{gas: 1_000_000}(wrongNetworkSig, wrongNetwork);
+        gateway.execute{gas: 1_000_000}(wrongNetworkSig, batch);
         vm.stopPrank();
     }
 
@@ -330,14 +310,15 @@ contract GatewayTest is Test {
             nonce: 1,
             data: abi.encode(uint256(100_000))
         });
-        Signature memory sig = TestUtils.sign(admin, gmp, SIGNING_NONCE);
+        Batch memory batch = TestUtils.makeBatch(0, gmp);
+        Signature memory sig = TestUtils.sign(admin, gateway, batch, SIGNING_NONCE);
 
         // Deposit funds
         uint256 cGasUsed = GasUtils.executionGasUsed(uint16(gmp.data.length), 0);
 
         // Execute GMP message
         vm.expectRevert("insufficient gas to execute GMP message");
-        gateway.execute{gas: cGasUsed}(sig, gmp);
+        gateway.execute{gas: cGasUsed}(sig, batch);
     }
 
     function test_executeRevertsAlreadyExecuted() external {
@@ -353,18 +334,19 @@ contract GatewayTest is Test {
             nonce: 1,
             data: abi.encode(uint256(1000))
         });
-        Signature memory sig = TestUtils.sign(admin, gmp, SIGNING_NONCE);
+        Batch memory batch = TestUtils.makeBatch(0, gmp);
+        Signature memory sig = TestUtils.sign(admin, gateway, batch, SIGNING_NONCE);
 
         // Execute GMP message first time
         vm.startPrank(sender);
-        (GmpStatus status, bytes32 result) = gateway.execute{gas: 1_000_000}(sig, gmp);
+        gateway.execute{gas: 1_000_000}(sig, batch);
         vm.stopPrank();
+        GmpStatus status = gateway.messages(gmp.messageId());
         assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "unexpected GMP status");
-        assertEq(gmp.gasLimit, uint256(result), "unexpected GMP result");
 
         // Execute GMP message second time
         vm.expectRevert("message already executed");
-        gateway.execute(sig, gmp);
+        gateway.execute(sig, batch);
     }
 
     function test_submitGmpMessage() external {
@@ -383,7 +365,7 @@ contract GatewayTest is Test {
         bytes32 id = gmp.messageId();
 
         // Check the previous message hash
-        assertEq(gateway.nonceOf(gmp.source.toAddress()), 0, "wrong previous message hash");
+        assertEq(gateway.nonces(gmp.source.toAddress()), 0, "wrong previous message hash");
 
         // Compute GMP message price
         uint256 value;
@@ -408,7 +390,7 @@ contract GatewayTest is Test {
         assertEq(rid, id, "unexpected GMP id");
 
         // Now the second GMP message nonce must be equals to previous message nonce + 1.
-        gmp.nonce = gateway.nonceOf(gmp.source.toAddress());
+        gmp.nonce = gateway.nonces(gmp.source.toAddress());
         id = gmp.messageId();
 
         // Expect event
