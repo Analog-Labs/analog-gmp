@@ -11,64 +11,24 @@ import {BranchlessMath} from "./utils/BranchlessMath.sol";
 library GasUtils {
     using BranchlessMath for uint256;
 
-    function estimateBaseGas(uint256 messageSize) internal pure returns (uint256) {
-        uint256 calldataSize = messageSize.align32() + 676; // selector + Signature + Batch
-        return 21000 + calldataSize * 16; // assume every byte is a 1
-    }
-
-    /**
-     * @dev Estimate the gas cost of a GMP message.
-     * @param messageSize The message size.
-     * @param gasLimit The message gas limit.
-     */
-    function estimateGas(uint16 messageSize, uint64 gasLimit) internal pure returns (uint256) {
-        unchecked {
-            uint256 calldataSize = uint256(messageSize).align32() + 676; // selector + Signature + Batch
-            uint256 messageWords = _toWord(messageSize);
-            uint256 calldataWords = _toWord(calldataSize);
-            // destination contract gas limit
-            uint256 gas = uint256(gasLimit);
-            // proxy overhead
-            gas += proxyOverheadGas(calldataSize, 0);
-            // cost of calldata copy
-            gas += messageWords * 3;
-            // cost of hashing the payload
-            gas += messageWords * 6;
-            // execution base cost
-            gas += 46606;
-            // memory expansion cost
-            gas += memoryExpansionGas(calldataWords);
-            // cost of countNonZerosCalldata
-            gas += (calldataWords * 106) + (((calldataWords - 255 + 254) / 255) * 214);
-            return gas;
-        }
-    }
-
     /**
      * @dev Compute the amount of gas used by the `GatewayProxy`.
      * @param calldataLen The length of the calldata in bytes
-     * @param returnLen The length of the return data in bytes
      */
-    function proxyOverheadGas(uint256 calldataLen, uint256 returnLen) internal pure returns (uint256) {
+    function proxyOverheadGas(uint256 calldataLen) internal pure returns (uint256) {
         unchecked {
-            // Convert the calldata and return data length to words
-            calldataLen = _toWord(calldataLen);
-            returnLen = _toWord(returnLen);
-
             // Base cost: OPCODES + COLD SLOAD + COLD DELEGATECALL + RETURNDATACOPY
-            // uint256 gasCost = 57 + 2100 + 2600;
-            uint256 gasCost = 31 + 2100 + 2600 + 32 + 66;
+            uint256 gas = 31 + 2100 + 2600 + 32 + 66;
 
             // CALLDATACOPY
-            gasCost = gasCost.saturatingAdd(calldataLen * 3);
+            gas += calldataLen.toWordCount() * 3;
 
             // RETURNDATACOPY
-            gasCost = gasCost.saturatingAdd(returnLen * 3);
+            // gas += returnLen.toWordCount() * 3;
 
             // MEMORY EXPANSION (minimal 3 due mstore(0x40, 0x80))
-            uint256 words = calldataLen.max(returnLen).max(3);
-            gasCost = gasCost.saturatingAdd(memoryExpansionGas(words));
-            return gasCost;
+            gas += memoryExpansionGas(calldataLen.toWordCount());
+            return gas;
         }
     }
 
@@ -76,18 +36,9 @@ library GasUtils {
      * @dev Compute the gas cost of memory expansion.
      * @param words number of words, where a word is 32 bytes
      */
-    function memoryExpansionGas(uint256 words) private pure returns (uint256) {
+    function memoryExpansionGas(uint256 words) internal pure returns (uint256) {
         unchecked {
-            return (words.saturatingMul(words) >> 9).saturatingAdd(words.saturatingMul(3));
-        }
-    }
-
-    /**
-     * @dev Convert byte count to 256bit word count, rounded up.
-     */
-    function _toWord(uint256 byteCount) private pure returns (uint256 words) {
-        assembly {
-            words := add(shr(5, byteCount), gt(and(byteCount, 0x1f), 0))
+            return ((words * words) >> 9) + words * 3;
         }
     }
 

@@ -13,7 +13,7 @@ interface IGateway {
      * @param source sender account, with an extra flag indicating if it is a contract or an EOA
      * @param destinationAddress the target address on the destination chain.
      * @param destinationNetwork the target chain where the contract call will be made.
-     * @param executionGasLimit the gas limit available for the contract call
+     * @param gasLimit the gas limit available for the contract call
      * @param gasCost the gas limit available for the contract call
      * @param nonce Sequence number per sender, used to guarantee each message is unique.
      * @param data message data with no specified format
@@ -23,7 +23,7 @@ interface IGateway {
         bytes32 indexed source,
         address indexed destinationAddress,
         uint16 destinationNetwork,
-        uint64 executionGasLimit,
+        uint64 gasLimit,
         uint64 gasCost,
         uint64 nonce,
         bytes data

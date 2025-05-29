@@ -22,7 +22,7 @@ contract MeasureGas {
     }
 
     function proxyOverheadGas(Signature calldata, Batch calldata) external pure returns (uint256) {
-        return GasUtils.proxyOverheadGas(msg.data.length, 0);
+        return GasUtils.proxyOverheadGas(msg.data.length);
     }
 }
 
@@ -88,7 +88,7 @@ contract GasUtilsTest is Test {
         vm.stopPrank();
 
         uint256 mGasUsed = gas.gasTotalUsed;
-        uint256 cGasUsed = GasUtils.estimateGas(uint16(gmp.data.length), gmp.gasLimit);
+        uint256 cGasUsed = TestUtils.estimateGas(uint16(gmp.data.length), gmp.gasLimit);
         console.log("gasUsed", mGasUsed, cGasUsed);
         assertEq(cGasUsed, mGasUsed, "gasUsed mismatch");
 

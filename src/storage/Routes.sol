@@ -36,6 +36,8 @@ library RouteStore {
         uint128 baseFee;
         uint256 relativeGasPriceNumerator;
         uint256 relativeGasPriceDenominator;
+        uint256 gasCoef0;
+        uint256 gasCoef1;
     }
 
     /**
@@ -45,13 +47,17 @@ library RouteStore {
      * @param relativeGasPriceDenominator Gas price of destination chain, in terms of the source chain token.
      * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
      * @param gasLimit The maximum amount of gas we allow on this particular network.
+     * @param gasCoef0.
+     * @param gasCoef1.
      */
     event RouteUpdated(
         uint16 indexed networkId,
         uint256 relativeGasPriceNumerator,
         uint256 relativeGasPriceDenominator,
         uint128 baseFee,
-        uint64 gasLimit
+        uint64 gasLimit,
+        uint256 gasCoef0,
+        uint256 gasCoef1
     );
 
     /**
@@ -178,6 +184,8 @@ library RouteStore {
             stored.relativeGasPriceNumerator = route.relativeGasPriceNumerator;
             stored.relativeGasPriceDenominator = route.relativeGasPriceDenominator;
             stored.baseFee = route.baseFee;
+            stored.gasCoef0 = route.gasCoef0;
+            stored.gasCoef1 = route.gasCoef1;
         }
 
         emit RouteUpdated(
@@ -185,7 +193,9 @@ library RouteStore {
             stored.relativeGasPriceNumerator,
             stored.relativeGasPriceDenominator,
             stored.baseFee,
-            stored.gasLimit
+            stored.gasLimit,
+            stored.gasCoef0,
+            stored.gasCoef1
         );
     }
 
@@ -210,7 +220,9 @@ library RouteStore {
                 baseFee: route.baseFee,
                 gateway: route.gateway,
                 relativeGasPriceNumerator: route.relativeGasPriceNumerator,
-                relativeGasPriceDenominator: route.relativeGasPriceDenominator
+                relativeGasPriceDenominator: route.relativeGasPriceDenominator,
+                gasCoef0: route.gasCoef0,
+                gasCoef1: route.gasCoef1
             });
         }
         return routes;
@@ -225,9 +237,16 @@ library RouteStore {
         require(messageSize <= MAX_PAYLOAD_SIZE, "maximum payload size exceeded");
     }
 
+    function estimateGas(NetworkInfo memory route, uint16 messageSize, uint64 gasLimit)
+        internal
+        pure
+        returns (uint256)
+    {
+        return uint256(messageSize) * route.gasCoef1 + route.gasCoef0 + gasLimit;
+    }
+
     function estimateCost(NetworkInfo memory route, uint256 gas) internal pure returns (uint256) {
-        require(route.baseFee > 0 || route.relativeGasPriceDenominator > 0, "route is temporarily disabled");
-        return gas.saturatingMul(route.relativeGasPriceNumerator).saturatingDiv(route.relativeGasPriceDenominator)
-            .saturatingAdd(route.baseFee);
+        require(route.relativeGasPriceDenominator > 0, "route is temporarily disabled");
+        return gas * route.relativeGasPriceNumerator / route.relativeGasPriceDenominator + route.baseFee;
     }
 }

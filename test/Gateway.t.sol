@@ -219,7 +219,7 @@ contract GatewayTest is Test {
         vm.expectRevert("msg data too large");
         gateway.execute{gas: 1_000_000}(sig, batch);
         uint256 ctxExecutionCost = vm.lastCallGas().gasTotalUsed;
-        assertLt(ctxExecutionCost, GasUtils.estimateGas(uint16(gmp.data.length), 0), "revert should use less gas!!");
+        assertLt(ctxExecutionCost, TestUtils.estimateGas(uint16(gmp.data.length), 0), "revert should use less gas!!");
     }
 
     function test_ExecuteRevertsWrongNetwork() external {
@@ -260,8 +260,7 @@ contract GatewayTest is Test {
         Batch memory batch = TestUtils.makeBatch(0, gmp);
         Signature memory sig = TestUtils.sign(admin, gateway, batch, SIGNING_NONCE);
 
-        // Deposit funds
-        uint256 cGasUsed = GasUtils.estimateGas(uint16(gmp.data.length), 0);
+        uint256 cGasUsed = TestUtils.estimateGas(uint16(gmp.data.length), 0);
 
         // Execute GMP message
         vm.expectRevert("insufficient gas to execute GMP message");
@@ -315,8 +314,10 @@ contract GatewayTest is Test {
         assertEq(gateway.nonces(gmp.source.toAddress()), 0, "wrong previous message hash");
 
         // Compute GMP message price
-        uint256 value = GasUtils.estimateGas(uint16(gmp.data.length), gmp.gasLimit)
-            + GasUtils.estimateBaseGas(uint16(gmp.data.length));
+        uint256 value = gateway.estimateMessageCost(DEST_NETWORK_ID, uint16(gmp.data.length), gmp.gasLimit);
+        console.log("messageSize", gmp.data.length);
+        console.log("gasLimit", gmp.gasLimit);
+        console.log("messageCost", value);
 
         // Submit message with insufficient funds
         vm.expectRevert("insufficient tx value");

@@ -49,59 +49,6 @@ library BranchlessMath {
     }
 
     /**
-     * @dev Unsigned saturating addition, bounds to UINT256 MAX instead of overflowing.
-     * equivalent to:
-     * uint256 r = x + y;
-     * return r >= x ? r : UINT256_MAX;
-     */
-    function saturatingAdd(uint256 x, uint256 y) internal pure returns (uint256) {
-        unchecked {
-            x = x + y;
-            y = 0 - toUint(x < y);
-            return x | y;
-        }
-    }
-
-    /**
-     * @dev Unsigned saturating subtraction, bounds to zero instead of overflowing.
-     * equivalent to: x > y ? x - y : 0
-     */
-    function saturatingSub(uint256 a, uint256 b) internal pure returns (uint256) {
-        unchecked {
-            // equivalent to: a > b ? a - b : 0
-            return (a - b) * toUint(a > b);
-        }
-    }
-
-    /**
-     * @dev Unsigned saturating multiplication, bounds to `2 ** 256 - 1` instead of overflowing.
-     */
-    function saturatingMul(uint256 a, uint256 b) internal pure returns (uint256) {
-        unchecked {
-            uint256 c = a * b;
-            bool success;
-            assembly {
-                // Only true when the multiplication doesn't overflow
-                // (c / a == b) || (a == 0)
-                success := or(eq(div(c, a), b), iszero(a))
-            }
-            return c | (toUint(success) - 1);
-        }
-    }
-
-    /**
-     * @dev Unsigned saturating division, bounds to UINT256 MAX instead of overflowing.
-     */
-    function saturatingDiv(uint256 x, uint256 y) internal pure returns (uint256 r) {
-        assembly {
-            // Solidity reverts with a division by zero error, while using inline assembly division does
-            // not revert, it returns zero.
-            // Reference: https://github.com/ethereum/solidity/issues/15200
-            r := div(x, y)
-        }
-    }
-
-    /**
      * @dev Cast a boolean (false or true) to a uint256 (0 or 1) with no jump.
      */
     function toUint(bool b) internal pure returns (uint256 u) {
@@ -115,7 +62,16 @@ library BranchlessMath {
      */
     function align32(uint256 x) internal pure returns (uint256 r) {
         unchecked {
-            r = saturatingAdd(x, 31) & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0;
+            r = (x + 31) & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0;
+        }
+    }
+
+    /**
+     * @dev Convert byte count to 256bit word count, rounded up.
+     */
+    function toWordCount(uint256 byteCount) internal pure returns (uint256 words) {
+        assembly {
+            words := add(shr(5, byteCount), gt(and(byteCount, 0x1f), 0))
         }
     }
 }

@@ -185,7 +185,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
      */
     function estimateMessageCost(uint16 network, uint16 messageSize, uint64 gasLimit) external view returns (uint256) {
         RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(network);
-        uint256 gas = GasUtils.estimateGas(messageSize, gasLimit) + GasUtils.estimateBaseGas(messageSize);
+        uint256 gas = route.estimateGas(messageSize, gasLimit);
         return route.estimateCost(gas);
     }
 
@@ -210,7 +210,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
             // Check if the provided parameters are valid
             // See `RouteStorage.estimateWeiCost` at `storage/Routes.sol` for more details.
             RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(network);
-            gas = GasUtils.estimateGas(messageSize, gasLimit) + GasUtils.estimateBaseGas(messageSize);
+            gas = route.estimateGas(messageSize, gasLimit);
             uint256 fee = route.estimateCost(gas);
             require(msg.value >= fee, "insufficient tx value");
         }
@@ -282,9 +282,9 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         unchecked {
             // Add `all but one 64th` to the gas needed, as the defined by EIP-150
             // https://eips.ethereum.org/EIPS/eip-150
-            uint256 gasNeeded = gasLimit.saturatingMul(64).saturatingDiv(63);
+            uint256 gasNeeded = gasLimit * 64 / 63;
             // to guarantee it was provided enough gas to execute the GMP message
-            gasNeeded = gasNeeded.saturatingAdd(10000);
+            gasNeeded = gasNeeded + 10000;
             require(gasleft() >= gasNeeded, "insufficient gas to execute GMP message");
         }
 
@@ -489,15 +489,15 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         // Refund the chronicle gas
         unchecked {
             // Extra gas overhead used to execute the refund logic + selector overhead
-            uint256 gasUsed = 3082;
+            uint256 gasUsed = 2964;
 
             // Compute the gas used + base cost + proxy overhead
-            gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseGas());
-            gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGas(uint16(msg.data.length), 0));
-            gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
+            gasUsed += GasUtils.txBaseGas();
+            gasUsed += GasUtils.proxyOverheadGas(uint16(msg.data.length));
+            gasUsed += initialGas - gasleft();
 
             // Compute refund amount
-            uint256 refund = BranchlessMath.min(gasUsed.saturatingMul(tx.gasprice), address(this).balance);
+            uint256 refund = BranchlessMath.min(gasUsed * tx.gasprice, address(this).balance);
 
             // Refund the gas used
             assembly ("memory-safe") {

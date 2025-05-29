@@ -8,6 +8,7 @@ import {console} from "forge-std/console.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
+import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {
     GmpMessage,
     Signature,
@@ -23,6 +24,7 @@ import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract SigningHash {
     using PrimitiveUtils for GmpMessage;
+    using BranchlessMath for uint256;
 
     Gateway immutable gw;
 
@@ -66,6 +68,8 @@ contract SigningHash {
  */
 library TestUtils {
     using PrimitiveUtils for GmpMessage;
+    using PrimitiveUtils for address;
+    using BranchlessMath for uint256;
 
     // Cheat code address, 0x7109709ECfa91a80626fF3989D68f67F5b1DD12D.
     address internal constant VM_ADDRESS = address(uint160(uint256(keccak256("hevm cheat code"))));
@@ -103,9 +107,11 @@ library TestUtils {
                 networkId: network,
                 gasLimit: 1_000_000,
                 baseFee: 0,
-                gateway: bytes32(uint256(1)),
+                gateway: gateway.toSender(),
                 relativeGasPriceNumerator: 1,
-                relativeGasPriceDenominator: 1
+                relativeGasPriceDenominator: 1,
+                gasCoef0: 0,
+                gasCoef1: 1
             })
         );
         vm.stopPrank();
@@ -147,6 +153,39 @@ library TestUtils {
             if (data[i] != 0x0) {
                 count += 1;
             }
+        }
+    }
+
+    function estimateBaseGas(uint256 messageSize) internal pure returns (uint256) {
+        uint256 calldataSize = messageSize.align32() + 676; // selector + Signature + Batch
+        return 21000 + calldataSize * 16; // assume every byte is a 1
+    }
+
+    /**
+     * @dev Estimate the gas cost of a GMP message.
+     * @param messageSize The message size.
+     * @param gasLimit The message gas limit.
+     */
+    function estimateGas(uint16 messageSize, uint64 gasLimit) internal pure returns (uint256) {
+        unchecked {
+            uint256 calldataSize = uint256(messageSize).align32() + 676; // selector + Signature + Batch
+            uint256 messageWords = uint256(messageSize).toWordCount();
+            uint256 calldataWords = calldataSize.toWordCount();
+            // destination contract gas limit
+            uint256 gas = uint256(gasLimit);
+            // proxy overhead
+            gas += GasUtils.proxyOverheadGas(calldataSize);
+            // cost of calldata copy
+            gas += messageWords * 3;
+            // cost of hashing the payload
+            gas += messageWords * 6;
+            // execution base cost
+            gas += 45806;
+            // memory expansion cost
+            gas += GasUtils.memoryExpansionGas(calldataWords);
+            // cost of countNonZerosCalldata
+            gas += (calldataWords * 106) + (((calldataWords - 255 + 254) / 255) * 214);
+            return gas;
         }
     }
 }
