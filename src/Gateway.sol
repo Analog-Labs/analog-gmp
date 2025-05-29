@@ -215,9 +215,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
             require(msg.value >= fee, "insufficient tx value");
         }
 
-        // We use 20 bytes for represent the address and 1 bit for the contract flag
         bytes32 source = msg.sender.toSender();
-
         unchecked {
             // Nonce is per sender, it's incremented for every message sent.
             uint64 nextNonce = uint64(nonces[msg.sender]++);

@@ -228,20 +228,14 @@ library RouteStore {
         return routes;
     }
 
-    /**
-     * @dev Check a few preconditions before estimate the GMP wei cost.
-     */
-    function _checkPreconditions(NetworkInfo memory route, uint256 messageSize, uint64 gasLimit) private pure {
-        // Verify if the gas limit and message size are within the limits
-        require(gasLimit <= route.gasLimit, "gas limit exceeded");
-        require(messageSize <= MAX_PAYLOAD_SIZE, "maximum payload size exceeded");
-    }
-
     function estimateGas(NetworkInfo memory route, uint16 messageSize, uint64 gasLimit)
         internal
         pure
         returns (uint256)
     {
+        // Verify if the gas limit and message size are within the limits
+        require(gasLimit <= route.gasLimit, "gas limit exceeded");
+        require(messageSize <= MAX_PAYLOAD_SIZE, "maximum payload size exceeded");
         return uint256(messageSize) * route.gasCoef1 + route.gasCoef0 + gasLimit;
     }
 
