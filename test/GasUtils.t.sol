@@ -11,7 +11,7 @@ import {GasSpender} from "./GasSpender.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
-import {GmpMessage, Signature, TssKey, GmpStatus, PrimitiveUtils, Batch} from "../src/Primitives.sol";
+import {GmpMessage, Signature, TssKey, GmpStatus, PrimitiveUtils, Batch, MAX_PAYLOAD_SIZE} from "../src/Primitives.sol";
 
 uint256 constant secret = 0x42;
 uint256 constant nonce = 0x69;
@@ -49,7 +49,7 @@ contract GasUtilsTest is Test {
     /**
      * @dev Compare the estimated gas cost VS the actual gas cost of the `execute` method.
      */
-    function test_baseExecutionCost(uint16 messageSize, uint16 gasLimit) external {
+    function test_gas_calc_and_refund(uint16 messageSize, uint16 gasLimit) external {
         vm.txGasPrice(1);
         vm.assume(gasLimit >= 5000);
         vm.assume(messageSize <= (0x6000 - 32));
@@ -98,5 +98,15 @@ contract GasUtilsTest is Test {
         uint256 proxyOverheadGas = m.proxyOverheadGas(sig, batch);
         console.log("proxyOverheadGas", proxyOverheadGas);
         assertEq(balanceAfter - balanceBefore - baseGas - mGasUsed, 0, "Balance should not change");
+    }
+
+    function test_lin_approx(uint16 messageSize) external pure {
+        vm.assume(messageSize <= MAX_PAYLOAD_SIZE);
+        uint256 calcGas = TestUtils.calcGas(messageSize);
+        uint256 approxGas = TestUtils.linApproxGas(messageSize);
+        assertGe(approxGas + 650, calcGas);
+        int256 error = int256(approxGas) - int256(calcGas);
+        uint256 absError = error >= 0 ? uint256(error) : uint256(-error);
+        assertLe(absError, 750); 
     }
 }
