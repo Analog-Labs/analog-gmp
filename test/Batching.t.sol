@@ -8,13 +8,12 @@ import {VmSafe} from "forge-std/Vm.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {TestUtils} from "./TestUtils.sol";
 import {GasSpender} from "./GasSpender.sol";
-import {Gateway, GatewayEIP712} from "../src/Gateway.sol";
+import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
 import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
-import {Hashing} from "../src/utils/Hashing.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {
-    InboundMessage,
+    Batch,
     GatewayOp,
     Command,
     GmpMessage,
@@ -60,7 +59,7 @@ contract Batching is Test {
         vm.deal(shard.addr, 10 ether);
 
         gateway = TestUtils.setupGateway(admin, DEST_NETWORK_ID);
-        TestUtils.setMockShard(admin, address(gateway), shard);
+        TestUtils.setMockShards(admin, address(gateway), shard);
         TestUtils.setMockRoute(admin, address(gateway), DEST_NETWORK_ID);
         vm.deal(address(gateway), 10 ether);
 
@@ -68,65 +67,26 @@ contract Batching is Test {
         receiver2 = IGmpReceiver(new GasSpender());
     }
 
-    function _signingHash(InboundMessage calldata message) external view returns (bytes32) {
-        bytes32 rootHash = bytes32(0);
-
-        GatewayOp[] calldata ops = message.ops;
-        for (uint256 i = 0; i < ops.length; i++) {
-            GatewayOp calldata op = ops[i];
-            bytes calldata params = op.params;
-
-            bytes32 operationHash;
-            if (op.command == Command.GMP) {
-                GmpMessage calldata gmp;
-                assembly {
-                    gmp := add(params.offset, 0x20)
-                }
-                operationHash = gmp.opHash();
-            } else {
-                TssKey calldata tssKey;
-                assembly {
-                    tssKey := params.offset
-                }
-                operationHash = Hashing.hash(tssKey.yParity, tssKey.xCoord);
-            }
-            rootHash = Hashing.hash(uint256(rootHash), uint256(op.command), uint256(operationHash));
-        }
-        rootHash = Hashing.hash(message.version, message.batchID, uint256(rootHash));
-        return keccak256(
-            abi.encodePacked("Analog GMP v2", DEST_NETWORK_ID, bytes32(uint256(uint160(address(gateway)))), rootHash)
-        );
-    }
-
     function test_execute_batch() external {
         uint64 gasLimit = 7845;
-        GatewayOp[] memory ops = new GatewayOp[](1);
-        ops[0] = GatewayOp({
-            command: Command.GMP,
-            params: abi.encode(
-                GmpMessage({
-                    source: admin.addr.toSender(),
-                    srcNetwork: SRC_NETWORK_ID,
-                    dest: address(receiver1),
-                    destNetwork: DEST_NETWORK_ID,
-                    gasLimit: gasLimit,
-                    nonce: gateway.nonceOf(admin.addr),
-                    data: abi.encode(gasLimit)
-                })
-            )
-        });
-        InboundMessage memory inbound =
-            InboundMessage({version: 0, batchID: uint64(uint256(keccak256("some batch"))), ops: ops});
-
-        bytes32 hash = this._signingHash(inbound);
-        Signature memory sig = TestUtils.sign(shard, hash, SIGNING_NONCE);
-        gateway.batchExecute(sig, inbound);
+        Batch memory batch = TestUtils.makeBatch(
+            0,
+            GmpMessage({
+                source: admin.addr.toSender(),
+                srcNetwork: SRC_NETWORK_ID,
+                dest: address(receiver1),
+                destNetwork: DEST_NETWORK_ID,
+                gasLimit: gasLimit,
+                nonce: gateway.nonces(admin.addr),
+                data: abi.encode(gasLimit)
+            })
+        );
+        Signature memory sig = TestUtils.sign(shard, gateway, batch, SIGNING_NONCE);
+        gateway.execute(sig, batch);
     }
 
     function test_execute_batch_2() external {
-        vm.txGasPrice(1);
         uint64 gasLimit = 7845;
-
         GatewayOp[] memory ops = new GatewayOp[](2);
         ops[0] = GatewayOp({
             command: Command.GMP,
@@ -137,7 +97,7 @@ contract Batching is Test {
                     dest: address(receiver1),
                     destNetwork: DEST_NETWORK_ID,
                     gasLimit: gasLimit,
-                    nonce: gateway.nonceOf(admin.addr),
+                    nonce: gateway.nonces(admin.addr),
                     data: abi.encode(gasLimit)
                 })
             )
@@ -151,16 +111,14 @@ contract Batching is Test {
                     dest: address(receiver2),
                     destNetwork: DEST_NETWORK_ID,
                     gasLimit: gasLimit,
-                    nonce: gateway.nonceOf(admin.addr) + 1,
+                    nonce: gateway.nonces(admin.addr) + 1,
                     data: abi.encode(gasLimit)
                 })
             )
         });
-        InboundMessage memory inbound =
-            InboundMessage({version: 0, batchID: uint64(uint256(keccak256("some batch"))), ops: ops});
+        Batch memory batch = Batch({version: 0, batchId: uint64(uint256(keccak256("some batch"))), ops: ops});
 
-        bytes32 hash = this._signingHash(inbound);
-        Signature memory sig = TestUtils.sign(shard, hash, SIGNING_NONCE);
-        gateway.batchExecute(sig, inbound);
+        Signature memory sig = TestUtils.sign(shard, gateway, batch, SIGNING_NONCE);
+        gateway.execute(sig, batch);
     }
 }

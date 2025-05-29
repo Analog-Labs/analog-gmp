@@ -3,7 +3,6 @@
 
 pragma solidity >=0.8.0;
 
-import {Hashing} from "./utils/Hashing.sol";
 import {Schnorr} from "../lib/frost-evm/sol/Schnorr.sol";
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {GasUtils} from "./GasUtils.sol";
@@ -13,7 +12,7 @@ import {IGateway} from "./interfaces/IGateway.sol";
 import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
 import {
     Command,
-    InboundMessage,
+    Batch,
     GatewayOp,
     GmpCallback,
     GmpMessage,
@@ -29,37 +28,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-abstract contract GatewayEIP712 is Initializable {
-    bytes32 private constant GATEWAY_STORAGE_SLOT = keccak256("analog.gateway.storage");
-
-    struct GatewayEIP712Storage {
-        uint16 networkId;
-        address proxyAddress;
-    }
-
-    function _getGatewayEIP712Storage() internal pure returns (GatewayEIP712Storage storage gs) {
-        bytes32 slot = GATEWAY_STORAGE_SLOT;
-        assembly {
-            gs.slot := slot
-        }
-    }
-
-    function __GatewayEIP712_init(uint16 networkId) internal onlyInitializing {
-        GatewayEIP712Storage storage gs = _getGatewayEIP712Storage();
-        gs.networkId = networkId;
-        gs.proxyAddress = address(this);
-    }
-
-    function NETWORK_ID() public view returns (uint16) {
-        return _getGatewayEIP712Storage().networkId;
-    }
-
-    function PROXY_ADDRESS() public view returns (address) {
-        return _getGatewayEIP712Storage().proxyAddress;
-    }
-}
-
-contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable {
+contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpCallback;
     using PrimitiveUtils for address;
@@ -67,6 +36,12 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
     using ShardStore for ShardStore.MainStorage;
     using RouteStore for RouteStore.MainStorage;
     using RouteStore for RouteStore.NetworkInfo;
+
+    /**
+     * @dev Emitted when a Batch is executed.
+     * @param batch batch_id which is executed
+     */
+    event BatchExecuted(uint64 batch);
 
     /**
      * @dev Emitted when `GmpMessage` is executed.
@@ -81,12 +56,6 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
     );
 
     /**
-     * @dev Emitted when a Batch is executed.
-     * @param batch batch_id which is executed
-     */
-    event BatchExecuted(uint64 batch);
-
-    /**
      * @dev Emitted when shards are registered.
      * @param keys registered shard's keys
      */
@@ -98,32 +67,23 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
      */
     event ShardsUnregistered(TssKey[] keys);
 
-    /**
-     * @dev Selector of `GmpCreated` event.
-     * keccak256("GmpCreated(bytes32,bytes32,address,uint16,uint64,uint64,uint64,bytes)");
-     */
-    bytes32 private constant GMP_CREATED_EVENT_SELECTOR =
-        0x081a0b65828c1720ce022ffb992d4a5ec86e2abc4c383acd4029ba8486e41b4f;
-
     // GMP message status
-    mapping(bytes32 => GmpInfo) private _messages;
+    mapping(bytes32 => GmpStatus) public messages;
 
-    // Hash of the previous GMP message submitted.
-    mapping(address => uint256) private _nonces;
+    // Address nonce
+    mapping(address => uint64) public nonces;
 
-    // Replay protection mechanism, stores the hash of the executed messages
-    // messageHash => shardId
-    mapping(bytes32 => bytes32) private _executedMessages;
+    bytes32 private constant GATEWAY_STORAGE_SLOT = keccak256("analog.gateway.storage");
 
-    /**
-     * @dev GMP info stored in the Gateway Contract
-     * OBS: the order of the attributes matters! ethereum storage is 256bit aligned, try to keep
-     * the attributes 256 bit aligned, ex: nonce, block and status can be read in one storage access.
-     * reference: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html
-     */
-    struct GmpInfo {
-        GmpStatus status;
-        uint64 blockNumber; // block in which the message was processed
+    struct GatewayConfig {
+        uint16 networkId;
+    }
+
+    function _getGatewayConfig() internal pure returns (GatewayConfig storage gs) {
+        bytes32 slot = GATEWAY_STORAGE_SLOT;
+        assembly {
+            gs.slot := slot
+        }
     }
 
     constructor() {
@@ -132,50 +92,148 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
 
     function initialize(uint16 _networkId) public initializer {
         __Ownable_init(msg.sender);
-        __GatewayEIP712_init(_networkId);
         __UUPSUpgradeable_init();
+
+        GatewayConfig storage gs = _getGatewayConfig();
+        gs.networkId = _networkId;
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-    function nonceOf(address account) external view returns (uint64) {
-        return uint64(_nonces[account]);
+    function admin() external view returns (address) {
+        return owner();
     }
 
-    function gmpInfo(bytes32 id) external view returns (GmpInfo memory) {
-        return _messages[id];
-    }
-
-    function keyInfo(bytes32 id) external view returns (ShardStore.ShardInfo memory) {
-        ShardStore.MainStorage storage store = ShardStore.getMainStorage();
-        return store.get(ShardStore.ShardID.wrap(id));
-    }
-
-    function networkId() external view returns (uint16) {
-        return NETWORK_ID();
-    }
-
-    function networkInfo(uint16 id) external view returns (RouteStore.NetworkInfo memory) {
-        return RouteStore.getMainStorage().get(id);
+    function setAdmin(address newAdmin) external payable onlyOwner {
+        transferOwnership(newAdmin);
     }
 
     /**
-     * @dev  Verify if shard exists, if the TSS signature is valid then increment shard's nonce.
+     * Withdraw funds from the gateway contract
+     * @param amount The amount to withdraw
+     * @param recipient The recipient address
+     * @param data The data to send to the recipient (in case it is a contract)
      */
-    function _verifySignature(Signature calldata signature, bytes32 message) private view {
-        // Load shard from storage
-        ShardStore.ShardInfo storage signer = ShardStore.getMainStorage().get(signature);
-
-        // Verify Signature
-        require(
-            Schnorr.verify(signer.yParity, signature.xCoord, uint256(message), signature.e, signature.s),
-            "invalid tss signature"
-        );
+    function withdraw(uint256 amount, address recipient, bytes calldata data)
+        external
+        onlyOwner
+        returns (bytes memory output)
+    {
+        // Check if the recipient is a contract
+        if (recipient.code.length > 0) {
+            bool success;
+            (success, output) = recipient.call{value: amount, gas: gasleft()}(data);
+            if (!success) {
+                assembly ("memory-safe") {
+                    revert(add(output, 32), mload(output))
+                }
+            }
+        } else {
+            payable(recipient).transfer(amount);
+            output = "";
+        }
     }
 
-    /*//////////////////////////////////////////////////////////////
-                  GATEWAY OPERATIONS AND COMMANDS
-    //////////////////////////////////////////////////////////////*/
+    /**
+     * @dev List all shards.
+     */
+    function shards() external view returns (TssKey[] memory) {
+        return ShardStore.getMainStorage().listShards();
+    }
+
+    /**
+     * @dev Register Shards in batch.
+     */
+    function setShards(TssKey[] calldata publicKeys) external onlyOwner {
+        (TssKey[] memory created, TssKey[] memory revoked) = ShardStore.getMainStorage().replaceTssKeys(publicKeys);
+
+        if (created.length > 0) {
+            emit ShardsRegistered(created);
+        }
+
+        if (revoked.length > 0) {
+            emit ShardsUnregistered(revoked);
+        }
+    }
+
+    /**
+     * @dev List all routes.
+     */
+    function routes() external view returns (Route[] memory) {
+        return RouteStore.getMainStorage().listRoutes();
+    }
+
+    /**
+     * @dev Create or update a single route
+     */
+    function setRoute(Route calldata info) external onlyOwner {
+        RouteStore.getMainStorage().createOrUpdateRoute(info);
+    }
+
+    // IGateway implementation
+
+    function networkId() public view returns (uint16) {
+        return _getGatewayConfig().networkId;
+    }
+
+    /**
+     * @notice Estimate the gas cost of execute a GMP message.
+     * @dev This function is called on the destination chain before calling the gateway to execute a source contract.
+     * @param network The target chain where the contract call will be made
+     * @param messageSize Message size
+     * @param messageSize Message gas limit
+     */
+    function estimateMessageCost(uint16 network, uint16 messageSize, uint64 gasLimit) external view returns (uint256) {
+        RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(network);
+        uint256 gas = route.estimateGas(messageSize, gasLimit);
+        return route.estimateCost(gas);
+    }
+
+    /**
+     * @dev Send message from this chain to another chain.
+     * @param destinationAddress the target address on the destination chain
+     * @param network the target chain where the contract call will be made
+     * @param gasLimit the gas limit available for the contract call
+     * @param data message data with no specified format
+     */
+    function submitMessage(address destinationAddress, uint16 network, uint64 gasLimit, bytes calldata data)
+        external
+        payable
+        returns (bytes32)
+    {
+        uint256 gas;
+        {
+            // Check if the message data is too large
+            require(data.length <= MAX_PAYLOAD_SIZE, "msg data is too big");
+            uint16 messageSize = uint16(data.length);
+
+            // Check if the provided parameters are valid
+            // See `RouteStorage.estimateWeiCost` at `storage/Routes.sol` for more details.
+            RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(network);
+            gas = route.estimateGas(messageSize, gasLimit);
+            uint256 fee = route.estimateCost(gas);
+            require(msg.value >= fee, "insufficient tx value");
+        }
+
+        bytes32 source = msg.sender.toSender();
+        unchecked {
+            // Nonce is per sender, it's incremented for every message sent.
+            uint64 nextNonce = uint64(nonces[msg.sender]++);
+
+            // Create GMP message and update nonce
+            GmpMessage memory message = GmpMessage(
+                source, networkId(), destinationAddress, network, gasLimit, nextNonce, data
+            );
+
+            bytes32 messageId = message.messageId();
+            emit GmpCreated(
+                messageId, source, destinationAddress, network, gasLimit, uint64(gas), nextNonce, message.data
+            );
+            return messageId;
+        }
+    }
+
+    // execute
 
     /**
      * @dev Lookup table to find the function pointer for a given command.
@@ -195,12 +253,74 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
         assembly {
             gmp := add(params.offset, 0x20)
         }
-        _checkGmpMessage(gmp);
+
+        // Theoretically we could remove the destination network field
+        // and fill it up with the network id of the contract, then the signature will fail.
+        require(gmp.destNetwork == networkId(), "invalid gmp network");
+
+        // Check if the message data is too large
+        require(gmp.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
+
         // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
         // see `src/Primitives.sol` for more details.
         GmpCallback memory callback = gmp.toCallback();
         operationHash = callback.opHash;
-        _execute(callback);
+
+        // Verify if this GMP message was already executed
+        bytes32 msgId = callback.messageId();
+        require(messages[msgId] == GmpStatus.NOT_FOUND, "message already executed");
+
+        // Update status to `pending` to prevent reentrancy attacks.
+        messages[msgId] = GmpStatus.PENDING;
+
+        // Cap the GMP gas limit to 50% of the block gas limit
+        // OBS: we assume the remaining 50% is enough for the Gateway execution, which is a safe assumption
+        // once most EVM blockchains have gas limits above 10M and don't need more than 60k gas for the Gateway execution.
+        uint256 gasLimit = BranchlessMath.min(callback.gasLimit, block.gaslimit >> 1);
+        unchecked {
+            // Add `all but one 64th` to the gas needed, as the defined by EIP-150
+            // https://eips.ethereum.org/EIPS/eip-150
+            uint256 gasNeeded = gasLimit * 64 / 63;
+            // to guarantee it was provided enough gas to execute the GMP message
+            gasNeeded = gasNeeded + 10000;
+            require(gasleft() >= gasNeeded, "insufficient gas to execute GMP message");
+        }
+
+        // Execute GMP call
+        bool success;
+        bytes32 result;
+        {
+            address dest = callback.dest;
+            bytes memory onGmpReceivedCallback = callback.callback;
+            assembly ("memory-safe") {
+                // Using low-level assembly because the GMP is considered executed
+                // regardless if the call reverts or not.
+                mstore(0, 0)
+                success :=
+                    call(
+                        gasLimit, // call gas limit defined in the GMP message or 50% of the block gas limit
+                        dest, // dest address
+                        0, // value in wei to transfer (always zero for GMP)
+                        add(onGmpReceivedCallback, 32), // input memory pointer
+                        mload(onGmpReceivedCallback), // input size
+                        0, // output memory pointer
+                        32 // output size (fixed 32 bytes)
+                    )
+
+                // Get Result, reuse data to keep a predictable memory expansion
+                result := mload(0)
+            }
+        }
+
+        // Update GMP status
+        GmpStatus status =
+            GmpStatus(BranchlessMath.ternary(success, uint256(GmpStatus.SUCCESS), uint256(GmpStatus.REVERT)));
+
+        // Persist gmp execution status on storage
+        messages[msgId] = status;
+
+        // Emit event
+        emit GmpExecuted(msgId, callback.source, callback.dest, status, result);
     }
 
     /**
@@ -208,12 +328,18 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
      */
     function _registerShardCommand(bytes calldata params) private returns (bytes32 operationHash) {
         require(params.length == 64, "invalid TssKey");
-        TssKey calldata newShard;
+        TssKey calldata publicKey;
         assembly {
-            newShard := params.offset
+            publicKey := params.offset
         }
-        operationHash = Hashing.hash(newShard.yParity, newShard.xCoord);
-        _setShard(newShard);
+        operationHash = PrimitiveUtils.hash(publicKey.yParity, publicKey.xCoord);
+
+        bool isSuccess = ShardStore.getMainStorage().register(publicKey);
+        if (isSuccess) {
+            TssKey[] memory keys = new TssKey[](1);
+            keys[0] = publicKey;
+            emit ShardsRegistered(keys);
+        }
     }
 
     /**
@@ -221,12 +347,18 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
      */
     function _unregisterShardCommand(bytes calldata params) private returns (bytes32 operationHash) {
         require(params.length == 64, "invalid TssKey");
-        TssKey calldata shard;
+        TssKey calldata publicKey;
         assembly {
-            shard := params.offset
+            publicKey := params.offset
         }
-        operationHash = Hashing.hash(shard.yParity, shard.xCoord);
-        _revokeShard(shard);
+        operationHash = PrimitiveUtils.hash(publicKey.yParity, publicKey.xCoord);
+
+        bool isSuccess = ShardStore.getMainStorage().revoke(publicKey);
+        if (isSuccess) {
+            TssKey[] memory keys = new TssKey[](1);
+            keys[0] = publicKey;
+            emit ShardsUnregistered(keys);
+        }
     }
 
     /**
@@ -292,7 +424,7 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
      */
     function _executeCommands(GatewayOp[] calldata operations) private returns (uint256, bytes32) {
         // Track the free memory pointer, to reset the memory after each command executed.
-        uint256 freeMemPointer = GasUtils.readAllocatedMemory();
+        uint256 freeMemPointer = PrimitiveUtils.readAllocatedMemory();
         uint256 maxAllocatedMemory = freeMemPointer;
 
         // Create the Command LookUp Table
@@ -310,10 +442,10 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
 
             // Update the operations root hash
             operationsRootHash =
-                Hashing.hash(uint256(operationsRootHash), uint256(operation.command), uint256(operationHash));
+                PrimitiveUtils.hash(uint256(operationsRootHash), uint256(operation.command), uint256(operationHash));
 
             // Restore the memory, to prevent the memory expansion costs to increase exponentially.
-            uint256 newFreeMemPointer = GasUtils.unsafeReplaceAllocatedMemory(freeMemPointer);
+            uint256 newFreeMemPointer = PrimitiveUtils.unsafeReplaceAllocatedMemory(freeMemPointer);
 
             // Update the Max Allocated Memory
             maxAllocatedMemory = maxAllocatedMemory.max(newFreeMemPointer);
@@ -328,446 +460,47 @@ contract Gateway is IGateway, GatewayEIP712, UUPSUpgradeable, OwnableUpgradeable
     /**
      * @dev Verify and dispatch messages from the Timechain.
      */
-    function batchExecute(Signature calldata signature, InboundMessage calldata message) external {
+    function execute(Signature calldata signature, Batch calldata batch) external {
         uint256 initialGas = gasleft();
-        // Add the solidity selector overhead to the initial gas, this way we guarantee that
-        // the `initialGas` represents the actual gas that was available to this contract.
-        initialGas = initialGas.saturatingAdd(GasUtils.BATCH_SELECTOR_OVERHEAD);
 
         // Execute the commands and compute the operations root hash
-        (, bytes32 rootHash) = _executeCommands(message.ops);
-        emit BatchExecuted(message.batchID);
+        (, bytes32 rootHash) = _executeCommands(batch.ops);
+        emit BatchExecuted(batch.batchId);
 
         // Compute the Batch signing hash
-        rootHash = Hashing.hash(message.version, message.batchID, uint256(rootHash));
+        rootHash = PrimitiveUtils.hash(batch.version, batch.batchId, uint256(rootHash));
         bytes32 signingHash = keccak256(
-            abi.encodePacked("Analog GMP v2", NETWORK_ID(), bytes32(uint256(uint160(address(this)))), rootHash)
+            abi.encodePacked(
+                "Analog GMP v2", networkId(), bytes32(uint256(uint160(address(this)))), rootHash
+            )
         );
 
-        // Verify the signature
-        _verifySignature(signature, signingHash);
+        // Load shard from storage
+        ShardStore.ShardInfo storage signer = ShardStore.getMainStorage().get(signature);
+
+        // Verify Signature
+        require(
+            Schnorr.verify(signer.yParity, signature.xCoord, uint256(signingHash), signature.e, signature.s),
+            "invalid tss signature"
+        );
 
         // Refund the chronicle gas
         unchecked {
-            // Extra gas overhead used to execute the refund logic.
-            uint256 gasUsed = 7188;
+            // Extra gas overhead used to execute the refund logic + selector overhead
+            uint256 gasUsed = 2964;
 
             // Compute the gas used + base cost + proxy overhead
-            gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseCost());
-            gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 0));
-            gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
+            gasUsed += GasUtils.txBaseGas();
+            gasUsed += GasUtils.proxyOverheadGas(uint16(msg.data.length));
+            gasUsed += initialGas - gasleft();
 
             // Compute refund amount
-            uint256 refund = BranchlessMath.min(gasUsed.saturatingMul(tx.gasprice), address(this).balance);
+            uint256 refund = BranchlessMath.min(gasUsed * tx.gasprice, address(this).balance);
 
             // Refund the gas used
             assembly ("memory-safe") {
                 pop(call(gas(), caller(), refund, 0, 0, 0, 0))
             }
-        }
-    }
-
-    function _execute(GmpCallback memory callback) private returns (GmpStatus, bytes32) {
-        // Verify if this GMP message was already executed
-        bytes32 msgId = callback.messageId();
-        GmpInfo storage gmp = _messages[msgId];
-        require(gmp.status == GmpStatus.NOT_FOUND, "message already executed");
-
-        // Update status to `pending` to prevent reentrancy attacks.
-        gmp.status = GmpStatus.PENDING;
-        gmp.blockNumber = uint64(block.number);
-
-        // Cap the GMP gas limit to 50% of the block gas limit
-        // OBS: we assume the remaining 50% is enough for the Gateway execution, which is a safe assumption
-        // once most EVM blockchains have gas limits above 10M and don't need more than 60k gas for the Gateway execution.
-        uint256 gasLimit = BranchlessMath.min(callback.gasLimit, block.gaslimit >> 1);
-        unchecked {
-            // Add `all but one 64th` to the gas needed, as the defined by EIP-150
-            // https://eips.ethereum.org/EIPS/eip-150
-            uint256 gasNeeded = gasLimit.saturatingMul(64).saturatingDiv(63);
-            // to guarantee it was provided enough gas to execute the GMP message
-            gasNeeded = gasNeeded.saturatingAdd(10000);
-            require(gasleft() >= gasNeeded, "insufficient gas to execute GMP message");
-        }
-
-        // Execute GMP call
-        bool success;
-        bytes32 result;
-        {
-            address dest = callback.dest;
-            bytes memory onGmpReceivedCallback = callback.callback;
-            assembly ("memory-safe") {
-                // Using low-level assembly because the GMP is considered executed
-                // regardless if the call reverts or not.
-                mstore(0, 0)
-                success :=
-                    call(
-                        gasLimit, // call gas limit defined in the GMP message or 50% of the block gas limit
-                        dest, // dest address
-                        0, // value in wei to transfer (always zero for GMP)
-                        add(onGmpReceivedCallback, 32), // input memory pointer
-                        mload(onGmpReceivedCallback), // input size
-                        0, // output memory pointer
-                        32 // output size (fixed 32 bytes)
-                    )
-
-                // Get Result, reuse data to keep a predictable memory expansion
-                result := mload(0)
-            }
-        }
-
-        // Update GMP status
-        GmpStatus status =
-            GmpStatus(BranchlessMath.ternary(success, uint256(GmpStatus.SUCCESS), uint256(GmpStatus.REVERT)));
-
-        // Persist gmp execution status on storage
-        gmp.status = status;
-
-        // Emit event
-        emit GmpExecuted(msgId, callback.source, callback.dest, status, result);
-
-        return (status, result);
-    }
-
-    /**
-     * @dev Check if the GmpMessage network is correct and if the data is within the maximum size.
-     */
-    function _checkGmpMessage(GmpMessage calldata message) private view {
-        // Theoretically we could remove the destination network field
-        // and fill it up with the network id of the contract, then the signature will fail.
-        require(message.destNetwork == NETWORK_ID(), "invalid gmp network");
-
-        // Check if the message data is too large
-        require(message.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
-    }
-
-    /**
-     * Execute GMP message
-     * @param signature Schnorr signature
-     * @param message GMP message
-     */
-    function execute(Signature calldata signature, GmpMessage calldata message)
-        external
-        returns (GmpStatus status, bytes32 result)
-    {
-        uint256 initialGas = gasleft();
-        // Add the solidity selector overhead to the initial gas, this way we guarantee that
-        // the `initialGas` represents the actual gas that was available to this contract.
-        initialGas = initialGas.saturatingAdd(GasUtils.EXECUTION_SELECTOR_OVERHEAD);
-
-        // Check GMP Message
-        _checkGmpMessage(message);
-
-        // Convert the `GmpMessage` into `GmpCallback`, which is a more efficient representation.
-        // see `src/Primitives.sol` for more details.
-        GmpCallback memory callback = message.toCallback();
-
-        // Verify the TSS Schnorr Signature
-        _verifySignature(signature, callback.opHash);
-
-        // Execute GMP message
-        (status, result) = _execute(callback);
-
-        // Refund the chronicle gas
-        unchecked {
-            // Compute GMP gas used
-            uint256 gasUsed = 7188 - 11;
-            gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseCost());
-            gasUsed = gasUsed.saturatingAdd(GasUtils.proxyOverheadGasCost(uint16(msg.data.length), 64));
-            gasUsed = gasUsed.saturatingAdd(initialGas - gasleft());
-
-            // Compute refund amount
-            uint256 refund = BranchlessMath.min(gasUsed.saturatingMul(tx.gasprice), address(this).balance);
-
-            assembly ("memory-safe") {
-                // Refund the gas used
-                pop(call(gas(), caller(), refund, 0, 0, 0, 0))
-            }
-        }
-    }
-
-    /**
-     * @dev Send message from this chain to another chain.
-     * @param destinationAddress the target address on the destination chain
-     * @param network the target chain where the contract call will be made
-     * @param executionGasLimit the gas limit available for the contract call
-     * @param data message data with no specified format
-     */
-    function submitMessage(address destinationAddress, uint16 network, uint256 executionGasLimit, bytes calldata data)
-        external
-        payable
-        returns (bytes32)
-    {
-        // Check if the message data is too large
-        require(data.length <= MAX_PAYLOAD_SIZE, "msg data is too big");
-
-        // Check if the provided parameters are valid
-        // See `RouteStorage.estimateWeiCost` at `storage/Routes.sol` for more details.
-        RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(network);
-        (uint256 gasCost, uint256 fee) = route.estimateCost(data, executionGasLimit);
-        require(msg.value >= fee, "insufficient tx value");
-
-        // We use 20 bytes for represent the address and 1 bit for the contract flag
-        bytes32 source = msg.sender.toSender();
-
-        unchecked {
-            // Nonce is per sender, it's incremented for every message sent.
-            uint64 nextNonce = uint64(_nonces[msg.sender]++);
-
-            // Create GMP message and update nonce
-            GmpMessage memory message = GmpMessage(
-                source, NETWORK_ID(), destinationAddress, network, uint64(executionGasLimit), nextNonce, data
-            );
-
-            // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
-            _emitGmpCreated(
-                message.messageId(),
-                source,
-                destinationAddress,
-                network,
-                executionGasLimit,
-                gasCost,
-                nextNonce,
-                message.data
-            );
-        }
-    }
-
-    /**
-     * @dev Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
-     */
-    function _emitGmpCreated(
-        bytes32 messageID,
-        bytes32 source,
-        address destinationAddress,
-        uint16 destinationNetwork,
-        uint256 executionGasLimit,
-        uint256 gasCost,
-        uint256 nonce,
-        bytes memory payload
-    ) private {
-        // Emit `GmpCreated` event without copy the data, to simplify the gas estimation.
-        // the assembly code below is equivalent to:
-        // ```solidity
-        // emit GmpCreated(prevHash, source, destinationAddress, destinationNetwork, executionGasLimit, gasCost, nonce, data);
-        // return prevHash;
-        // ```
-        assembly {
-            let ptr := sub(payload, 0xa0)
-            mstore(add(ptr, 0x00), destinationNetwork) // dest network
-            mstore(add(ptr, 0x20), executionGasLimit) // gas limit
-            mstore(add(ptr, 0x40), gasCost) // gasCost
-            mstore(add(ptr, 0x60), nonce) // nonce
-            mstore(add(ptr, 0x80), 0xa0) // data offset
-            let size := and(add(mload(payload), 31), 0xffffffe0)
-            size := add(size, 192)
-            log4(ptr, size, GMP_CREATED_EVENT_SELECTOR, messageID, source, destinationAddress)
-            mstore(0, messageID)
-            return(0, 32)
-        }
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        FEE AND PAYMENT LOGIC
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @notice Estimate the gas cost of execute a GMP message.
-     * @dev This function is called on the destination chain before calling the gateway to execute a source contract.
-     * @param network The target chain where the contract call will be made
-     * @param messageSize Message size
-     * @param messageSize Message gas limit
-     */
-    function estimateMessageCost(uint16 network, uint256 messageSize, uint256 gasLimit)
-        external
-        view
-        returns (uint256)
-    {
-        RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(network);
-
-        // Estimate the cost
-        return route.estimateWeiCost(uint16(messageSize), gasLimit);
-    }
-
-    /**
-     * Withdraw funds from the gateway contract
-     * @param amount The amount to withdraw
-     * @param recipient The recipient address
-     * @param data The data to send to the recipient (in case it is a contract)
-     */
-    function withdraw(uint256 amount, address recipient, bytes calldata data)
-        external
-        onlyOwner
-        returns (bytes memory output)
-    {
-        // Check if the recipient is a contract
-        if (recipient.code.length > 0) {
-            bool success;
-            (success, output) = recipient.call{value: amount, gas: gasleft()}(data);
-            if (!success) {
-                assembly ("memory-safe") {
-                    revert(add(output, 32), mload(output))
-                }
-            }
-        } else {
-            payable(recipient).transfer(amount);
-            output = "";
-        }
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                    SHARDS MANAGEMENT METHODS
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @dev Register a single Shards with provided TSS public key.
-     */
-    function _setShard(TssKey calldata publicKey) private {
-        bool isSuccess = ShardStore.getMainStorage().register(publicKey);
-        if (isSuccess) {
-            TssKey[] memory keys = new TssKey[](1);
-            keys[0] = publicKey;
-            emit ShardsRegistered(keys);
-        }
-    }
-
-    /**
-     * @dev Revoke a single shard TSS Key.
-     */
-    function _revokeShard(TssKey calldata publicKey) private {
-        bool isSuccess = ShardStore.getMainStorage().revoke(publicKey);
-        if (isSuccess) {
-            TssKey[] memory keys = new TssKey[](1);
-            keys[0] = publicKey;
-            emit ShardsUnregistered(keys);
-        }
-    }
-
-    /**
-     * @dev List all shards.
-     */
-    function shards() external view returns (TssKey[] memory) {
-        return ShardStore.getMainStorage().listShards();
-    }
-
-    /**
-     * @dev Returns the number of active shards.
-     */
-    function shardCount() external view returns (uint256) {
-        return ShardStore.getMainStorage().length();
-    }
-
-    /**
-     * @dev Returns a shard by index.
-     * - Reverts with `IndexOutOfBounds` if the index is out of bounds.
-     */
-    function shardAt(uint256 index) external view returns (TssKey memory) {
-        (ShardStore.ShardID xCoord, ShardStore.ShardInfo storage shard) = ShardStore.getMainStorage().at(index);
-        return TssKey({xCoord: uint256(ShardStore.ShardID.unwrap(xCoord)), yParity: shard.yParity + 2});
-    }
-
-    /**
-     * @dev Register a single Shards with provided TSS public key.
-     */
-    function setShard(TssKey calldata publicKey) external onlyOwner {
-        _setShard(publicKey);
-    }
-
-    /**
-     * @dev Register Shards in batch.
-     */
-    function setShards(TssKey[] calldata publicKeys) external onlyOwner {
-        (TssKey[] memory created, TssKey[] memory revoked) = ShardStore.getMainStorage().replaceTssKeys(publicKeys);
-
-        if (created.length > 0) {
-            emit ShardsRegistered(created);
-        }
-
-        if (revoked.length > 0) {
-            emit ShardsUnregistered(revoked);
-        }
-    }
-
-    /**
-     * @dev Revoke a single shard TSS Key.
-     */
-    function revokeShard(TssKey calldata publicKey) external onlyOwner {
-        _revokeShard(publicKey);
-    }
-
-    /**
-     * @dev Revoke Shards in batch.
-     */
-    function revokeShards(TssKey[] calldata publicKeys) external onlyOwner {
-        TssKey[] memory revokedKeys = ShardStore.getMainStorage().revokeKeys(publicKeys);
-        if (revokedKeys.length > 0) {
-            emit ShardsUnregistered(revokedKeys);
-        }
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                       LISTING ROUTES AND SHARDS
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @dev List all routes.
-     */
-    function routes() external view returns (Route[] memory) {
-        return RouteStore.getMainStorage().listRoutes();
-    }
-
-    /**
-     * @dev Create or update a single route
-     */
-    function setRoute(Route calldata info) external onlyOwner {
-        RouteStore.getMainStorage().createOrUpdateRoute(info);
-    }
-
-    /**
-     * @dev Create or update an array of routes
-     */
-    function setRoutes(Route[] calldata values) external onlyOwner {
-        require(values.length > 0, "routes cannot be empty");
-        RouteStore.MainStorage storage store = RouteStore.getMainStorage();
-        for (uint256 i = 0; i < values.length; i++) {
-            store.createOrUpdateRoute(values[i]);
-        }
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                               ADMIN LOGIC
-    //////////////////////////////////////////////////////////////*/
-
-    function admin() external view returns (address) {
-        return owner();
-    }
-
-    function setAdmin(address newAdmin) external payable onlyOwner {
-        transferOwnership(newAdmin);
-    }
-
-    // DANGER: This function is for migration purposes only, it allows the admin to set any storage slot.
-    function sudoSetStorage(uint256[2][] calldata values) external payable onlyOwner {
-        require(values.length > 0, "invalid values");
-
-        uint256 prev = 0;
-        for (uint256 i = 0; i < values.length; i++) {
-            uint256[2] memory entry = values[i];
-            // Guarantee that the storage slot is in ascending order
-            // and that there are no repeated storage slots
-            uint256 key = entry[0];
-            require(i == 0 || key > prev, "repeated storage slot");
-
-            // Protect admin and implementation slots
-            require(key != uint256(ERC1967Utils.ADMIN_SLOT), "use setAdmin instead");
-            require(key != uint256(ERC1967Utils.IMPLEMENTATION_SLOT), "use upgrade instead");
-
-            // Set storage slot
-            uint256 value = entry[1];
-            assembly {
-                sstore(key, value)
-            }
-            prev = key;
         }
     }
 }

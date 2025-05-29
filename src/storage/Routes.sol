@@ -36,6 +36,8 @@ library RouteStore {
         uint128 baseFee;
         uint256 relativeGasPriceNumerator;
         uint256 relativeGasPriceDenominator;
+        uint256 gasCoef0;
+        uint256 gasCoef1;
     }
 
     /**
@@ -45,13 +47,17 @@ library RouteStore {
      * @param relativeGasPriceDenominator Gas price of destination chain, in terms of the source chain token.
      * @param baseFee Base fee for cross-chain message approval on destination, in terms of source native gas token.
      * @param gasLimit The maximum amount of gas we allow on this particular network.
+     * @param gasCoef0.
+     * @param gasCoef1.
      */
     event RouteUpdated(
         uint16 indexed networkId,
         uint256 relativeGasPriceNumerator,
         uint256 relativeGasPriceDenominator,
         uint128 baseFee,
-        uint64 gasLimit
+        uint64 gasLimit,
+        uint256 gasCoef0,
+        uint256 gasCoef1
     );
 
     /**
@@ -178,6 +184,8 @@ library RouteStore {
             stored.relativeGasPriceNumerator = route.relativeGasPriceNumerator;
             stored.relativeGasPriceDenominator = route.relativeGasPriceDenominator;
             stored.baseFee = route.baseFee;
+            stored.gasCoef0 = route.gasCoef0;
+            stored.gasCoef1 = route.gasCoef1;
         }
 
         emit RouteUpdated(
@@ -185,7 +193,9 @@ library RouteStore {
             stored.relativeGasPriceNumerator,
             stored.relativeGasPriceDenominator,
             stored.baseFee,
-            stored.gasLimit
+            stored.gasLimit,
+            stored.gasCoef0,
+            stored.gasCoef1
         );
     }
 
@@ -210,58 +220,27 @@ library RouteStore {
                 baseFee: route.baseFee,
                 gateway: route.gateway,
                 relativeGasPriceNumerator: route.relativeGasPriceNumerator,
-                relativeGasPriceDenominator: route.relativeGasPriceDenominator
+                relativeGasPriceDenominator: route.relativeGasPriceDenominator,
+                gasCoef0: route.gasCoef0,
+                gasCoef1: route.gasCoef1
             });
         }
         return routes;
     }
 
-    /**
-     * @dev Check a few preconditions before estimate the GMP wei cost.
-     */
-    function _checkPreconditions(NetworkInfo memory route, uint256 messageSize, uint256 gasLimit) private pure {
-        // Verify if the network exists
-        require(route.baseFee > 0 || route.relativeGasPriceDenominator > 0, "route is temporarily disabled");
-
-        // Verify if the gas limit and message size are within the limits
-        require(gasLimit <= route.gasLimit, "gas limit exceeded");
-        require(messageSize <= MAX_PAYLOAD_SIZE, "maximum payload size exceeded");
-    }
-
-    /**
-     * @dev Utility function for measure the wei cost of a GMP message.
-     */
-    function estimateCost(NetworkInfo memory route, bytes calldata data, uint256 gasLimit)
-        internal
-        pure
-        returns (uint256 gasCost, uint256 fee)
-    {
-        // Guarantee the networks exists and `data` is less than `MAX_PAYLOAD_SIZE`
-        _checkPreconditions(route, data.length, gasLimit);
-
-        // Compute base cost
-        uint256 nonZeros = GasUtils.countNonZerosCalldata(data);
-        uint256 zeros = data.length - nonZeros;
-
-        // Compute execution cost
-        gasCost = GasUtils.estimateGas(uint16(nonZeros), uint16(zeros), gasLimit);
-
-        // Calculate the gas cost: gasPrice * gasCost + baseFee
-        fee = route.relativeGasPriceNumerator.saturatingMul(gasCost).saturatingDiv(route.relativeGasPriceDenominator)
-            .saturatingAdd(route.baseFee);
-    }
-
-    /**
-     * @dev Utility function for measure the wei cost of a GMP message.
-     */
-    function estimateWeiCost(NetworkInfo memory route, uint256 messageSize, uint256 gasLimit)
+    function estimateGas(NetworkInfo memory route, uint16 messageSize, uint64 gasLimit)
         internal
         pure
         returns (uint256)
     {
-        _checkPreconditions(route, messageSize, gasLimit);
-        uint256 gas = GasUtils.estimateGas(uint16(messageSize), 0, gasLimit);
-        return gas.saturatingMul(route.relativeGasPriceNumerator).saturatingDiv(route.relativeGasPriceDenominator)
-            .saturatingAdd(route.baseFee);
+        // Verify if the gas limit and message size are within the limits
+        require(gasLimit <= route.gasLimit, "gas limit exceeded");
+        require(messageSize <= MAX_PAYLOAD_SIZE, "maximum payload size exceeded");
+        return uint256(messageSize) * route.gasCoef1 + route.gasCoef0 + gasLimit;
+    }
+
+    function estimateCost(NetworkInfo memory route, uint256 gas) internal pure returns (uint256) {
+        require(route.relativeGasPriceDenominator > 0, "route is temporarily disabled");
+        return gas * route.relativeGasPriceNumerator / route.relativeGasPriceDenominator + route.baseFee;
     }
 }

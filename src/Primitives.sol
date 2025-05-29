@@ -5,12 +5,7 @@ pragma solidity >=0.8.0;
 
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 
-/**
- * @dev GMP message EIP-712 Type Hash.
- * Declared as raw value to enable it to be used in inline assembly
- * keccak256("GmpMessage(bytes32 source,uint16 srcNetwork,address dest,uint16 destNetwork,uint64 gasLimit,uint64 gasCost,uint32 nonce,bytes data)")
- */
-uint256 constant GMP_VERSION = 0;
+uint8 constant GMP_VERSION = 1;
 
 /**
  * @dev Maximum size of the GMP payload
@@ -87,13 +82,13 @@ struct GatewayOp {
 /**
  * @dev Inbound message from a Timechain
  * @param version Message version, will change if the message format changes.
- * @param batchID Sequence number representing the batch order.
+ * @param batchId Sequence number representing the batch order.
  * @param ops List of operations to execute.
  */
-struct InboundMessage {
+struct Batch {
     uint8 version;
-    /// @dev The batch ID
-    uint64 batchID;
+    /// @dev The batch identifier
+    uint64 batchId;
     /// @dev
     GatewayOp[] ops;
 }
@@ -113,6 +108,8 @@ struct Route {
     bytes32 gateway;
     uint256 relativeGasPriceNumerator;
     uint256 relativeGasPriceDenominator;
+    uint256 gasCoef0;
+    uint256 gasCoef1;
 }
 
 /**
@@ -152,6 +149,66 @@ struct GmpCallback {
  * @dev Utility functions for primitives
  */
 library PrimitiveUtils {
+    /**
+     * @dev Solidity's reserved location for the free memory pointer.
+     * Reference: https://docs.soliditylang.org/en/v0.8.28/internals/layout_in_memory.html
+     */
+    uint256 internal constant ALLOCATED_MEMORY = 0x40;
+
+    /**
+     * @dev Read the current allocated size (a.k.a free memory pointer).
+     */
+    function readAllocatedMemory() internal pure returns (uint256 pointer) {
+        assembly ("memory-safe") {
+            pointer := mload(ALLOCATED_MEMORY)
+        }
+    }
+
+    /**
+     * @dev Replace the current allocated size by the `newPointer`, and returns the old value stored.
+     * CAUTION: Only use this method if you know what you are doing. Make sure you don't overwrite any
+     * memory location that is still in use by the current call context.
+     */
+    function unsafeReplaceAllocatedMemory(uint256 newPointer) internal pure returns (uint256 oldPointer) {
+        assembly ("memory-safe") {
+            oldPointer := mload(ALLOCATED_MEMORY)
+            mstore(ALLOCATED_MEMORY, newPointer)
+        }
+    }
+
+    /**
+     * @dev Hashes two 256-bit words without memory allocation, uses the memory between 0x00~0x40.
+     */
+    function hash(uint256 a, uint256 b) internal pure returns (bytes32 h) {
+        assembly ("memory-safe") {
+            mstore(0x00, a)
+            mstore(0x20, b)
+            h := keccak256(0x00, 0x40)
+        }
+    }
+
+    /**
+     * @dev Hashes three 256-bit words without memory allocation, uses the memory between 0x00~0x60.
+     *
+     * The reserverd memory region `0x40~0x60` is restored to its previous state after execution.
+     * See https://docs.soliditylang.org/en/v0.8.28/internals/layout_in_memory.html for more details.
+     */
+    function hash(uint256 a, uint256 b, uint256 c) internal pure returns (bytes32 h) {
+        assembly ("memory-safe") {
+            mstore(0x00, a)
+            mstore(0x20, b)
+
+            // Backup the free memory pointer
+            let freeMemBackup := mload(ALLOCATED_MEMORY)
+
+            mstore(ALLOCATED_MEMORY, c)
+            h := keccak256(0x00, 0x60)
+
+            // Restore the free memory pointer
+            mstore(ALLOCATED_MEMORY, freeMemBackup)
+        }
+    }
+
     function toAddress(bytes32 sender) internal pure returns (address) {
         return address(uint160(uint256(sender)));
     }
@@ -236,7 +293,7 @@ library PrimitiveUtils {
      */
     function _computeMessageID(GmpCallback memory callback) private pure {
         bytes memory onGmpReceived = callback.callback;
-        callback.opHash = bytes32(GMP_VERSION);
+        callback.opHash = bytes32(uint256(GMP_VERSION));
 
         bytes32 msgId;
         assembly ("memory-safe") {

@@ -18,11 +18,11 @@ contract MockGateway is IGateway {
         return _networkId;
     }
 
-    function estimateMessageCost(uint16, uint256, uint256) external pure returns (uint256) {
+    function estimateMessageCost(uint16, uint16, uint64) external pure returns (uint256) {
         return 0;
     }
 
-    function submitMessage(address, uint16, uint256, bytes calldata) external payable returns (bytes32) {
+    function submitMessage(address, uint16, uint64, bytes calldata) external payable returns (bytes32) {
         return 0x0;
     }
 }
