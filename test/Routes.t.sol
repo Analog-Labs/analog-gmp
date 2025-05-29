@@ -152,15 +152,13 @@ contract RouteStoreTest is Test {
     }
 
     function testPartialRouteUpdate() public {
-        // Setup initial route
         testCreateNewRoute();
 
-        // Update ONLY gasLimit
         Route memory partialUpdate = Route({
             networkId: TEST_NETWORK_ID,
-            gateway: bytes32(0), // gateway is not updated when updating route
+            gateway: bytes32(0),
             gasLimit: TEST_GAS_LIMIT * 3,
-            baseFee: 0, // should remain unchanged
+            baseFee: 0,
             relativeGasPriceNumerator: 0,
             relativeGasPriceDenominator: 0
         });
@@ -179,10 +177,10 @@ contract RouteStoreTest is Test {
         Route memory update = Route({
             networkId: TEST_NETWORK_ID,
             gateway: TEST_GATEWAY,
-            gasLimit: 0, // no update
-            baseFee: 0, // no update
+            gasLimit: 0,
+            baseFee: 0,
             relativeGasPriceNumerator: 0,
-            relativeGasPriceDenominator: 0 // valid when numerator=0
+            relativeGasPriceDenominator: 0
         });
 
         insertRouteCall(update);
