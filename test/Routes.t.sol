@@ -24,7 +24,14 @@ contract RouteStoreTest is Test {
         getStore().createOrUpdateRoute(route);
     }
 
-    // this way we can convert from memory to calldata
+    function externalEstimateCost(RouteStore.NetworkInfo memory route, bytes calldata data, uint256 gasLimit)
+        external
+        pure
+        returns (uint256, uint256)
+    {
+        return RouteStore.estimateCost(route, data, gasLimit);
+    }
+
     function insertRouteCall(Route memory route) internal {
         bytes memory callData = abi.encodeWithSelector(this.externalCreateRoute.selector, route);
         (bool success,) = address(this).call(callData);
@@ -132,5 +139,75 @@ contract RouteStoreTest is Test {
 
         vm.expectRevert(RouteStore.InvalidRouteParameters.selector);
         insertRouteCall(invalidUpdate);
+    }
+
+    function testEmptyStore() public view {
+        assertEq(getStore().length(), 0, "Should be empty");
+        Route[] memory routes = getStore().listRoutes();
+        assertEq(routes.length, 0, "Should return empty array");
+    }
+
+    function testRemoveNonExistentRoute() public {
+        assertFalse(getStore().remove(0), "Should return false");
+    }
+
+    function testPartialRouteUpdate() public {
+        // Setup initial route
+        testCreateNewRoute();
+
+        // Update ONLY gasLimit
+        Route memory partialUpdate = Route({
+            networkId: TEST_NETWORK_ID,
+            gateway: bytes32(0), // gateway is not updated when updating route
+            gasLimit: TEST_GAS_LIMIT * 3,
+            baseFee: 0, // should remain unchanged
+            relativeGasPriceNumerator: 0,
+            relativeGasPriceDenominator: 0
+        });
+
+        insertRouteCall(partialUpdate);
+
+        RouteStore.NetworkInfo memory stored = getStore().get(TEST_NETWORK_ID);
+        assertEq(stored.gateway, TEST_GATEWAY, "Gateway changed when updating route");
+        assertEq(stored.gasLimit, TEST_GAS_LIMIT * 3, "Gas limit not updated");
+        assertEq(stored.baseFee, TEST_BASE_FEE, "Base fee changed unexpectedly");
+    }
+
+    function testZeroDenominatorWithZeroNumerator() public {
+        testCreateNewRoute();
+
+        Route memory update = Route({
+            networkId: TEST_NETWORK_ID,
+            gateway: TEST_GATEWAY,
+            gasLimit: 0, // no update
+            baseFee: 0, // no update
+            relativeGasPriceNumerator: 0,
+            relativeGasPriceDenominator: 0 // valid when numerator=0
+        });
+
+        insertRouteCall(update);
+
+        RouteStore.NetworkInfo memory stored = getStore().get(TEST_NETWORK_ID);
+        assertEq(stored.relativeGasPriceNumerator, TEST_NUMERATOR, "Numerator changed");
+    }
+
+    function testGetNonExistentRoute() public {
+        vm.expectRevert(abi.encodeWithSelector(RouteStore.RouteNotExists.selector, TEST_NETWORK_ID));
+        getStore().get(TEST_NETWORK_ID);
+    }
+
+    function testAtOutOfBounds() public {
+        vm.expectRevert(abi.encodeWithSelector(RouteStore.IndexOutOfBounds.selector, 0));
+        getStore().at(0);
+    }
+
+    function testEstimateCost() public {
+        testCreateNewRoute();
+        RouteStore.NetworkInfo memory route = getStore().get(TEST_NETWORK_ID);
+
+        bytes memory payload = hex"deadbeef";
+        (uint256 gasCost, uint256 fee) = this.externalEstimateCost(route, payload, 100_000);
+        assertGt(fee, 0, "Fee not calculated");
+        assertGt(gasCost, 0, "GasCost not calculated");
     }
 }

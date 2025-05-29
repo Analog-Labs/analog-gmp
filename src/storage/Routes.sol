@@ -170,7 +170,7 @@ library RouteStore {
         // Update gas limit if it's not zero
         if (route.gasLimit > 0) stored.gasLimit = route.gasLimit;
 
-        // Update relative gas price and base fee if any of them are greater than zero
+        // Update relative gas price and base fee if denominator is greater than zero
         if (route.relativeGasPriceDenominator > 0) {
             stored.relativeGasPriceNumerator = route.relativeGasPriceNumerator;
             stored.relativeGasPriceDenominator = route.relativeGasPriceDenominator;
