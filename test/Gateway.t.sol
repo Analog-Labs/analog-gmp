@@ -10,7 +10,6 @@ import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
-import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {IGateway} from "../src/interfaces/IGateway.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {
@@ -42,7 +41,7 @@ contract GatewayTest is Test {
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for address;
     using PrimitiveUtils for bytes32;
-    using BranchlessMath for uint256;
+    using PrimitiveUtils for uint256;
 
     Gateway internal gateway;
     VmSafe.Wallet internal admin;

@@ -5,12 +5,9 @@ pragma solidity >=0.8.0;
 
 import {IGmpReceiver} from "../../src/interfaces/IGmpReceiver.sol";
 import {IGateway} from "../../src/interfaces/IGateway.sol";
-import {BranchlessMath} from "../../src/utils/BranchlessMath.sol";
 import {console} from "forge-std/console.sol";
 
 contract GmpProxy is IGmpReceiver {
-    using BranchlessMath for uint256;
-
     event MessageReceived(GmpMessage msg);
 
     struct GmpMessage {
@@ -32,8 +29,8 @@ contract GmpProxy is IGmpReceiver {
     }
 
     function sendMessage(GmpMessage calldata message) external payable returns (bytes32) {
-        uint256 value = address(this).balance.min(msg.value);
-        return GATEWAY.submitMessage{value: value}(message.dest, message.destNetwork, message.gasLimit, message.data);
+        return
+            GATEWAY.submitMessage{value: msg.value}(message.dest, message.destNetwork, message.gasLimit, message.data);
     }
 
     function onGmpReceived(bytes32 id, uint128 srcNetwork, bytes32 src, uint64 nonce, bytes calldata payload)

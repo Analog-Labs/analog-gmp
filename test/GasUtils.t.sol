@@ -11,7 +11,9 @@ import {GasSpender} from "./GasSpender.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
-import {GmpMessage, Signature, TssKey, GmpStatus, PrimitiveUtils, Batch, MAX_PAYLOAD_SIZE} from "../src/Primitives.sol";
+import {
+    GmpMessage, Signature, TssKey, GmpStatus, PrimitiveUtils, Batch, MAX_PAYLOAD_SIZE
+} from "../src/Primitives.sol";
 
 uint256 constant secret = 0x42;
 uint256 constant nonce = 0x69;
@@ -107,6 +109,6 @@ contract GasUtilsTest is Test {
         assertGe(approxGas + 650, calcGas);
         int256 error = int256(approxGas) - int256(calcGas);
         uint256 absError = error >= 0 ? uint256(error) : uint256(-error);
-        assertLe(absError, 750); 
+        assertLe(absError, 750);
     }
 }

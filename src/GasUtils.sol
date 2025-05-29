@@ -3,13 +3,13 @@
 
 pragma solidity >=0.8.20;
 
-import {BranchlessMath} from "./utils/BranchlessMath.sol";
+import {PrimitiveUtils} from "./Primitives.sol";
 
 /**
  * @dev Utilities for compute the GMP gas price, gas cost and gas needed.
  */
 library GasUtils {
-    using BranchlessMath for uint256;
+    using PrimitiveUtils for uint256;
 
     /**
      * @dev Compute the amount of gas used by the `GatewayProxy`.

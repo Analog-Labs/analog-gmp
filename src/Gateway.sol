@@ -4,7 +4,6 @@
 pragma solidity >=0.8.0;
 
 import {Schnorr} from "../lib/frost-evm/sol/Schnorr.sol";
-import {BranchlessMath} from "./utils/BranchlessMath.sol";
 import {GasUtils} from "./GasUtils.sol";
 import {RouteStore} from "./storage/Routes.sol";
 import {ShardStore} from "./storage/Shards.sol";
@@ -32,7 +31,9 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for GmpCallback;
     using PrimitiveUtils for address;
-    using BranchlessMath for uint256;
+    using PrimitiveUtils for uint256;
+    using PrimitiveUtils for uint64;
+    using PrimitiveUtils for bool;
     using ShardStore for ShardStore.MainStorage;
     using RouteStore for RouteStore.MainStorage;
     using RouteStore for RouteStore.NetworkInfo;
@@ -221,9 +222,8 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
             uint64 nextNonce = uint64(nonces[msg.sender]++);
 
             // Create GMP message and update nonce
-            GmpMessage memory message = GmpMessage(
-                source, networkId(), destinationAddress, network, gasLimit, nextNonce, data
-            );
+            GmpMessage memory message =
+                GmpMessage(source, networkId(), destinationAddress, network, gasLimit, nextNonce, data);
 
             bytes32 messageId = message.messageId();
             emit GmpCreated(
@@ -276,7 +276,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         // Cap the GMP gas limit to 50% of the block gas limit
         // OBS: we assume the remaining 50% is enough for the Gateway execution, which is a safe assumption
         // once most EVM blockchains have gas limits above 10M and don't need more than 60k gas for the Gateway execution.
-        uint256 gasLimit = BranchlessMath.min(callback.gasLimit, block.gaslimit >> 1);
+        uint256 gasLimit = callback.gasLimit.min(block.gaslimit >> 1);
         unchecked {
             // Add `all but one 64th` to the gas needed, as the defined by EIP-150
             // https://eips.ethereum.org/EIPS/eip-150
@@ -313,8 +313,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         }
 
         // Update GMP status
-        GmpStatus status =
-            GmpStatus(BranchlessMath.ternary(success, uint256(GmpStatus.SUCCESS), uint256(GmpStatus.REVERT)));
+        GmpStatus status = GmpStatus(success.ternary(uint256(GmpStatus.SUCCESS), uint256(GmpStatus.REVERT)));
 
         // Persist gmp execution status on storage
         messages[msgId] = status;
@@ -470,9 +469,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         // Compute the Batch signing hash
         rootHash = PrimitiveUtils.hash(batch.version, batch.batchId, uint256(rootHash));
         bytes32 signingHash = keccak256(
-            abi.encodePacked(
-                "Analog GMP v2", networkId(), bytes32(uint256(uint160(address(this)))), rootHash
-            )
+            abi.encodePacked("Analog GMP v2", networkId(), bytes32(uint256(uint160(address(this)))), rootHash)
         );
 
         // Load shard from storage
@@ -495,7 +492,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
             gasUsed += initialGas - gasleft();
 
             // Compute refund amount
-            uint256 refund = BranchlessMath.min(gasUsed * tx.gasprice, address(this).balance);
+            uint256 refund = (gasUsed * tx.gasprice).min(address(this).balance);
 
             // Refund the gas used
             assembly ("memory-safe") {
