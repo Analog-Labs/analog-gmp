@@ -47,6 +47,14 @@ contract ShardStoreTest is Test {
         return getStore().revokeKeys(shard_keys);
     }
 
+    function externalAt(uint256 index) external view {
+        getStore().at(index);
+    }
+
+    function externalGet(ShardStore.ShardID shard_id) external view {
+        getStore().get(shard_id);
+    }
+
     function registerKeyCall(TssKey memory key) internal returns (bool) {
         bytes memory callData = abi.encodeWithSelector(this.externalRegister.selector, key);
         (bool success, bytes memory returnData) = address(this).call(callData);
@@ -202,12 +210,12 @@ contract ShardStoreTest is Test {
     function testGetNonExistentShard() public {
         ShardStore.ShardID nonExistentId = ShardStore.ShardID.wrap(bytes32(keys[0].xCoord));
         vm.expectRevert(abi.encodeWithSelector(ShardStore.ShardNotExists.selector, nonExistentId));
-        getStore().get(nonExistentId);
+        this.externalGet(nonExistentId);
     }
 
     function testAtOutOfBounds() public {
         vm.expectRevert(abi.encodeWithSelector(ShardStore.IndexOutOfBounds.selector, 0));
-        getStore().at(0);
+        this.externalAt(0);
     }
 
     function testListShards() public {
