@@ -2,40 +2,15 @@
 // Analog's Contracts (last updated v0.1.0) (src/storage/Shards.sol)
 pragma solidity ^0.8.20;
 
-import {TssKey, Signature} from "../Primitives.sol";
+import {TssKey, Signature, PrimitiveUtils} from "../Primitives.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
-import {BranchlessMath} from "../utils/BranchlessMath.sol";
-import {StoragePtr} from "../utils/Pointer.sol";
-
-library _ShardStore {
-    function from(uint256 xCoord) internal pure returns (ShardStore.ShardID) {
-        return ShardStore.ShardID.wrap(bytes32(xCoord));
-    }
-
-    /**
-     * @dev Converts a `StoragePtr` into a `ShardInfo`.
-     */
-    function asShardInfo(StoragePtr ptr) internal pure returns (ShardStore.ShardInfo storage info) {
-        assembly {
-            info.slot := ptr
-        }
-    }
-
-    /**
-     * @dev Converts a `ShardInfo` into a `StoragePtr`.
-     */
-    function asPtr(ShardStore.ShardInfo storage info) internal pure returns (StoragePtr ptr) {
-        assembly {
-            ptr := info.slot
-        }
-    }
-}
 
 /**
  * @dev EIP-7201 Shard's Storage
  */
 library ShardStore {
     using EnumerableMap for EnumerableMap.UintToUintMap;
+    using PrimitiveUtils for bool;
 
     /**
      * @dev Namespace of the shards storage `analog.one.gateway.shards`.
@@ -221,29 +196,45 @@ library ShardStore {
         }
 
         // Update nonce
-        shard.nonce |= uint32(BranchlessMath.toUint(shard.nonce == 0));
+        shard.nonce |= uint32((shard.nonce == 0).toUint());
 
         // Save new status and nonce in the storage
-        stored.createdAtBlock =
-            BranchlessMath.ternaryU64(shard.createdAtBlock > 0, shard.createdAtBlock, uint64(block.number));
+        stored.createdAtBlock = (shard.createdAtBlock > 0).ternaryU64(shard.createdAtBlock, uint64(block.number));
         stored.nonce = shard.nonce;
         stored.yParity = newKey.yParity;
         return true;
     }
 
     /**
-     * @dev Register TSS keys in batch.
+     * @dev Revoke Shards keys.
      * Requirements:
-     * - The `keys` should not be already registered.
+     * - The `keys` must be registered.
      */
-    function registerTssKeys(MainStorage storage store, TssKey[] calldata keys) internal {
-        // We don't perform any arithmetic operation, except iterate a loop
-        unchecked {
-            // Register or activate tss key (revoked keys keep the previous nonce)
-            for (uint256 i = 0; i < keys.length; i++) {
-                register(store, keys[i]);
+    function revoke(MainStorage storage store, TssKey calldata key) internal returns (bool) {
+        // Read shard from storage
+        ShardID id = ShardID.wrap(bytes32(key.xCoord));
+        (bool exists, ShardInfo memory stored) = tryGet(store, id);
+
+        if (exists) {
+            // Check y-parity
+            if (stored.yParity != key.yParity) {
+                revert YParityMismatch();
             }
+            return _revoke(store, id);
         }
+        return false;
+    }
+
+    /**
+     * @dev Revoke Shards keys.
+     */
+    function _revoke(MainStorage storage store, ShardID id) public returns (bool) {
+        uint256 shardId = uint256(ShardID.unwrap(id));
+        bool existed = store.shardIds.remove(shardId);
+        if (existed) {
+            delete store.shards[shardId];
+        }
+        return existed;
     }
 
     /**
@@ -302,66 +293,6 @@ library ShardStore {
                 _revoke(store, ShardID.wrap(bytes32(key.xCoord)));
             }
         }
-    }
-
-    /**
-     * @dev Revoke Shards keys.
-     * Requirements:
-     * - The `keys` must be registered.
-     */
-    function revoke(MainStorage storage store, TssKey calldata key) internal returns (bool) {
-        // Read shard from storage
-        ShardID id = ShardID.wrap(bytes32(key.xCoord));
-        (bool exists, ShardInfo memory stored) = tryGet(store, id);
-
-        if (exists) {
-            // Check y-parity
-            if (stored.yParity != key.yParity) {
-                revert YParityMismatch();
-            }
-            return _revoke(store, id);
-        }
-        return false;
-    }
-
-    /**
-     * @dev Revoke Shards keys.
-     */
-    function _revoke(MainStorage storage store, ShardID id) private returns (bool) {
-        uint256 shardId = uint256(ShardID.unwrap(id));
-        bool existed = store.shardIds.remove(shardId);
-        if (existed) {
-            delete store.shards[shardId];
-        }
-        return existed;
-    }
-
-    /**
-     * @dev Revoke TSS keys im batch.
-     * Requirements:
-     * - The `publicKeys` must be registered.
-     */
-    function revokeKeys(MainStorage storage store, TssKey[] calldata publicKeys)
-        internal
-        returns (TssKey[] memory revokedKeys)
-    {
-        // Revoke tss keys
-        uint256 keysLength = publicKeys.length;
-        revokedKeys = new TssKey[](keysLength);
-        uint256 revokedCount = 0;
-
-        for (uint256 i = 0; i < publicKeys.length; i++) {
-            if (revoke(store, publicKeys[i])) {
-                revokedKeys[revokedCount++] = publicKeys[i];
-            }
-        }
-
-        if (revokedKeys.length != keysLength) {
-            assembly {
-                mstore(revokedKeys, revokedCount)
-            }
-        }
-        return revokedKeys;
     }
 
     /**

@@ -32,7 +32,9 @@ contract ShardStoreTest is Test {
     }
 
     function externalRegisterTssKeys(TssKey[] calldata shard_keys) external {
-        getStore().registerTssKeys(shard_keys);
+        for (uint256 i = 0; i < shard_keys.length; i++) {
+            getStore().register(shard_keys[i]);
+        }
     }
 
     function externalReplaceTssKeys(TssKey[] calldata shard_keys) external returns (TssKey[] memory, TssKey[] memory) {
@@ -41,10 +43,6 @@ contract ShardStoreTest is Test {
 
     function externalRevoke(TssKey calldata key) external returns (bool) {
         return getStore().revoke(key);
-    }
-
-    function externalRevokeKeys(TssKey[] calldata shard_keys) external returns (TssKey[] memory) {
-        return getStore().revokeKeys(shard_keys);
     }
 
     function externalAt(uint256 index) external view {
@@ -83,13 +81,6 @@ contract ShardStoreTest is Test {
         (bool success, bytes memory returnData) = address(this).call(callData);
         require(success, "Revoke call failed");
         return abi.decode(returnData, (bool));
-    }
-
-    function revokeKeysCall(TssKey[] memory shard_keys) internal returns (TssKey[] memory) {
-        bytes memory callData = abi.encodeWithSelector(this.externalRevokeKeys.selector, shard_keys);
-        (bool success, bytes memory returnData) = address(this).call(callData);
-        require(success, "Revoke keys call failed");
-        return abi.decode(returnData, (TssKey[]));
     }
 
     /// Tests
@@ -189,22 +180,6 @@ contract ShardStoreTest is Test {
 
         vm.expectRevert(ShardStore.YParityMismatch.selector);
         revokeKeyCall(wrongParityKey);
-    }
-
-    function testRevokeKeysBatch() public {
-        TssKey[] memory newKeys = new TssKey[](3);
-        newKeys[0] = TssKey({yParity: keys[0].yParity, xCoord: keys[0].xCoord});
-        newKeys[1] = TssKey({yParity: keys[1].yParity, xCoord: keys[1].xCoord});
-        newKeys[2] = TssKey({yParity: keys[2].yParity, xCoord: keys[2].xCoord});
-        registerKeysCall(newKeys);
-
-        TssKey[] memory toRevoke = new TssKey[](2);
-        toRevoke[0] = newKeys[0];
-        toRevoke[1] = newKeys[2];
-
-        TssKey[] memory revoked = revokeKeysCall(toRevoke);
-        assertEq(revoked.length, 2, "Two keys should be revoked");
-        assertEq(getStore().length(), 1, "One key should remain");
     }
 
     function testGetNonExistentShard() public {

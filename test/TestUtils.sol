@@ -8,7 +8,6 @@ import {console} from "forge-std/console.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
-import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {
     GmpMessage,
     Signature,
@@ -25,7 +24,6 @@ import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract SigningHash {
     using PrimitiveUtils for GmpMessage;
-    using BranchlessMath for uint256;
 
     Gateway immutable gw;
 
@@ -70,7 +68,7 @@ contract SigningHash {
 library TestUtils {
     using PrimitiveUtils for GmpMessage;
     using PrimitiveUtils for address;
-    using BranchlessMath for uint256;
+    using PrimitiveUtils for uint256;
 
     // Cheat code address, 0x7109709ECfa91a80626fF3989D68f67F5b1DD12D.
     address internal constant VM_ADDRESS = address(uint160(uint256(keccak256("hevm cheat code"))));

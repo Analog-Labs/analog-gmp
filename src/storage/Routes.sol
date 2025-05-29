@@ -4,8 +4,6 @@ pragma solidity ^0.8.20;
 
 import {Signature, Route, MAX_PAYLOAD_SIZE} from "../Primitives.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
-import {BranchlessMath} from "../utils/BranchlessMath.sol";
-import {StoragePtr} from "../utils/Pointer.sol";
 import {GasUtils} from "../GasUtils.sol";
 
 /**
@@ -13,7 +11,6 @@ import {GasUtils} from "../GasUtils.sol";
  */
 library RouteStore {
     using EnumerableMap for EnumerableMap.UintToUintMap;
-    using BranchlessMath for uint256;
 
     /**
      * @dev Namespace of the routes storage `analog.one.gateway.routes`.

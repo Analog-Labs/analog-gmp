@@ -10,7 +10,6 @@ import {TestUtils} from "./TestUtils.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
-import {BranchlessMath} from "../src/utils/BranchlessMath.sol";
 import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
 import {
     Batch,
@@ -26,10 +25,7 @@ import {
 } from "../src/Primitives.sol";
 
 contract Batching is Test {
-    using PrimitiveUtils for GmpMessage;
-    using PrimitiveUtils for GmpCallback;
     using PrimitiveUtils for address;
-    using BranchlessMath for uint256;
 
     uint256 private constant ADMIN_SECRET = 0x955acb49dbb669143455ffbf98e30ae5b2d95343c8b46ce10bf1975d722e8001;
     VmSafe.Wallet internal admin;
