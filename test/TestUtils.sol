@@ -180,7 +180,7 @@ library TestUtils {
             // cost of hashing the payload
             gas += messageWords * 6;
             // execution base cost
-            gas += 45806;
+            gas += 45848;
             // memory expansion cost
             gas += GasUtils.memoryExpansionGas(calldataWords);
             // cost of countNonZerosCalldata

@@ -172,7 +172,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
 
     // IGateway implementation
 
-    function networkId() external view returns (uint16) {
+    function networkId() public view returns (uint16) {
         return _getGatewayConfig().networkId;
     }
 
@@ -222,7 +222,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
 
             // Create GMP message and update nonce
             GmpMessage memory message = GmpMessage(
-                source, _getGatewayConfig().networkId, destinationAddress, network, gasLimit, nextNonce, data
+                source, networkId(), destinationAddress, network, gasLimit, nextNonce, data
             );
 
             bytes32 messageId = message.messageId();
@@ -256,7 +256,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
 
         // Theoretically we could remove the destination network field
         // and fill it up with the network id of the contract, then the signature will fail.
-        require(gmp.destNetwork == _getGatewayConfig().networkId, "invalid gmp network");
+        require(gmp.destNetwork == networkId(), "invalid gmp network");
 
         // Check if the message data is too large
         require(gmp.data.length <= MAX_PAYLOAD_SIZE, "msg data too large");
@@ -471,7 +471,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         rootHash = PrimitiveUtils.hash(batch.version, batch.batchId, uint256(rootHash));
         bytes32 signingHash = keccak256(
             abi.encodePacked(
-                "Analog GMP v2", _getGatewayConfig().networkId, bytes32(uint256(uint160(address(this)))), rootHash
+                "Analog GMP v2", networkId(), bytes32(uint256(uint160(address(this)))), rootHash
             )
         );
 
