@@ -16,15 +16,13 @@ import {GmpMessage, Signature, TssKey, GmpStatus, PrimitiveUtils, Batch} from ".
 uint256 constant secret = 0x42;
 uint256 constant nonce = 0x69;
 
-contract GasUtilsMock {
-    function execute(Signature calldata, GmpMessage calldata)
-        external
-        pure
-        returns (uint256 baseCost, uint256 nonZeros, uint256 zeros)
-    {
-        baseCost = GasUtils.txBaseGas();
-        nonZeros = GasUtils.countNonZerosCalldata(msg.data);
-        zeros = msg.data.length - nonZeros;
+contract MeasureGas {
+    function baseGas(Signature calldata, Batch calldata) external pure returns (uint256) {
+        return GasUtils.txBaseGas();
+    }
+
+    function proxyOverheadGas(Signature calldata, Batch calldata) external pure returns (uint256) {
+        return GasUtils.proxyOverheadGas(msg.data.length, 0);
     }
 }
 
@@ -49,57 +47,30 @@ contract GasUtilsTest is Test {
     }
 
     /**
-     * Test the `GasUtils.txBaseCost` method.
-     */
-    function test_txBaseCost() external {
-        GasUtilsMock mock = new GasUtilsMock();
-        GmpMessage memory gmp = GmpMessage({
-            source: address(0x1111111111111111111111111111111111111111).toSender(),
-            srcNetwork: 1234,
-            dest: address(0x2222222222222222222222222222222222222222),
-            destNetwork: 1337,
-            gasLimit: 0,
-            nonce: 0,
-            data: hex"00"
-        });
-        Signature memory sig = Signature({xCoord: type(uint256).max, e: type(uint256).max, s: type(uint256).max});
-        (uint256 baseCost, uint256 nonZeros, uint256 zeros) = mock.execute(sig, gmp);
-        assertEq(baseCost, 24444, "Wrong calldata gas cost");
-        assertEq(nonZeros, 147, "wrong number of non-zeros");
-        assertEq(zeros, 273, "wrong number of zeros");
-    }
-
-    /**
      * @dev Compare the estimated gas cost VS the actual gas cost of the `execute` method.
      */
     function test_baseExecutionCost(uint16 messageSize, uint16 gasLimit) external {
+        vm.txGasPrice(1);
         vm.assume(gasLimit >= 5000);
         vm.assume(messageSize <= (0x6000 - 32));
         messageSize += 32;
-        address sender = address(0xdead_beef);
-        vm.deal(sender, 10 ether);
+        VmSafe.Wallet memory sender = vm.createWallet(0xdead_beef);
+        vm.deal(sender.addr, 10 ether);
 
         bytes memory data = new bytes(messageSize);
-        address gmpReceiver;
-        if (gasLimit > 0) {
-            gmpReceiver = address(receiver);
-            assembly {
-                mstore(add(data, 32), gasLimit)
-            }
-        } else {
-            // Create a new unique receiver address for each message, otherwise the gas refund will not work.
-            gmpReceiver = address(bytes20(keccak256(abi.encode(sender, gasLimit, messageSize))));
+        assembly {
+            mstore(add(data, 32), gasLimit)
         }
         GmpMessage memory gmp = GmpMessage({
-            source: sender.toSender(),
+            source: sender.addr.toSender(),
             srcNetwork: SRC_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
             gasLimit: gasLimit,
-            nonce: 1,
+            nonce: gasLimit,
             data: data
         });
-        Batch memory batch = TestUtils.makeBatch(0, gmp);
+        Batch memory batch = TestUtils.makeBatch(1, gmp);
         Signature memory sig = TestUtils.sign(admin, gateway, batch, nonce);
 
         console.log("messageSize", messageSize);
@@ -109,15 +80,23 @@ contract GasUtilsTest is Test {
         bytes32 gmpId = gmp.messageId();
         vm.expectEmit(true, true, true, true);
         emit Gateway.GmpExecuted(gmpId, gmp.source, gmp.dest, GmpStatus.SUCCESS, bytes32(uint256(gasLimit)));
-        uint256 balanceBefore = sender.balance;
-        gateway.execute{gas: 10_000_000}(sig, batch);
+        uint256 balanceBefore = admin.addr.balance;
+        vm.startPrank(admin.addr);
+        gateway.execute{gas: 500_000}(sig, batch);
+        uint256 balanceAfter = admin.addr.balance;
         VmSafe.Gas memory gas = vm.lastCallGas();
-        assertEq(balanceBefore, sender.balance, "Balance should not change");
-        assertEq(gas.gasLimit - gas.gasTotalUsed, gas.gasRemaining);
+        vm.stopPrank();
 
         uint256 mGasUsed = gas.gasTotalUsed;
-        uint256 cGasUsed = GasUtils.estimateGas(uint16(gmp.data.length), 0, gmp.gasLimit);
+        uint256 cGasUsed = GasUtils.estimateGas(uint16(gmp.data.length), gmp.gasLimit);
         console.log("gasUsed", mGasUsed, cGasUsed);
         assertEq(cGasUsed, mGasUsed, "gasUsed mismatch");
+
+        MeasureGas m = new MeasureGas();
+        uint256 baseGas = m.baseGas(sig, batch);
+        console.log("baseGas", baseGas);
+        uint256 proxyOverheadGas = m.proxyOverheadGas(sig, batch);
+        console.log("proxyOverheadGas", proxyOverheadGas);
+        assertEq(balanceAfter - balanceBefore - baseGas - mGasUsed, 0, "Balance should not change");
     }
 }

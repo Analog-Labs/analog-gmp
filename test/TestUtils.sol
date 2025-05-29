@@ -7,7 +7,18 @@ import {VmSafe, Vm} from "forge-std/Vm.sol";
 import {console} from "forge-std/console.sol";
 import {Signer} from "../lib/frost-evm/sol/Signer.sol";
 import {Gateway} from "../src/Gateway.sol";
-import {GmpMessage, Signature, TssKey, Route, PrimitiveUtils, Batch, GatewayOp, Command} from "../src/Primitives.sol";
+import {GasUtils} from "../src/GasUtils.sol";
+import {
+    GmpMessage,
+    Signature,
+    TssKey,
+    Route,
+    PrimitiveUtils,
+    Batch,
+    GatewayOp,
+    Command,
+    GMP_VERSION
+} from "../src/Primitives.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract SigningHash {
@@ -103,7 +114,7 @@ library TestUtils {
     function makeBatch(uint64 batch, GmpMessage memory gmp) internal pure returns (Batch memory) {
         GatewayOp[] memory ops = new GatewayOp[](1);
         ops[0] = GatewayOp({command: Command.GMP, params: abi.encode(gmp)});
-        return Batch({version: 0, batchId: batch, ops: ops});
+        return Batch({version: GMP_VERSION, batchId: batch, ops: ops});
     }
 
     function sign(VmSafe.Wallet memory shard, bytes32 hash, uint256 nonce) internal returns (Signature memory sig) {

@@ -185,7 +185,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
      */
     function estimateMessageCost(uint16 network, uint16 messageSize, uint64 gasLimit) external view returns (uint256) {
         RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(network);
-        uint256 gas = route.estimateGas(messageSize, gasLimit);
+        uint256 gas = GasUtils.estimateGas(messageSize, gasLimit) + GasUtils.estimateBaseGas(messageSize);
         return route.estimateCost(gas);
     }
 
@@ -193,23 +193,27 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
      * @dev Send message from this chain to another chain.
      * @param destinationAddress the target address on the destination chain
      * @param network the target chain where the contract call will be made
-     * @param executionGasLimit the gas limit available for the contract call
+     * @param gasLimit the gas limit available for the contract call
      * @param data message data with no specified format
      */
-    function submitMessage(address destinationAddress, uint16 network, uint64 executionGasLimit, bytes calldata data)
+    function submitMessage(address destinationAddress, uint16 network, uint64 gasLimit, bytes calldata data)
         external
         payable
         returns (bytes32)
     {
-        // Check if the message data is too large
-        require(data.length <= MAX_PAYLOAD_SIZE, "msg data is too big");
+        uint256 gas;
+        {
+            // Check if the message data is too large
+            require(data.length <= MAX_PAYLOAD_SIZE, "msg data is too big");
+            uint16 messageSize = uint16(data.length);
 
-        // Check if the provided parameters are valid
-        // See `RouteStorage.estimateWeiCost` at `storage/Routes.sol` for more details.
-        RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(network);
-        uint256 gas = route.estimateGas(data, executionGasLimit);
-        uint256 fee = route.estimateCost(gas);
-        require(msg.value >= fee, "insufficient tx value");
+            // Check if the provided parameters are valid
+            // See `RouteStorage.estimateWeiCost` at `storage/Routes.sol` for more details.
+            RouteStore.NetworkInfo memory route = RouteStore.getMainStorage().get(network);
+            gas = GasUtils.estimateGas(messageSize, gasLimit) + GasUtils.estimateBaseGas(messageSize);
+            uint256 fee = route.estimateCost(gas);
+            require(msg.value >= fee, "insufficient tx value");
+        }
 
         // We use 20 bytes for represent the address and 1 bit for the contract flag
         bytes32 source = msg.sender.toSender();
@@ -220,12 +224,12 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
 
             // Create GMP message and update nonce
             GmpMessage memory message = GmpMessage(
-                source, _getGatewayConfig().networkId, destinationAddress, network, executionGasLimit, nextNonce, data
+                source, _getGatewayConfig().networkId, destinationAddress, network, gasLimit, nextNonce, data
             );
 
             bytes32 messageId = message.messageId();
             emit GmpCreated(
-                messageId, source, destinationAddress, network, executionGasLimit, uint64(gas), nextNonce, message.data
+                messageId, source, destinationAddress, network, gasLimit, uint64(gas), nextNonce, message.data
             );
             return messageId;
         }
@@ -460,9 +464,6 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
      */
     function execute(Signature calldata signature, Batch calldata batch) external {
         uint256 initialGas = gasleft();
-        // Add the solidity selector overhead to the initial gas, this way we guarantee that
-        // the `initialGas` represents the actual gas that was available to this contract.
-        initialGas = initialGas.saturatingAdd(GasUtils.EXECUTION_SELECTOR_OVERHEAD);
 
         // Execute the commands and compute the operations root hash
         (, bytes32 rootHash) = _executeCommands(batch.ops);
@@ -487,8 +488,8 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
 
         // Refund the chronicle gas
         unchecked {
-            // Extra gas overhead used to execute the refund logic.
-            uint256 gasUsed = 7188;
+            // Extra gas overhead used to execute the refund logic + selector overhead
+            uint256 gasUsed = 3082;
 
             // Compute the gas used + base cost + proxy overhead
             gasUsed = gasUsed.saturatingAdd(GasUtils.txBaseGas());

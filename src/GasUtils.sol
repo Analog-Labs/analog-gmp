@@ -11,57 +11,35 @@ import {BranchlessMath} from "./utils/BranchlessMath.sol";
 library GasUtils {
     using BranchlessMath for uint256;
 
-    /**
-     * @dev How much gas is used until the first `gasleft()` instruction is executed.
-     *
-     * HOW TO UPDATE THIS VALUE:
-     * 1. Run `forge test --match-test=test_submitMessageMeter --fuzz-runs=1 --debug`
-     * 2. Move the cursor until you enter the `src/Gateway.sol` file.
-     * 3. Execute the opcodes until you reach the first `GAS` opcode.
-     * 4. Execute the GAS opcode then copy the `Gas used in call` value to the constant below.
-     *
-     * Obs: To guarantee the overhead is constant regardless the input size, always use `calldata` instead of `memory`
-     * for external functions.
-     */
-    uint256 internal constant EXECUTION_SELECTOR_OVERHEAD = 464;
-
-    /**
-     * @dev Base cost of the `IExecutor.execute` method.
-     */
-    uint256 private constant EXECUTION_BASE_COST = EXECUTION_SELECTOR_OVERHEAD + 46960 + 99 + 19;
+    function estimateBaseGas(uint256 messageSize) internal pure returns (uint256) {
+        uint256 calldataSize = messageSize.align32() + 676; // selector + Signature + Batch
+        return 21000 + calldataSize * 16; // assume every byte is a 1
+    }
 
     /**
      * @dev Estimate the gas cost of a GMP message.
-     * @param dataNonZeros The number of non-zero bytes in the gmp data.
-     * @param dataZeros The number of zero bytes in the gmp data.
+     * @param messageSize The message size.
      * @param gasLimit The message gas limit.
      */
-    function estimateGas(uint16 dataNonZeros, uint16 dataZeros, uint256 gasLimit) internal pure returns (uint256) {
+    function estimateGas(uint16 messageSize, uint64 gasLimit) internal pure returns (uint256) {
         unchecked {
-            uint256 messageSize = uint256(dataNonZeros) + uint256(dataZeros);
-            uint256 calldataSize = ((uint256(messageSize) + 31) & 0xffffe0) + 388; // selector + Signature + GmpMessage
-            uint256 calldataNonZeros = dataNonZeros + 224;
-            uint256 calldataZeros = calldataSize - calldataNonZeros;
-            // base gas
-            uint256 gas = 21000 + (calldataNonZeros * 16) + (calldataZeros * 4);
+            uint256 calldataSize = uint256(messageSize).align32() + 676; // selector + Signature + Batch
+            uint256 messageWords = _toWord(messageSize);
+            uint256 calldataWords = _toWord(calldataSize);
+            // destination contract gas limit
+            uint256 gas = uint256(gasLimit);
             // proxy overhead
             gas += proxyOverheadGas(calldataSize, 0);
             // cost of calldata copy
-            gas += _toWord(messageSize) * 3;
+            gas += messageWords * 3;
             // cost of hashing the payload
-            gas += _toWord(messageSize) * 6;
+            gas += messageWords * 6;
             // execution base cost
-            gas += EXECUTION_BASE_COST;
-            // destination contract gas limit
-            gas += gasLimit;
+            gas += 46606;
             // memory expansion cost
-            uint256 memoryExpansion = messageSize.align32() + 676;
-            gas += memoryExpansionGas(_toWord(memoryExpansion));
-            {
-                // Selector + Signature + GmpMessage
-                uint256 words = (messageSize.align32() + 388 + 31) >> 5;
-                gas += (words * 106) + (((words - 255 + 254) / 255) * 214);
-            }
+            gas += memoryExpansionGas(calldataWords);
+            // cost of countNonZerosCalldata
+            gas += (calldataWords * 106) + (((calldataWords - 255 + 254) / 255) * 214);
             return gas;
         }
     }

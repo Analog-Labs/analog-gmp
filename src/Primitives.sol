@@ -5,12 +5,7 @@ pragma solidity >=0.8.0;
 
 import {BranchlessMath} from "./utils/BranchlessMath.sol";
 
-/**
- * @dev GMP message EIP-712 Type Hash.
- * Declared as raw value to enable it to be used in inline assembly
- * keccak256("GmpMessage(bytes32 source,uint16 srcNetwork,address dest,uint16 destNetwork,uint64 gasLimit,uint64 gasCost,uint32 nonce,bytes data)")
- */
-uint256 constant GMP_VERSION = 0;
+uint8 constant GMP_VERSION = 1;
 
 /**
  * @dev Maximum size of the GMP payload
@@ -296,7 +291,7 @@ library PrimitiveUtils {
      */
     function _computeMessageID(GmpCallback memory callback) private pure {
         bytes memory onGmpReceived = callback.callback;
-        callback.opHash = bytes32(GMP_VERSION);
+        callback.opHash = bytes32(uint256(GMP_VERSION));
 
         bytes32 msgId;
         assembly ("memory-safe") {
