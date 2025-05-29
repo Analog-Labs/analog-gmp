@@ -18,7 +18,8 @@ import {
     Batch,
     GatewayOp,
     Command,
-    GMP_VERSION
+    GMP_VERSION,
+    MAX_PAYLOAD_SIZE
 } from "../src/Primitives.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -110,8 +111,8 @@ library TestUtils {
                 gateway: gateway.toSender(),
                 relativeGasPriceNumerator: 1,
                 relativeGasPriceDenominator: 1,
-                gasCoef0: 0,
-                gasCoef1: 1
+                gasCoef0: gasCoef0(),
+                gasCoef1: gasCoef1()
             })
         );
         vm.stopPrank();
@@ -148,14 +149,6 @@ library TestUtils {
         return TestUtils.sign(shard, hash, nonce);
     }
 
-    function countNonZeros(bytes memory data) internal pure returns (uint256 count) {
-        for (uint256 i = 0; i < data.length; i++) {
-            if (data[i] != 0x0) {
-                count += 1;
-            }
-        }
-    }
-
     function estimateBaseGas(uint256 messageSize) internal pure returns (uint256) {
         uint256 calldataSize = messageSize.align32() + 676; // selector + Signature + Batch
         return 21000 + calldataSize * 16; // assume every byte is a 1
@@ -187,5 +180,21 @@ library TestUtils {
             gas += (calldataWords * 106) + (((calldataWords - 255 + 254) / 255) * 214);
             return gas;
         }
+    }
+
+    function calcGas(uint16 messageSize) internal pure returns (uint256) {
+        return estimateGas(messageSize, 0) + estimateBaseGas(uint256(messageSize));
+    }
+
+    function gasCoef0() internal pure returns (uint256) {
+        return calcGas(0);
+    }
+
+    function gasCoef1() internal pure returns (uint256) {
+        return (calcGas(uint16(MAX_PAYLOAD_SIZE)) - calcGas(0)) / MAX_PAYLOAD_SIZE;
+    }
+
+    function linApproxGas(uint16 messageSize) internal pure returns (uint256) {
+        return gasCoef1() * messageSize + gasCoef0();
     }
 }
