@@ -35,6 +35,14 @@ contract RouteStoreTest is Test {
         return RouteStore.estimateCost(route, gas);
     }
 
+    function externalAt(uint256 index) external view {
+        getStore().at(index);
+    }
+
+    function externalGet(uint16 networkId) external view {
+        getStore().get(networkId);
+    }
+
     function insertRouteCall(Route memory route) internal {
         bytes memory callData = abi.encodeWithSelector(this.externalCreateRoute.selector, route);
         (bool success,) = address(this).call(callData);
@@ -187,12 +195,12 @@ contract RouteStoreTest is Test {
 
     function testGetNonExistentRoute() public {
         vm.expectRevert(abi.encodeWithSelector(RouteStore.RouteNotExists.selector, TEST_NETWORK_ID));
-        getStore().get(TEST_NETWORK_ID);
+        this.externalGet(TEST_NETWORK_ID);
     }
 
     function testAtOutOfBounds() public {
         vm.expectRevert(abi.encodeWithSelector(RouteStore.IndexOutOfBounds.selector, 0));
-        getStore().at(0);
+        this.externalAt(0);
     }
 
     function testEstimateCost() public {
