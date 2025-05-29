@@ -15,6 +15,8 @@ contract RouteStoreTest is Test {
     uint128 constant TEST_BASE_FEE = 0.01 ether;
     uint256 constant TEST_NUMERATOR = 15;
     uint256 constant TEST_DENOMINATOR = 10;
+    uint256 constant TEST_GAS_COEFF0 = 10;
+    uint256 constant TEST_GAS_COEFF1 = 10;
 
     function getStore() internal pure returns (RouteStore.MainStorage storage) {
         return RouteStore.getMainStorage();
@@ -27,9 +29,10 @@ contract RouteStoreTest is Test {
     function externalEstimateCost(RouteStore.NetworkInfo memory route, bytes calldata data, uint256 gasLimit)
         external
         pure
-        returns (uint256, uint256)
+        returns (uint256)
     {
-        return RouteStore.estimateCost(route, data, gasLimit);
+        uint256 gas = RouteStore.estimateGas(route, uint16(data.length), uint64(gasLimit));
+        return RouteStore.estimateCost(route, gas);
     }
 
     function insertRouteCall(Route memory route) internal {
@@ -38,15 +41,21 @@ contract RouteStoreTest is Test {
         require(success, "Call failed");
     }
 
-    function testCreateNewRoute() public {
-        Route memory newRoute = Route({
+    function getRoute() internal pure returns (Route memory route) {
+        route = Route({
             networkId: TEST_NETWORK_ID,
             gateway: TEST_GATEWAY,
             gasLimit: TEST_GAS_LIMIT,
             baseFee: TEST_BASE_FEE,
             relativeGasPriceNumerator: TEST_NUMERATOR,
-            relativeGasPriceDenominator: TEST_DENOMINATOR
+            relativeGasPriceDenominator: TEST_DENOMINATOR,
+            gasCoef0: TEST_GAS_COEFF0,
+            gasCoef1: TEST_GAS_COEFF1
         });
+    }
+
+    function testCreateNewRoute() public {
+        Route memory newRoute = getRoute();
 
         insertRouteCall(newRoute);
 
@@ -58,14 +67,10 @@ contract RouteStoreTest is Test {
     function testUpdateExistingRoute() public {
         testCreateNewRoute();
 
-        Route memory updatedRoute = Route({
-            networkId: TEST_NETWORK_ID,
-            gateway: TEST_GATEWAY,
-            gasLimit: TEST_GAS_LIMIT * 2,
-            baseFee: TEST_BASE_FEE * 2,
-            relativeGasPriceNumerator: TEST_NUMERATOR * 3,
-            relativeGasPriceDenominator: TEST_DENOMINATOR
-        });
+        Route memory updatedRoute = getRoute();
+        updatedRoute.gasLimit = updatedRoute.gasLimit * 2;
+        updatedRoute.baseFee = updatedRoute.gasLimit * 2;
+        updatedRoute.relativeGasPriceNumerator = updatedRoute.relativeGasPriceNumerator * 3;
 
         vm.expectEmit(true, true, true, true);
         emit RouteStore.RouteUpdated(
@@ -73,7 +78,9 @@ contract RouteStoreTest is Test {
             updatedRoute.relativeGasPriceNumerator,
             updatedRoute.relativeGasPriceDenominator,
             updatedRoute.baseFee,
-            updatedRoute.gasLimit
+            updatedRoute.gasLimit,
+            updatedRoute.gasCoef0,
+            updatedRoute.gasCoef1
         );
 
         insertRouteCall(updatedRoute);
@@ -99,7 +106,9 @@ contract RouteStoreTest is Test {
                 gasLimit: uint64(i) * 100_000,
                 baseFee: uint128(i) * 0.01 ether,
                 relativeGasPriceNumerator: i * 2,
-                relativeGasPriceDenominator: i * 3
+                relativeGasPriceDenominator: i * 3,
+                gasCoef0: i * 3,
+                gasCoef1: i * 3
             });
             insertRouteCall(r);
         }
@@ -115,27 +124,15 @@ contract RouteStoreTest is Test {
     }
 
     function testInvalidParameters() public {
-        Route memory invalidRoute = Route({
-            networkId: TEST_NETWORK_ID,
-            gateway: bytes32(0),
-            gasLimit: TEST_GAS_LIMIT,
-            baseFee: TEST_BASE_FEE,
-            relativeGasPriceNumerator: TEST_NUMERATOR,
-            relativeGasPriceDenominator: TEST_DENOMINATOR
-        });
+        Route memory invalidRoute = getRoute();
+        invalidRoute.gateway = bytes32(0);
 
         vm.expectRevert(RouteStore.ZeroGatewayForNewRoute.selector);
         insertRouteCall(invalidRoute);
 
         testCreateNewRoute();
-        Route memory invalidUpdate = Route({
-            networkId: TEST_NETWORK_ID,
-            gateway: TEST_GATEWAY,
-            gasLimit: TEST_GAS_LIMIT,
-            baseFee: TEST_BASE_FEE,
-            relativeGasPriceNumerator: TEST_NUMERATOR,
-            relativeGasPriceDenominator: 0
-        });
+        Route memory invalidUpdate = getRoute();
+        invalidUpdate.relativeGasPriceDenominator = 0;
 
         vm.expectRevert(RouteStore.InvalidRouteParameters.selector);
         insertRouteCall(invalidUpdate);
@@ -160,7 +157,9 @@ contract RouteStoreTest is Test {
             gasLimit: TEST_GAS_LIMIT * 3,
             baseFee: 0,
             relativeGasPriceNumerator: 0,
-            relativeGasPriceDenominator: 0
+            relativeGasPriceDenominator: 0,
+            gasCoef0: 10,
+            gasCoef1: 10
         });
 
         insertRouteCall(partialUpdate);
@@ -174,14 +173,11 @@ contract RouteStoreTest is Test {
     function testZeroDenominatorWithZeroNumerator() public {
         testCreateNewRoute();
 
-        Route memory update = Route({
-            networkId: TEST_NETWORK_ID,
-            gateway: TEST_GATEWAY,
-            gasLimit: 0,
-            baseFee: 0,
-            relativeGasPriceNumerator: 0,
-            relativeGasPriceDenominator: 0
-        });
+        Route memory update = getRoute();
+        update.gasLimit = 0;
+        update.baseFee = 0;
+        update.relativeGasPriceNumerator = 0;
+        update.relativeGasPriceDenominator = 0;
 
         insertRouteCall(update);
 
@@ -204,8 +200,7 @@ contract RouteStoreTest is Test {
         RouteStore.NetworkInfo memory route = getStore().get(TEST_NETWORK_ID);
 
         bytes memory payload = hex"deadbeef";
-        (uint256 gasCost, uint256 fee) = this.externalEstimateCost(route, payload, 100_000);
+        uint256 fee = this.externalEstimateCost(route, payload, 100_000);
         assertGt(fee, 0, "Fee not calculated");
-        assertGt(gasCost, 0, "GasCost not calculated");
     }
 }
