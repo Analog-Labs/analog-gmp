@@ -184,15 +184,4 @@ library TestUtils {
     function measureGasAndBase(uint16 messageSize) internal returns (uint256) {
         return measureGas(messageSize) + calcBaseGas(messageSize);
     }
-
-    function measureGasCoefs() internal returns (uint256 c0, uint256 c1) {
-        uint256 g32 = measureGasAndBase(32);
-        uint256 gmax = measureGasAndBase(uint16(MAX_PAYLOAD_SIZE));
-        c1 = (gmax - g32) / (MAX_PAYLOAD_SIZE - 32);
-        c0 = uint256(int256(g32) - int256(c1) * -32);
-    }
-
-    function linApproxGas(uint256 c0, uint256 c1, uint16 messageSize) internal pure returns (uint256) {
-        return c1 * uint256(messageSize) + c0;
-    }
 }

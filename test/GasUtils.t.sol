@@ -6,13 +6,23 @@ pragma solidity >=0.8.0;
 import {Signer} from "frost-evm/sol/Signer.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {TestUtils} from "./TestUtils.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
 import {IGmpReceiver} from "gmp/src/IGmpReceiver.sol";
 import {
-    Command, GatewayOp, GmpMessage, Signature, TssKey, GmpStatus, PrimitiveUtils, Batch, GMP_VERSION, MAX_PAYLOAD_SIZE
+    Command,
+    GatewayOp,
+    GmpMessage,
+    Signature,
+    TssKey,
+    GmpStatus,
+    PrimitiveUtils,
+    Batch,
+    GMP_VERSION,
+    MAX_PAYLOAD_SIZE
 } from "../src/Primitives.sol";
 
 uint256 constant secret = 0x42;
@@ -131,29 +141,19 @@ contract GasUtilsTest is Test {
         gateway.execute(sig, batch);
     }
 
-    function test_measure_gas() external {
-        uint16 messageSize = 0;
+    string path = "./output/gas.csv";
+
+    function test_measure_gas(uint16 messageSize) external {
         vm.assume(messageSize <= MAX_PAYLOAD_SIZE - 32);
         messageSize += 32;
         uint256 measuredGas = TestUtils.measureGasAndBase(messageSize);
         uint256 measuredGas2 = TestUtils.measureGasAndBase(messageSize);
         assertEq(measuredGas, measuredGas2);
 
-        string memory line = messageSize.toString() + ", " + measuredGas.toString();
-        vm.writeLine("./output/gas.json", line);
-    }
-
-    function test_lin_approx(uint16 messageSize) external {
-        vm.assume(messageSize <= MAX_PAYLOAD_SIZE - 32);
-        messageSize += 32;
-        (uint256 c0, uint256 c1) = TestUtils.measureGasCoefs(); 
-        console.log("c0", c0);
-        console.log("c1", c1);
-        uint256 measuredGas = TestUtils.measureGasAndBase(messageSize);
-        uint256 approxGas = TestUtils.linApproxGas(c0, c1, messageSize);
-        //assertGe(approxGas + 10000, measuredGas);
-        int256 error = int256(approxGas) - int256(measuredGas);
-        uint256 absError = error >= 0 ? uint256(error) : uint256(-error);
-        assertLe(absError, 1800);
+        if (!vm.exists(path)) {
+            vm.writeFile(path, "messageSize, measuredGas\n");
+        }
+        string memory line = string.concat(Strings.toString(messageSize), ", ", Strings.toString(measuredGas));
+        vm.writeLine(path, line);
     }
 }
