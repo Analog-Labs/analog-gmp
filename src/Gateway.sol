@@ -3,12 +3,12 @@
 
 pragma solidity >=0.8.0;
 
-import {Schnorr} from "../lib/frost-evm/sol/Schnorr.sol";
+import {Schnorr} from "frost-evm/sol/Schnorr.sol";
 import {GasUtils} from "./GasUtils.sol";
 import {RouteStore} from "./storage/Routes.sol";
 import {ShardStore} from "./storage/Shards.sol";
-import {IGateway} from "./interfaces/IGateway.sol";
-import {IGmpReceiver} from "./interfaces/IGmpReceiver.sol";
+import {IGateway} from "gmp/src/IGateway.sol";
+import {IGmpReceiver} from "gmp/src/IGmpReceiver.sol";
 import {
     Command,
     Batch,

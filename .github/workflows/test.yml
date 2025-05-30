@@ -29,6 +29,9 @@ jobs:
         with:
           version: nightly
 
+      - name: Install Soldeer dependencies
+        run: forge soldeer update
+
       - name: Run Forge build
         run: |
           forge --version
