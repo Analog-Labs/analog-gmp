@@ -6,7 +6,7 @@ pragma solidity >=0.8.0;
 import {Test, console, Vm} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {TestUtils} from "./TestUtils.sol";
-import {Signer} from "../lib/frost-evm/sol/Signer.sol";
+import {Signer} from "frost-evm/sol/Signer.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";

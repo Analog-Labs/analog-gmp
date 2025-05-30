@@ -18,3 +18,7 @@ docs/
 
 # built artifacts
 src/artifacts/
+
+
+# Soldeer
+/dependencies

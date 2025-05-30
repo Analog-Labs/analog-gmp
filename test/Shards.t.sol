@@ -5,7 +5,7 @@ pragma solidity ^0.8.20;
 import {Test, console} from "forge-std/Test.sol";
 import {ShardStore} from "../src/storage/Shards.sol";
 import {TssKey} from "../src/Primitives.sol";
-import {Signer} from "../lib/frost-evm/sol/Signer.sol";
+import {Signer} from "frost-evm/sol/Signer.sol";
 
 contract ShardStoreTest is Test {
     using ShardStore for ShardStore.MainStorage;
