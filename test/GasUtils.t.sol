@@ -7,7 +7,7 @@ import {Signer} from "frost-evm/sol/Signer.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {TestUtils} from "./TestUtils.sol";
+import {Gas, TestUtils} from "./TestUtils.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
@@ -146,14 +146,20 @@ contract GasUtilsTest is Test {
     function test_measure_gas(uint16 messageSize) external {
         vm.assume(messageSize <= MAX_PAYLOAD_SIZE - 32);
         messageSize += 32;
-        uint256 measuredGas = TestUtils.measureGasAndBase(messageSize);
-        uint256 measuredGas2 = TestUtils.measureGasAndBase(messageSize);
-        assertEq(measuredGas, measuredGas2);
+        Gas memory gas = TestUtils.measureGas(messageSize);
 
         if (!vm.exists(path)) {
-            vm.writeFile(path, "messageSize, measuredGas\n");
+            vm.writeFile(path, "messageSize, executeGas, reimbursmentGas, baseGas\n");
         }
-        string memory line = string.concat(Strings.toString(messageSize), ", ", Strings.toString(measuredGas));
+        string memory line = string.concat(
+            Strings.toString(messageSize),
+            ", ",
+            Strings.toString(gas.executeGas),
+            ", ",
+            Strings.toString(gas.reimbursmentGas),
+            ", ",
+            Strings.toString(gas.baseGas)
+        );
         vm.writeLine(path, line);
     }
 }
