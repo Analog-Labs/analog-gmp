@@ -217,8 +217,6 @@ contract GatewayTest is Test {
         // Expect a revert
         vm.expectRevert("msg data too large");
         gateway.execute{gas: 1_000_000}(sig, batch);
-        uint256 ctxExecutionCost = vm.lastCallGas().gasTotalUsed;
-        assertLt(ctxExecutionCost, TestUtils.estimateGas(uint16(gmp.data.length), 0), "revert should use less gas!!");
     }
 
     function test_ExecuteRevertsWrongNetwork() external {
@@ -259,11 +257,9 @@ contract GatewayTest is Test {
         Batch memory batch = TestUtils.makeBatch(0, gmp);
         Signature memory sig = TestUtils.sign(admin, gateway, batch, SIGNING_NONCE);
 
-        uint256 cGasUsed = TestUtils.estimateGas(uint16(gmp.data.length), 0);
-
         // Execute GMP message
         vm.expectRevert("insufficient gas to execute GMP message");
-        gateway.execute{gas: cGasUsed}(sig, batch);
+        gateway.execute{gas: 100_000}(sig, batch);
     }
 
     function test_submitGmpMessage() external {

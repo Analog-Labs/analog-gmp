@@ -8,8 +8,10 @@ import {console} from "forge-std/console.sol";
 import {Signer} from "frost-evm/sol/Signer.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
+import {GasSpender} from "./GasSpender.sol";
 import {
     GmpMessage,
+    GmpStatus,
     Signature,
     TssKey,
     Route,
@@ -109,8 +111,8 @@ library TestUtils {
                 gateway: gateway.toSender(),
                 relativeGasPriceNumerator: 1,
                 relativeGasPriceDenominator: 1,
-                gasCoef0: gasCoef0(),
-                gasCoef1: gasCoef1()
+                gasCoef0: 200000,
+                gasCoef1: 100
             })
         );
         vm.stopPrank();
@@ -119,7 +121,7 @@ library TestUtils {
     function makeBatch(uint64 batch, GmpMessage memory gmp) internal pure returns (Batch memory) {
         GatewayOp[] memory ops = new GatewayOp[](1);
         ops[0] = GatewayOp({command: Command.GMP, params: abi.encode(gmp)});
-        return Batch({version: GMP_VERSION, batchId: batch, numSigningSessions: 2, ops: ops});
+        return Batch({version: GMP_VERSION, batchId: batch, numSigningSessions: 1, ops: ops});
     }
 
     function sign(VmSafe.Wallet memory shard, bytes32 hash, uint256 nonce) internal returns (Signature memory sig) {
@@ -147,52 +149,50 @@ library TestUtils {
         return TestUtils.sign(shard, hash, nonce);
     }
 
-    function estimateBaseGas(uint256 messageSize) internal pure returns (uint256) {
-        uint256 calldataSize = messageSize.align32() + 676; // selector + Signature + Batch
+    function calcBaseGas(uint16 messageSize) internal pure returns (uint256) {
+        uint256 calldataSize = GasUtils.calldataSize(messageSize);
         return 21000 + calldataSize * 16; // assume every byte is a 1
     }
 
-    /**
-     * @dev Estimate the gas cost of a GMP message.
-     * @param messageSize The message size.
-     * @param gasLimit The message gas limit.
-     */
-    function estimateGas(uint16 messageSize, uint64 gasLimit) internal pure returns (uint256) {
-        unchecked {
-            uint256 calldataSize = uint256(messageSize).align32() + 708; // selector + Signature + Batch
-            uint256 messageWords = uint256(messageSize).toWordCount();
-            uint256 calldataWords = calldataSize.toWordCount();
-            // destination contract gas limit
-            uint256 gas = uint256(gasLimit);
-            // proxy overhead
-            gas += GasUtils.proxyOverheadGas(calldataSize);
-            // cost of calldata copy
-            gas += messageWords * 3;
-            // cost of hashing the payload
-            gas += messageWords * 6;
-            // execution base cost
-            gas += 69190;
-            // memory expansion cost
-            gas += GasUtils.memoryExpansionGas(calldataWords);
-            // cost of countNonZerosCalldata
-            gas += (calldataWords * 106) + (((calldataWords - 255 + 254) / 255) * 214);
-            return gas;
+    function measureGas(uint16 messageSize) internal returns (uint256) {
+        VmSafe.Wallet memory admin = vm.createWallet(42);
+        vm.deal(admin.addr, 100 ether);
+        Gateway gateway = TestUtils.setupGateway(admin, 42);
+        TestUtils.setMockShards(admin, address(gateway), admin);
+        vm.deal(admin.addr, 100 ether);
+        bytes memory data = new bytes(messageSize);
+        assembly {
+            mstore(add(data, 32), 5000)
         }
+        GmpMessage memory gmp = GmpMessage({
+            source: address(0xdead_beef).toSender(),
+            srcNetwork: 42,
+            dest: address(new GasSpender()),
+            destNetwork: 42,
+            gasLimit: 5000,
+            nonce: 0,
+            data: data
+        });
+        Batch memory batch = TestUtils.makeBatch(uint64(messageSize), gmp);
+        Signature memory sig = TestUtils.sign(admin, gateway, batch, 42);
+        gateway.execute(sig, batch);
+        uint256 gasUsed = vm.lastCallGas().gasTotalUsed;
+        require(uint256(gateway.messages(gmp.messageId())) == uint256(GmpStatus.SUCCESS), "message failed");
+        return gasUsed - gmp.gasLimit;
     }
 
-    function calcGas(uint16 messageSize) internal pure returns (uint256) {
-        return estimateGas(messageSize, 0) + estimateBaseGas(uint256(messageSize));
+    function measureGasAndBase(uint16 messageSize) internal returns (uint256) {
+        return measureGas(messageSize) + calcBaseGas(messageSize);
     }
 
-    function gasCoef0() internal pure returns (uint256) {
-        return calcGas(0);
+    function measureGasCoefs() internal returns (uint256 c0, uint256 c1) {
+        uint256 g32 = measureGasAndBase(32);
+        uint256 gmax = measureGasAndBase(uint16(MAX_PAYLOAD_SIZE));
+        c1 = (gmax - g32) / (MAX_PAYLOAD_SIZE - 32);
+        c0 = uint256(int256(g32) - int256(c1) * -32);
     }
 
-    function gasCoef1() internal pure returns (uint256) {
-        return (calcGas(uint16(MAX_PAYLOAD_SIZE)) - calcGas(0)) / MAX_PAYLOAD_SIZE;
-    }
-
-    function linApproxGas(uint16 messageSize) internal pure returns (uint256) {
-        return gasCoef1() * messageSize + gasCoef0();
+    function linApproxGas(uint256 c0, uint256 c1, uint16 messageSize) internal pure returns (uint256) {
+        return c1 * uint256(messageSize) + c0;
     }
 }
