@@ -10,8 +10,8 @@ import {Signer} from "frost-evm/sol/Signer.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
-import {IGateway} from "../src/interfaces/IGateway.sol";
-import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
+import {IGateway} from "gmp/src/IGateway.sol";
+import {IGmpReceiver} from "gmp/src/IGmpReceiver.sol";
 import {
     Batch,
     GmpMessage,

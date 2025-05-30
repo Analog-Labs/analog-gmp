@@ -10,7 +10,7 @@ import {TestUtils} from "./TestUtils.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
-import {IGmpReceiver} from "../src/interfaces/IGmpReceiver.sol";
+import {IGmpReceiver} from "gmp/src/IGmpReceiver.sol";
 import {
     GmpMessage, Signature, TssKey, GmpStatus, PrimitiveUtils, Batch, MAX_PAYLOAD_SIZE
 } from "../src/Primitives.sol";

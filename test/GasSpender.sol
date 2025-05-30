@@ -3,7 +3,7 @@
 
 pragma solidity >=0.8.0;
 
-import {IGmpReceiver} from "../../src/interfaces/IGmpReceiver.sol";
+import {IGmpReceiver} from "gmp/src/IGmpReceiver.sol";
 
 contract GasSpender is IGmpReceiver {
     // Following a contract implements the IGmpReceiver interface and wastes the exact amount of gas you send to it in the payload field.
