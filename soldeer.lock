@@ -22,5 +22,5 @@ integrity = "9e60fdba82bc374df80db7f2951faff6467b9091873004a3d314cf0c084b3c7d"
 [[dependencies]]
 name = "frost-evm"
 version = "0.1.0"
-git = "git@github.com:Analog-Labs/frost-evm.git"
+git = "https://github.com/Analog-Labs/frost-evm.git"
 rev = "63a217a8d0a6f186dab69f070ea45c28099885df"
