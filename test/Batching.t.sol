@@ -112,7 +112,8 @@ contract Batching is Test {
                 })
             )
         });
-        Batch memory batch = Batch({version: 0, batchId: uint64(uint256(keccak256("some batch"))), ops: ops});
+        Batch memory batch =
+            Batch({version: 0, batchId: uint64(uint256(keccak256("some batch"))), numSigningSessions: 1, ops: ops});
 
         Signature memory sig = TestUtils.sign(shard, gateway, batch, SIGNING_NONCE);
         gateway.execute(sig, batch);

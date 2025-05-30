@@ -68,6 +68,9 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
      */
     event ShardsUnregistered(TssKey[] keys);
 
+    // number of signing sessions per batch
+    mapping(uint64 => uint16) internal _signingSessions;
+
     // GMP message status
     mapping(bytes32 => GmpStatus) public messages;
 
@@ -247,7 +250,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
     /**
      * @dev Dispatch a single GMP message.
      */
-    function _gmpCommand(bytes calldata params) private returns (bytes32 operationHash) {
+    function _gmpCommand(bytes calldata params, bool dry) private returns (bytes32 operationHash) {
         require(params.length >= 256, "invalid GmpMessage");
         GmpMessage calldata gmp;
         assembly {
@@ -265,6 +268,10 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         // see `src/Primitives.sol` for more details.
         GmpCallback memory callback = gmp.toCallback();
         operationHash = callback.opHash;
+
+        if (dry) {
+            return operationHash;
+        }
 
         // Verify if this GMP message was already executed
         bytes32 msgId = callback.messageId();
@@ -325,13 +332,17 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
     /**
      * @dev Register a single shard and returns the GatewayOp hash.
      */
-    function _registerShardCommand(bytes calldata params) private returns (bytes32 operationHash) {
+    function _registerShardCommand(bytes calldata params, bool dry) private returns (bytes32 operationHash) {
         require(params.length == 64, "invalid TssKey");
         TssKey calldata publicKey;
         assembly {
             publicKey := params.offset
         }
         operationHash = PrimitiveUtils.hash(publicKey.yParity, publicKey.xCoord);
+
+        if (dry) {
+            return operationHash;
+        }
 
         bool isSuccess = ShardStore.getMainStorage().register(publicKey);
         if (isSuccess) {
@@ -344,13 +355,17 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
     /**
      * @dev Removes a single shard from the set.
      */
-    function _unregisterShardCommand(bytes calldata params) private returns (bytes32 operationHash) {
+    function _unregisterShardCommand(bytes calldata params, bool dry) private returns (bytes32 operationHash) {
         require(params.length == 64, "invalid TssKey");
         TssKey calldata publicKey;
         assembly {
             publicKey := params.offset
         }
         operationHash = PrimitiveUtils.hash(publicKey.yParity, publicKey.xCoord);
+
+        if (dry) {
+            return operationHash;
+        }
 
         bool isSuccess = ShardStore.getMainStorage().revoke(publicKey);
         if (isSuccess) {
@@ -363,7 +378,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
     /**
      * Cast the command function into a uint256.
      */
-    function fnToPtr(function(bytes calldata) internal returns (bytes32) fn) private pure returns (uint256 ptr) {
+    function fnToPtr(function(bytes calldata, bool) internal returns (bytes32) fn) private pure returns (uint256 ptr) {
         assembly {
             ptr := fn
         }
@@ -393,7 +408,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
     function _cmdTableLookup(CommandsLookUpTable lut, Command command)
         private
         pure
-        returns (function(bytes calldata) internal returns (bytes32) fn)
+        returns (function(bytes calldata, bool) internal returns (bytes32) fn)
     {
         unchecked {
             // Extract the function pointer from the table using the `Command` as index.
@@ -421,7 +436,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
      * increase the cost exponentially.
      * @return (uint256, bytes32) Returns a tuple containing the maximum amount of memory used in bytes and the operations root hash.
      */
-    function _executeCommands(GatewayOp[] calldata operations) private returns (uint256, bytes32) {
+    function _executeCommands(GatewayOp[] calldata operations, bool dry) private returns (uint256, bytes32) {
         // Track the free memory pointer, to reset the memory after each command executed.
         uint256 freeMemPointer = PrimitiveUtils.readAllocatedMemory();
         uint256 maxAllocatedMemory = freeMemPointer;
@@ -434,10 +449,11 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
             GatewayOp calldata operation = operations[i];
 
             // Lookup the command function pointer
-            function(bytes calldata) internal returns (bytes32) commandFN = _cmdTableLookup(lut, operation.command);
+            function(bytes calldata, bool) internal returns (bytes32) commandFN =
+                _cmdTableLookup(lut, operation.command);
 
             // Execute the command
-            bytes32 operationHash = commandFN(operation.params);
+            bytes32 operationHash = commandFN(operation.params, dry);
 
             // Update the operations root hash
             operationsRootHash =
@@ -462,12 +478,24 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
     function execute(Signature calldata signature, Batch calldata batch) external {
         uint256 initialGas = gasleft();
 
+        uint16 numSigningSessions = _signingSessions[batch.batchId];
+        bool dry;
+        if (numSigningSessions == 0) {
+            numSigningSessions = batch.numSigningSessions;
+        } else if (numSigningSessions == 1) {
+            revert("batch already executed");
+        } else if (numSigningSessions > 1) {
+            numSigningSessions -= 1;
+            dry = true;
+        }
+        _signingSessions[batch.batchId] = numSigningSessions;
+
         // Execute the commands and compute the operations root hash
-        (, bytes32 rootHash) = _executeCommands(batch.ops);
+        (, bytes32 rootHash) = _executeCommands(batch.ops, dry);
         emit BatchExecuted(batch.batchId);
 
         // Compute the Batch signing hash
-        rootHash = PrimitiveUtils.hash(batch.version, batch.batchId, uint256(rootHash));
+        rootHash = PrimitiveUtils.hash(batch.version, batch.batchId, batch.numSigningSessions, uint256(rootHash));
         bytes32 signingHash = keccak256(
             abi.encodePacked("Analog GMP v2", networkId(), bytes32(uint256(uint160(address(this)))), rootHash)
         );
@@ -484,7 +512,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         // Refund the chronicle gas
         unchecked {
             // Extra gas overhead used to execute the refund logic + selector overhead
-            uint256 gasUsed = 2964;
+            uint256 gasUsed = 2890;
 
             // Compute the gas used + base cost + proxy overhead
             gasUsed += GasUtils.txBaseGas();
