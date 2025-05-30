@@ -266,34 +266,6 @@ contract GatewayTest is Test {
         gateway.execute{gas: cGasUsed}(sig, batch);
     }
 
-    function test_executeRevertsAlreadyExecuted() external {
-        vm.txGasPrice(1);
-        address sender = address(0xdead_beef);
-        vm.deal(sender, 10 ether);
-        GmpMessage memory gmp = GmpMessage({
-            source: sender.toSender(),
-            srcNetwork: SRC_NETWORK_ID,
-            dest: address(receiver),
-            destNetwork: DEST_NETWORK_ID,
-            gasLimit: 1000,
-            nonce: 1,
-            data: abi.encode(uint256(1000))
-        });
-        Batch memory batch = TestUtils.makeBatch(0, gmp);
-        Signature memory sig = TestUtils.sign(admin, gateway, batch, SIGNING_NONCE);
-
-        // Execute GMP message first time
-        vm.startPrank(sender);
-        gateway.execute{gas: 1_000_000}(sig, batch);
-        vm.stopPrank();
-        GmpStatus status = gateway.messages(gmp.messageId());
-        assertEq(uint256(status), uint256(GmpStatus.SUCCESS), "unexpected GMP status");
-
-        // Execute GMP message second time
-        vm.expectRevert("message already executed");
-        gateway.execute(sig, batch);
-    }
-
     function test_submitGmpMessage() external {
         vm.txGasPrice(1);
         address sender = address(0xdead_beef99);

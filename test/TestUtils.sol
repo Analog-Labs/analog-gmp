@@ -55,7 +55,7 @@ contract SigningHash {
             }
             rootHash = PrimitiveUtils.hash(uint256(rootHash), uint256(op.command), uint256(operationHash));
         }
-        rootHash = PrimitiveUtils.hash(batch.version, batch.batchId, uint256(rootHash));
+        rootHash = PrimitiveUtils.hash(batch.version, batch.batchId, batch.numSigningSessions, uint256(rootHash));
         return keccak256(
             abi.encodePacked("Analog GMP v2", gw.networkId(), bytes32(uint256(uint160(address(gw)))), rootHash)
         );
@@ -119,7 +119,7 @@ library TestUtils {
     function makeBatch(uint64 batch, GmpMessage memory gmp) internal pure returns (Batch memory) {
         GatewayOp[] memory ops = new GatewayOp[](1);
         ops[0] = GatewayOp({command: Command.GMP, params: abi.encode(gmp)});
-        return Batch({version: GMP_VERSION, batchId: batch, ops: ops});
+        return Batch({version: GMP_VERSION, batchId: batch, numSigningSessions: 2, ops: ops});
     }
 
     function sign(VmSafe.Wallet memory shard, bytes32 hash, uint256 nonce) internal returns (Signature memory sig) {
@@ -159,7 +159,7 @@ library TestUtils {
      */
     function estimateGas(uint16 messageSize, uint64 gasLimit) internal pure returns (uint256) {
         unchecked {
-            uint256 calldataSize = uint256(messageSize).align32() + 676; // selector + Signature + Batch
+            uint256 calldataSize = uint256(messageSize).align32() + 708; // selector + Signature + Batch
             uint256 messageWords = uint256(messageSize).toWordCount();
             uint256 calldataWords = calldataSize.toWordCount();
             // destination contract gas limit
@@ -171,7 +171,7 @@ library TestUtils {
             // cost of hashing the payload
             gas += messageWords * 6;
             // execution base cost
-            gas += 46053;
+            gas += 69190;
             // memory expansion cost
             gas += GasUtils.memoryExpansionGas(calldataWords);
             // cost of countNonZerosCalldata
