@@ -19,10 +19,10 @@ def read_csv(path):
     return (x, y0, y1, y2)
 
 
-def coeffs(x, y):
-    c1 = (y[-1] - y[0]) / (x[-1] - x[0])
-    c0 = y[0] - c1 * x[0]
-    return (c0, c1)
+def lin(x, y):
+    slope = (y[-1] - y[0]) / (x[-1] - x[0])
+    offset = y[0] - slope * x[0]
+    return (offset, slope)
 
 
 def plot(c0, c1, max_x):
@@ -33,24 +33,57 @@ def plot(c0, c1, max_x):
 
 msg_size, exec, reimb, base = read_csv('gas.csv')
 #print(msg_size, exec, reimb, base)
-c_exec = coeffs(msg_size, exec)
-c_reimb = coeffs(msg_size, reimb)
-c_base = coeffs(msg_size, base)
-print('exec', c_exec[0], '+', c_exec[1], '*', 'msg_size', '+', 'gas_limit')
-print('reimb', c_reimb[0], '+', c_reimb[1], '*', 'msg_size')
-print('base', c_base[0], '+', c_base[1], '*', 'msg_size')
+c_exec = lin(msg_size, exec)
+c_reimb = lin(msg_size, reimb)
+c_base = lin(msg_size, base)
+print('measured functions')
+print('==================')
+print('exec(msg_size, gas_limit):', c_exec[0], '+', c_exec[1], '*', 'msg_size', '+', 'gas_limit')
+print('reimb(msg_size):', c_reimb[0], '+', c_reimb[1], '*', 'msg_size')
+print('base(msg_size):', c_base[0], '+', c_base[1], '*', 'msg_size')
+print()
 
-c0 = c_base[0] + c_reimb[0]
-c1 = c_base[1] + c_exec[1]
+# cost per session
+cb = c_base[0] + c_reimb[0]
+# cost per session and message byte
+cm = c_base[1] + c_exec[1]
+# cost of execution
 cd = c_exec[0] - c_reimb[0]
-print('c0', c0)
-print('c1', c1)
-print('cd', cd)
 
-def msg_gas(sessions, msg_size, gas_limit):
-    return (c1 * msg_size + c0) * sessions + cd + gas_limit
+print('sessions size independent constants')
+print('===================================')
+print('session cost (cb)', cb)
+print('message byte cost (cm)', cm)
+print('execution cost (cd)', cd)
+print()
 
-print('gas', 's', 1, 'x', 0, 'l', 0, msg_gas(1, 0, 0))
-print('gas', 's', 2, 'x', 0, 'l', 0, msg_gas(2, 0, 0))
-print('gas', 's', 3, 'x', 32, 'l', 5000, msg_gas(3, 32, 5000))
-#plt.show()
+def coefs(s):
+    c0 = int(s * cb + cd)
+    c1 = int(s * cm)
+    print('session_size', s, 'c0', c0, 'c1', c1)
+    return (s, c0, c1)
+
+# number of sessions for shard
+def sessions(n, t):
+    return n - t + 1
+
+print('session size dependent constants')
+print('================================')
+s1 = coefs(sessions(1, 1))
+s2 = coefs(sessions(3, 2))
+s3 = coefs(sessions(6, 4))
+print()
+
+def msg_gas(s, msg_size):
+    gas = s[2] * msg_size + s[1]
+    print('gas(s=%s, x=%s) = %s' % (s[0], msg_size, gas))
+
+print('gas for message size')
+print('====================')
+max_msg_size = 0x6000
+msg_gas(s1, 0)
+msg_gas(s1, max_msg_size)
+msg_gas(s2, 0)
+msg_gas(s2, max_msg_size)
+msg_gas(s3, 0)
+msg_gas(s3, max_msg_size)
