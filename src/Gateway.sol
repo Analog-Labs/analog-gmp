@@ -112,6 +112,8 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         transferOwnership(newAdmin);
     }
 
+    function _include_gmp_message(GmpMessage memory) external {}
+
     /**
      * Withdraw funds from the gateway contract
      * @param amount The amount to withdraw
