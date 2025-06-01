@@ -15,8 +15,8 @@ contract RouteStoreTest is Test {
     uint128 constant TEST_BASE_FEE = 0.01 ether;
     uint256 constant TEST_NUMERATOR = 15;
     uint256 constant TEST_DENOMINATOR = 10;
-    uint256 constant TEST_GAS_COEFF0 = 10;
-    uint256 constant TEST_GAS_COEFF1 = 10;
+    uint64 constant TEST_GAS_COEFF0 = 10;
+    uint64 constant TEST_GAS_COEFF1 = 10;
 
     function getStore() internal pure returns (RouteStore.MainStorage storage) {
         return RouteStore.getMainStorage();
