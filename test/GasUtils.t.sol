@@ -50,6 +50,8 @@ contract GasUtilsTest is Test {
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 internal constant DEST_NETWORK_ID = 1337;
 
+    string path = "gas.csv";
+
     constructor() {
         admin = vm.createWallet(secret);
         vm.deal(admin.addr, 100 ether);
@@ -57,6 +59,7 @@ contract GasUtilsTest is Test {
         TestUtils.setMockShards(admin, address(gateway), admin);
         vm.deal(admin.addr, 100 ether);
         receiver = IGmpReceiver(new GasSpender());
+        vm.writeFile(path, "messageSize, executeGas, reimbursmentGas, baseGas\n");
     }
 
     function test_calldata_size(uint16 messageSize) external {
@@ -141,16 +144,11 @@ contract GasUtilsTest is Test {
         gateway.execute(sig, batch);
     }
 
-    string path = "gas.csv";
-
     function test_measure_gas(uint16 messageSize) external {
         vm.assume(messageSize <= MAX_PAYLOAD_SIZE - 32);
         messageSize += 32;
         Gas memory gas = TestUtils.measureGas(messageSize);
 
-        if (!vm.exists(path)) {
-            vm.writeFile(path, "messageSize, executeGas, reimbursmentGas, baseGas\n");
-        }
         string memory line = string.concat(
             Strings.toString(messageSize),
             ", ",
