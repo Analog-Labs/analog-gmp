@@ -31,7 +31,7 @@ def plot(c0, c1, max_x):
     plt.plot(xp, yp)
 
 
-msg_size, exec, reimb, base = read_csv('output/gas.csv')
+msg_size, exec, reimb, base = read_csv('gas.csv')
 #print(msg_size, exec, reimb, base)
 c_exec = coeffs(msg_size, exec)
 c_reimb = coeffs(msg_size, reimb)

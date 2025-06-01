@@ -141,7 +141,7 @@ contract GasUtilsTest is Test {
         gateway.execute(sig, batch);
     }
 
-    string path = "./output/gas.csv";
+    string path = "gas.csv";
 
     function test_measure_gas(uint16 messageSize) external {
         vm.assume(messageSize <= MAX_PAYLOAD_SIZE - 32);
