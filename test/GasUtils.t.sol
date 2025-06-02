@@ -85,6 +85,7 @@ contract GasUtilsTest is Test {
         messageSize += 32;
 
         VmSafe.Wallet memory submitter = vm.createWallet(uint256(keccak256("submitter")));
+        vm.deal(submitter.addr, 10 ether);
 
         bytes memory data = new bytes(messageSize);
         assembly {
