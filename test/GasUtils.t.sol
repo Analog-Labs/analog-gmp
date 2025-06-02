@@ -46,7 +46,7 @@ contract GasUtilsTest is Test {
     Gateway internal gateway;
     IGmpReceiver internal receiver;
 
-    bytes32 private constant SENDER =  bytes32(uint256(0xdead_beef));
+    bytes32 private constant SENDER = bytes32(uint256(0xdead_beef));
     uint16 private constant SRC_NETWORK_ID = 1234;
     uint16 private constant DEST_NETWORK_ID = 1337;
 

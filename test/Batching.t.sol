@@ -59,27 +59,27 @@ contract Batching is Test {
         uint64 gasLimit = 7845;
         GatewayOp[] memory ops = new GatewayOp[](2);
         ops[0] = TestUtils.msgOp(
-                GmpMessage({
+            GmpMessage({
                 source: bytes32(uint256(0xdead_beef)),
-                    srcNetwork: SRC_NETWORK_ID,
-                    dest: address(receiver),
-                    destNetwork: DEST_NETWORK_ID,
-                    gasLimit: gasLimit,
-                    nonce: 0,
-                    data: abi.encode(gasLimit)
-                })
-            );
+                srcNetwork: SRC_NETWORK_ID,
+                dest: address(receiver),
+                destNetwork: DEST_NETWORK_ID,
+                gasLimit: gasLimit,
+                nonce: 0,
+                data: abi.encode(gasLimit)
+            })
+        );
         ops[1] = TestUtils.msgOp(
-                GmpMessage({
+            GmpMessage({
                 source: bytes32(uint256(0xdead_beef)),
-                    srcNetwork: SRC_NETWORK_ID,
-                    dest: address(receiver),
-                    destNetwork: DEST_NETWORK_ID,
-                    gasLimit: gasLimit,
-                    nonce: 1,
-                    data: abi.encode(gasLimit)
-                })
-            );
+                srcNetwork: SRC_NETWORK_ID,
+                dest: address(receiver),
+                destNetwork: DEST_NETWORK_ID,
+                gasLimit: gasLimit,
+                nonce: 1,
+                data: abi.encode(gasLimit)
+            })
+        );
         Batch memory batch = TestUtils.makeBatch(0, ops);
         Signature memory sig = TestUtils.sign(TestUtils.shard1, gateway, batch);
         gateway.execute(sig, batch);

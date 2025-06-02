@@ -163,10 +163,7 @@ library TestUtils {
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
     }
 
-    function sign(uint256 shard, Gateway gw, Batch memory batch)
-        internal
-        returns (Signature memory sig)
-    {
+    function sign(uint256 shard, Gateway gw, Batch memory batch) internal returns (Signature memory sig) {
         SigningHash hasher = new SigningHash(address(gw));
         bytes32 hash = hasher.signingHash(batch);
         return TestUtils.sign(shard, hash);
