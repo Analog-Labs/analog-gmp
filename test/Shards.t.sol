@@ -27,6 +27,10 @@ contract ShardStoreTest is Test {
         return ShardStore.getMainStorage();
     }
 
+    function externalGet(uint256 xCoord) external view returns (ShardStore.ShardInfo memory) {
+        return getStore().get(xCoord);
+    }
+
     function externalRegister(TssKey calldata key) external returns (bool) {
         return getStore().register(key);
     }
@@ -35,18 +39,25 @@ contract ShardStoreTest is Test {
         return getStore().revoke(key);
     }
 
-    function registerKeyCall(TssKey memory key) internal returns (bool) {
+    function register(TssKey memory key) internal returns (bool) {
         bytes memory callData = abi.encodeWithSelector(this.externalRegister.selector, key);
         (bool success, bytes memory returnData) = address(this).call(callData);
         require(success, "Register call failed");
         return abi.decode(returnData, (bool));
     }
 
-    function revokeKeyCall(TssKey memory key) internal returns (bool) {
+    function revoke(TssKey memory key) internal returns (bool) {
         bytes memory callData = abi.encodeWithSelector(this.externalRevoke.selector, key);
         (bool success, bytes memory returnData) = address(this).call(callData);
         require(success, "Revoke call failed");
         return abi.decode(returnData, (bool));
+    }
+
+    function get(uint256 xCoord) internal returns (ShardStore.ShardInfo memory) {
+        bytes memory callData = abi.encodeWithSelector(this.externalGet.selector, xCoord);
+        (bool success, bytes memory returnData) = address(this).call(callData);
+        require(success, "Get call failed");
+        return abi.decode(returnData, (ShardStore.ShardInfo));
     }
 
     /// Tests
@@ -55,10 +66,10 @@ contract ShardStoreTest is Test {
         uint8 y_parity = keys[0].yParity;
         TssKey memory newKey = TssKey({yParity: y_parity, xCoord: xCoord, numSessions: 1});
 
-        bool registered = registerKeyCall(newKey);
+        bool registered = register(newKey);
         assertTrue(registered, "New shard should be registered");
 
-        ShardStore.ShardInfo memory stored = getStore().get(xCoord);
+        ShardStore.ShardInfo memory stored = get(xCoord);
         assertEq(stored.yParity, y_parity, "Y-parity mismatch");
     }
 
@@ -67,24 +78,24 @@ contract ShardStoreTest is Test {
 
         TssKey memory existingKey = keys[0];
 
-        bool registered = registerKeyCall(existingKey);
+        bool registered = register(existingKey);
         assertFalse(registered, "Existing shard should not be re-registered");
         assertEq(getStore().list().length, 1, "Store length should remain unchanged");
     }
 
     function testRegisterInvalidYParity() public {
         vm.expectRevert(ShardStore.InvalidYParity.selector);
-        registerKeyCall(invalidKey);
+        register(invalidKey);
     }
 
     function testRegisterTssKeysBatch() public {
         for (uint256 i = 0; i < keys.length; i++) {
-            registerKeyCall(keys[i]);
+            register(keys[i]);
         }
 
         assertEq(getStore().list().length, 3, "All keys should be registered");
         for (uint256 i = 0; i < keys.length; i++) {
-            getStore().get(keys[i].xCoord);
+            get(keys[i].xCoord);
         }
     }
 
@@ -93,35 +104,35 @@ contract ShardStoreTest is Test {
 
         TssKey memory keyToRevoke = TssKey({yParity: keys[0].yParity, xCoord: keys[0].xCoord, numSessions: 1});
 
-        bool revoked = revokeKeyCall(keyToRevoke);
+        bool revoked = revoke(keyToRevoke);
         assertTrue(revoked, "Key should be revoked");
 
         vm.expectRevert();
-        getStore().get(keys[0].xCoord);
+        get(keys[0].xCoord);
         assertEq(getStore().list().length, 0, "Store should be empty");
     }
 
     function testRevokeNonExistentShard() public {
         TssKey memory nonExistentKey = TssKey({yParity: keys[0].yParity, xCoord: keys[0].xCoord, numSessions: 1});
 
-        bool revoked = revokeKeyCall(nonExistentKey);
+        bool revoked = revoke(nonExistentKey);
         assertFalse(revoked, "Non-existent key revocation should return false");
     }
 
     function testRevokeWithWrongYParity() public {
         TssKey memory originalKey = TssKey({yParity: keys[0].yParity, xCoord: keys[0].xCoord, numSessions: 1});
-        registerKeyCall(originalKey);
+        register(originalKey);
 
         TssKey memory wrongParityKey = TssKey({yParity: keys[0].yParity - 2, xCoord: keys[0].xCoord, numSessions: 1});
 
         vm.expectRevert(ShardStore.YParityMismatch.selector);
-        revokeKeyCall(wrongParityKey);
+        revoke(wrongParityKey);
     }
 
     function testGetNonExistentShard() public {
         uint256 nonExistentId = keys[0].xCoord;
         vm.expectRevert(abi.encodeWithSelector(ShardStore.ShardNotExists.selector, nonExistentId));
-        getStore().get(nonExistentId);
+        get(nonExistentId);
     }
 
     function testListShards() public {
@@ -129,9 +140,9 @@ contract ShardStoreTest is Test {
         newKeys[0] = TssKey({yParity: keys[0].yParity, xCoord: keys[0].xCoord, numSessions: 1});
         newKeys[1] = TssKey({yParity: keys[1].yParity, xCoord: keys[1].xCoord, numSessions: 1});
         newKeys[2] = TssKey({yParity: keys[2].yParity, xCoord: keys[2].xCoord, numSessions: 1});
-        registerKeyCall(newKeys[0]);
-        registerKeyCall(newKeys[1]);
-        registerKeyCall(newKeys[2]);
+        register(newKeys[0]);
+        register(newKeys[1]);
+        register(newKeys[2]);
 
         TssKey[] memory listed = getStore().list();
         assertEq(listed.length, 3, "Should list all shards");

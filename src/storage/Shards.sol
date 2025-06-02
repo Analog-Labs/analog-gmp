@@ -71,7 +71,7 @@ library ShardStore {
      * Requirements:
      * - `key` must be in the map.
      */
-    function get(MainStorage storage store, uint256 xCoord) public view returns (ShardInfo storage) {
+    function get(MainStorage storage store, uint256 xCoord) internal view returns (ShardInfo storage) {
         if (!store.shardIds.contains(xCoord)) {
             revert ShardNotExists(xCoord);
         }
