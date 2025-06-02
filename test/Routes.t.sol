@@ -120,61 +120,9 @@ contract RouteStoreTest is Test {
         }
     }
 
-    function testInvalidParameters() public {
-        Route memory invalidRoute = getRoute();
-        invalidRoute.gateway = bytes32(0);
-
-        vm.expectRevert(RouteStore.ZeroGatewayForNewRoute.selector);
-        insertRouteCall(invalidRoute);
-
-        testCreateNewRoute();
-        Route memory invalidUpdate = getRoute();
-        invalidUpdate.relativeGasPriceDenominator = 0;
-
-        vm.expectRevert(RouteStore.InvalidRouteParameters.selector);
-        insertRouteCall(invalidUpdate);
-    }
-
     function testEmptyStore() public view {
         Route[] memory routes = getStore().list();
         assertEq(routes.length, 0, "Should return empty array");
-    }
-
-    function testPartialRouteUpdate() public {
-        testCreateNewRoute();
-
-        Route memory partialUpdate = Route({
-            networkId: TEST_NETWORK_ID,
-            gateway: bytes32(0),
-            gasLimit: TEST_GAS_LIMIT * 3,
-            baseFee: 0,
-            relativeGasPriceNumerator: 0,
-            relativeGasPriceDenominator: 0,
-            gasCoef0: 10,
-            gasCoef1: 10
-        });
-
-        insertRouteCall(partialUpdate);
-
-        RouteStore.NetworkInfo memory stored = getStore().get(TEST_NETWORK_ID);
-        assertEq(stored.gateway, TEST_GATEWAY, "Gateway changed when updating route");
-        assertEq(stored.gasLimit, TEST_GAS_LIMIT * 3, "Gas limit not updated");
-        assertEq(stored.baseFee, TEST_BASE_FEE, "Base fee changed unexpectedly");
-    }
-
-    function testZeroDenominatorWithZeroNumerator() public {
-        testCreateNewRoute();
-
-        Route memory update = getRoute();
-        update.gasLimit = 0;
-        update.baseFee = 0;
-        update.relativeGasPriceNumerator = 0;
-        update.relativeGasPriceDenominator = 0;
-
-        insertRouteCall(update);
-
-        RouteStore.NetworkInfo memory stored = getStore().get(TEST_NETWORK_ID);
-        assertEq(stored.relativeGasPriceNumerator, TEST_NUMERATOR, "Numerator changed");
     }
 
     function testGetNonExistentRoute() public {

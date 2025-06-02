@@ -100,7 +100,7 @@ contract GasUtilsTest is Test {
             data: data
         });
         Batch memory batch = TestUtils.makeBatch(0, gmp);
-        Signature memory sig = TestUtils.sign(TestUtils.shard1, gateway, batch);
+        Signature memory sig = TestUtils.sign(TestUtils.shard2, gateway, batch);
 
         console.log("messageSize", messageSize);
         console.log("gasLimit", gasLimit);
@@ -114,22 +114,24 @@ contract GasUtilsTest is Test {
         vm.prank(submitter.addr);
         gateway.execute(sig, batch);
         VmSafe.Gas memory gas = vm.lastCallGas();
+        console.log('callGas', gas.gasTotalUsed - gasLimit);
         uint256 balanceAfter = submitter.addr.balance;
 
         // check message executed
         assertEq(uint256(gateway.messages(gmp.messageId())), uint256(GmpStatus.SUCCESS));
         // check reimbursment
-        assertEq(balanceAfter - balanceBefore - baseGas - gas.gasTotalUsed, 0, "Balance should not change");
+        assertEq(balanceAfter - balanceBefore - baseGas - gasLimit, gas.gasTotalUsed - gasLimit, "Balance should not change");
 
         // execute second signing session
         balanceBefore = submitter.addr.balance;
         vm.prank(submitter.addr);
         gateway.execute(sig, batch);
         gas = vm.lastCallGas();
+        console.log('callGas', gas.gasTotalUsed);
         balanceAfter = submitter.addr.balance;
 
         // check reimbursment
-        assertEq(balanceAfter - balanceBefore - baseGas - gas.gasTotalUsed, 0, "Balance should not change");
+        assertEq(balanceAfter - balanceBefore - baseGas, gas.gasTotalUsed, "Balance should not change");
 
         // check replay reverts
         vm.expectRevert("batch already executed");

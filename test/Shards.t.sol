@@ -78,14 +78,13 @@ contract ShardStoreTest is Test {
     }
 
     function testRegisterTssKeysBatch() public {
-        TssKey[] memory dynamicKeys = new TssKey[](keys.length);
         for (uint256 i = 0; i < keys.length; i++) {
             registerKeyCall(keys[i]);
         }
 
         assertEq(getStore().list().length, 3, "All keys should be registered");
         for (uint256 i = 0; i < keys.length; i++) {
-            getStore().get(dynamicKeys[i].xCoord);
+            getStore().get(keys[i].xCoord);
         }
     }
 

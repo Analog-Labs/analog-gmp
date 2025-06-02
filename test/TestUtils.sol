@@ -86,18 +86,19 @@ library TestUtils {
     uint256 internal constant shard1 = uint256(keccak256("shard1"));
     uint256 internal constant shard2 = uint256(keccak256("shard2"));
 
-    function setupGateway(uint16 network) internal returns (Gateway gw) {
+    function setupGateway(uint16 network) internal returns (Gateway gateway) {
         VmSafe.Wallet memory _admin = vm.createWallet(admin);
         vm.deal(_admin.addr, 10 ether);
         vm.startPrank(_admin.addr);
 
         // deploy
-        Gateway gateway = new Gateway();
+        gateway = new Gateway();
         bytes memory initData = abi.encodeWithSelector(Gateway.initialize.selector, network);
         ERC1967Proxy proxy = new ERC1967Proxy(address(gateway), initData);
         console.log("Implementation:", address(gateway));
         console.log("Proxy:", address(proxy));
         vm.deal(address(proxy), 10 ether);
+        gateway = Gateway(payable(address(proxy)));
 
         // register shards
         TssKey[] memory keys = new TssKey[](2);
@@ -108,7 +109,7 @@ library TestUtils {
         gateway.setShards(keys, new TssKey[](0));
 
         // register routes
-        gw.setRoute(
+        gateway.setRoute(
             Route({
                 networkId: network,
                 gasLimit: 1_000_000,

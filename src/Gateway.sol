@@ -463,6 +463,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         bool dry;
         if (numSigningSessions == 0) {
             numSigningSessions = signer.numSessions;
+            emit BatchExecuted(batch.batchId);
         } else if (numSigningSessions == 1) {
             revert("batch already executed");
         } else if (numSigningSessions > 1) {
@@ -473,7 +474,6 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
 
         // Execute the commands and compute the operations root hash
         (, bytes32 rootHash) = _executeCommands(batch.ops, dry);
-        emit BatchExecuted(batch.batchId);
 
         // Compute the Batch signing hash
         rootHash = PrimitiveUtils.hash(batch.version, batch.batchId, uint256(rootHash));

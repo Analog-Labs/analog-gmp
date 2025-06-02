@@ -12,7 +12,7 @@ library GasUtils {
     using PrimitiveUtils for uint256;
 
     function calldataSize(uint16 messageSize) internal pure returns (uint256) {
-        return uint256(messageSize).align32() + 708; // selector + Signature + Batch
+        return uint256(messageSize).align32() + 676; // selector + Signature + Batch
     }
 
     /**
