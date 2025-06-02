@@ -27,40 +27,14 @@ import {
 contract Batching is Test {
     using PrimitiveUtils for address;
 
-    uint256 private constant ADMIN_SECRET = 0x955acb49dbb669143455ffbf98e30ae5b2d95343c8b46ce10bf1975d722e8001;
-    VmSafe.Wallet internal admin;
-
-    uint256 private constant SHARD_SECRET = 0x42;
-    VmSafe.Wallet internal shard;
-
-    Gateway internal gateway;
-
-    // Chronicle TSS Secret
-    uint256 private constant SIGNING_NONCE = 0x69;
-
-    // Netowrk ids
     uint16 private constant SRC_NETWORK_ID = 1234;
-    uint16 internal constant DEST_NETWORK_ID = 1337;
-
-    IGmpReceiver internal receiver1;
-    IGmpReceiver internal receiver2;
+    uint16 private constant DEST_NETWORK_ID = 1337;
+    Gateway internal gateway;
+    IGmpReceiver internal receiver;
 
     constructor() {
-        // Create the Admin account
-        admin = vm.createWallet(ADMIN_SECRET);
-        vm.deal(admin.addr, 100 ether);
-
-        // Create the Shard account
-        shard = vm.createWallet(SHARD_SECRET);
-        vm.deal(shard.addr, 10 ether);
-
-        gateway = TestUtils.setupGateway(admin, DEST_NETWORK_ID);
-        TestUtils.setMockShards(admin, address(gateway), shard);
-        TestUtils.setMockRoute(admin, address(gateway), DEST_NETWORK_ID);
-        vm.deal(address(gateway), 10 ether);
-
-        receiver1 = IGmpReceiver(new GasSpender());
-        receiver2 = IGmpReceiver(new GasSpender());
+        gateway = TestUtils.setupGateway(DEST_NETWORK_ID);
+        receiver = IGmpReceiver(new GasSpender());
     }
 
     function test_execute_batch() external {
@@ -68,54 +42,46 @@ contract Batching is Test {
         Batch memory batch = TestUtils.makeBatch(
             0,
             GmpMessage({
-                source: admin.addr.toSender(),
+                source: bytes32(uint256(0xdead_beef)),
                 srcNetwork: SRC_NETWORK_ID,
-                dest: address(receiver1),
+                dest: address(receiver),
                 destNetwork: DEST_NETWORK_ID,
                 gasLimit: gasLimit,
-                nonce: gateway.nonces(admin.addr),
+                nonce: 0,
                 data: abi.encode(gasLimit)
             })
         );
-        Signature memory sig = TestUtils.sign(shard, gateway, batch, SIGNING_NONCE);
+        Signature memory sig = TestUtils.sign(TestUtils.shard1, gateway, batch);
         gateway.execute(sig, batch);
     }
 
     function test_execute_batch_2() external {
         uint64 gasLimit = 7845;
         GatewayOp[] memory ops = new GatewayOp[](2);
-        ops[0] = GatewayOp({
-            command: Command.GMP,
-            params: abi.encode(
+        ops[0] = TestUtils.msgOp(
                 GmpMessage({
-                    source: admin.addr.toSender(),
+                source: bytes32(uint256(0xdead_beef)),
                     srcNetwork: SRC_NETWORK_ID,
-                    dest: address(receiver1),
+                    dest: address(receiver),
                     destNetwork: DEST_NETWORK_ID,
                     gasLimit: gasLimit,
-                    nonce: gateway.nonces(admin.addr),
+                    nonce: 0,
                     data: abi.encode(gasLimit)
                 })
-            )
-        });
-        ops[1] = GatewayOp({
-            command: Command.GMP,
-            params: abi.encode(
+            );
+        ops[1] = TestUtils.msgOp(
                 GmpMessage({
-                    source: admin.addr.toSender(),
+                source: bytes32(uint256(0xdead_beef)),
                     srcNetwork: SRC_NETWORK_ID,
-                    dest: address(receiver2),
+                    dest: address(receiver),
                     destNetwork: DEST_NETWORK_ID,
                     gasLimit: gasLimit,
-                    nonce: gateway.nonces(admin.addr) + 1,
+                    nonce: 1,
                     data: abi.encode(gasLimit)
                 })
-            )
-        });
-        Batch memory batch =
-            Batch({version: 0, batchId: uint64(uint256(keccak256("some batch"))), numSigningSessions: 1, ops: ops});
-
-        Signature memory sig = TestUtils.sign(shard, gateway, batch, SIGNING_NONCE);
+            );
+        Batch memory batch = TestUtils.makeBatch(0, ops);
+        Signature memory sig = TestUtils.sign(TestUtils.shard1, gateway, batch);
         gateway.execute(sig, batch);
     }
 }

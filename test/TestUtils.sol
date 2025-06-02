@@ -57,7 +57,7 @@ contract SigningHash {
             }
             rootHash = PrimitiveUtils.hash(uint256(rootHash), uint256(op.command), uint256(operationHash));
         }
-        rootHash = PrimitiveUtils.hash(batch.version, batch.batchId, batch.numSigningSessions, uint256(rootHash));
+        rootHash = PrimitiveUtils.hash(batch.version, batch.batchId, uint256(rootHash));
         return keccak256(
             abi.encodePacked("Analog GMP v2", gw.networkId(), bytes32(uint256(uint160(address(gw)))), rootHash)
         );
@@ -82,77 +82,94 @@ library TestUtils {
     address internal constant VM_ADDRESS = address(uint160(uint256(keccak256("hevm cheat code"))));
     Vm internal constant vm = Vm(VM_ADDRESS);
 
-    function setupGateway(VmSafe.Wallet memory admin, uint16 network) internal returns (Gateway gw) {
-        vm.startPrank(admin.addr, admin.addr);
+    uint256 internal constant admin = uint256(keccak256("admin"));
+    uint256 internal constant shard1 = uint256(keccak256("shard1"));
+    uint256 internal constant shard2 = uint256(keccak256("shard2"));
 
+    function setupGateway(uint16 network) internal returns (Gateway gw) {
+        VmSafe.Wallet memory _admin = vm.createWallet(admin);
+        vm.deal(_admin.addr, 10 ether);
+        vm.startPrank(_admin.addr);
+
+        // deploy
         Gateway gateway = new Gateway();
         bytes memory initData = abi.encodeWithSelector(Gateway.initialize.selector, network);
         ERC1967Proxy proxy = new ERC1967Proxy(address(gateway), initData);
         console.log("Implementation:", address(gateway));
         console.log("Proxy:", address(proxy));
-
         vm.deal(address(proxy), 10 ether);
-        vm.stopPrank();
-        return Gateway(payable(address(proxy)));
-    }
 
-    function setMockShards(VmSafe.Wallet memory admin, address gateway, VmSafe.Wallet memory shard) internal {
-        Signer signer = new Signer(shard.privateKey);
-        TssKey[] memory keys = new TssKey[](1);
-        keys[0] = TssKey({yParity: signer.yParity(), xCoord: signer.xCoord()});
-        Gateway gw = Gateway(payable(gateway));
-        vm.startPrank(admin.addr, admin.addr);
-        gw.setShards(keys);
-        vm.stopPrank();
-    }
+        // register shards
+        TssKey[] memory keys = new TssKey[](2);
+        Signer signer = new Signer(shard1);
+        keys[0] = TssKey({xCoord: signer.xCoord(), yParity: signer.yParity(), numSessions: 1});
+        signer = new Signer(shard2);
+        keys[1] = TssKey({xCoord: signer.xCoord(), yParity: signer.yParity(), numSessions: 2});
+        gateway.setShards(keys, new TssKey[](0));
 
-    function setMockRoute(VmSafe.Wallet memory admin, address gateway, uint16 network) internal {
-        Gateway gw = Gateway(payable(gateway));
-        vm.startPrank(admin.addr, admin.addr);
+        // register routes
         gw.setRoute(
             Route({
                 networkId: network,
                 gasLimit: 1_000_000,
                 baseFee: 0,
-                gateway: gateway.toSender(),
+                gateway: address(gateway).toSender(),
                 relativeGasPriceNumerator: 1,
                 relativeGasPriceDenominator: 1,
-                gasCoef0: 200000,
-                gasCoef1: 100
+                gasCoef0: 100000,
+                gasCoef1: 10
             })
         );
+
         vm.stopPrank();
     }
 
-    function makeBatch(uint64 batch, GmpMessage memory gmp) internal pure returns (Batch memory) {
-        GatewayOp[] memory ops = new GatewayOp[](1);
-        ops[0] = GatewayOp({command: Command.GMP, params: abi.encode(gmp)});
-        return Batch({version: GMP_VERSION, batchId: batch, numSigningSessions: 2, ops: ops});
+    function prankAdmin() internal {
+        VmSafe.Wallet memory _admin = vm.createWallet(admin);
+        vm.prank(_admin.addr);
     }
 
-    function sign(VmSafe.Wallet memory shard, bytes32 hash, uint256 nonce) internal returns (Signature memory sig) {
+    function msgOp(GmpMessage memory gmp) internal pure returns (GatewayOp memory) {
+        return GatewayOp({command: Command.GMP, params: abi.encode(gmp)});
+    }
+
+    function registerOp(TssKey memory key) internal pure returns (GatewayOp memory) {
+        return GatewayOp({command: Command.RegisterShard, params: abi.encode(key)});
+    }
+
+    function unregisterOp(TssKey memory key) internal pure returns (GatewayOp memory) {
+        return GatewayOp({command: Command.UnregisterShard, params: abi.encode(key)});
+    }
+
+    function makeBatch(uint64 batch, GmpMessage memory gmp) internal pure returns (Batch memory) {
+        return TestUtils.makeBatch(batch, TestUtils.msgOp(gmp));
+    }
+
+    function makeBatch(uint64 batch, GatewayOp memory op) internal pure returns (Batch memory) {
+        GatewayOp[] memory ops = new GatewayOp[](1);
+        ops[0] = op;
+        return TestUtils.makeBatch(batch, ops);
+    }
+
+    function makeBatch(uint64 batch, GatewayOp[] memory ops) internal pure returns (Batch memory) {
+        return Batch({version: GMP_VERSION, batchId: batch, ops: ops});
+    }
+
+    function sign(uint256 shard, bytes32 hash) internal returns (Signature memory sig) {
         console.log("signing");
         console.logBytes32(hash);
-        Signer signer = new Signer(shard.privateKey);
-        (uint256 e, uint256 s) = signer.signPrehashed(uint256(hash), nonce);
+        Signer signer = new Signer(shard);
+        (uint256 e, uint256 s) = signer.signPrehashed(uint256(hash), 42);
         return Signature({xCoord: signer.xCoord(), e: e, s: s});
     }
 
-    function sign(VmSafe.Wallet memory shard, GmpMessage memory gmp, uint256 nonce)
-        internal
-        returns (Signature memory sig)
-    {
-        bytes32 hash = gmp.opHash();
-        return TestUtils.sign(shard, hash, nonce);
-    }
-
-    function sign(VmSafe.Wallet memory shard, Gateway gw, Batch memory batch, uint256 nonce)
+    function sign(uint256 shard, Gateway gw, Batch memory batch)
         internal
         returns (Signature memory sig)
     {
         SigningHash hasher = new SigningHash(address(gw));
         bytes32 hash = hasher.signingHash(batch);
-        return TestUtils.sign(shard, hash, nonce);
+        return TestUtils.sign(shard, hash);
     }
 
     function calcBaseGas(uint16 messageSize) internal pure returns (uint256) {
@@ -161,11 +178,7 @@ library TestUtils {
     }
 
     function measureGas(uint16 messageSize) internal returns (Gas memory) {
-        VmSafe.Wallet memory admin = vm.createWallet(42);
-        vm.deal(admin.addr, 100 ether);
-        Gateway gateway = TestUtils.setupGateway(admin, 42);
-        TestUtils.setMockShards(admin, address(gateway), admin);
-        vm.deal(admin.addr, 100 ether);
+        Gateway gateway = TestUtils.setupGateway(42);
         bytes memory data = new bytes(messageSize);
         assembly {
             mstore(add(data, 32), 5000)
@@ -180,7 +193,8 @@ library TestUtils {
             data: data
         });
         Batch memory batch = TestUtils.makeBatch(uint64(messageSize), gmp);
-        Signature memory sig = TestUtils.sign(admin, gateway, batch, 42);
+        Signature memory sig = TestUtils.sign(shard2, gateway, batch);
+
         gateway.execute(sig, batch);
         uint256 gasUsed = vm.lastCallGas().gasTotalUsed;
         require(uint256(gateway.messages(gmp.messageId())) == uint256(GmpStatus.SUCCESS), "message failed");
