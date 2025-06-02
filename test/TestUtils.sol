@@ -97,6 +97,7 @@ library TestUtils {
         ERC1967Proxy proxy = new ERC1967Proxy(address(gateway), initData);
         console.log("Implementation:", address(gateway));
         console.log("Proxy:", address(proxy));
+        console.log("Admin:", _admin.addr);
         vm.deal(address(proxy), 10 ether);
         gateway = Gateway(payable(address(proxy)));
 

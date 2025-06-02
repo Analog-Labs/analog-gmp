@@ -3,7 +3,7 @@
 
 pragma solidity >=0.8.0;
 
-uint8 constant GMP_VERSION = 1;
+uint8 constant GMP_VERSION = 0;
 
 /**
  * @dev Maximum size of the GMP payload
@@ -16,8 +16,8 @@ uint256 constant MAX_PAYLOAD_SIZE = 0x6000;
  * @param xCoord affine x-coordinate
  */
 struct TssKey {
-    uint8 yParity;
     uint256 xCoord;
+    uint8 yParity;
     uint16 numSessions;
 }
 

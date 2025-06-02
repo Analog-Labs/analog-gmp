@@ -69,7 +69,25 @@ contract GatewayTest is Test {
         assertEq(gmp.messageId(), msgId);
     }
 
+    function _sortTssKeys(TssKey[] memory keys) private pure {
+        // sort keys by xCoord
+        for (uint256 i = 0; i < keys.length; i++) {
+            for (uint256 j = i + 1; j < keys.length; j++) {
+                if (keys[i].xCoord > keys[j].xCoord) {
+                    TssKey memory temp = keys[i];
+                    keys[i] = keys[j];
+                    keys[j] = temp;
+                }
+            }
+        }
+    }
+
     function test_setShards() external {
+        // start without any shards
+        TssKey[] memory shards = gateway.shards();
+        TestUtils.prankAdmin();
+        gateway.setShards(new TssKey[](0), shards);
+
         TssKey[] memory keys = new TssKey[](10);
 
         // create random shard keys
@@ -78,6 +96,7 @@ contract GatewayTest is Test {
             signer = new Signer(i + 1);
             keys[i] = TssKey({yParity: signer.yParity(), xCoord: signer.xCoord(), numSessions: 1});
         }
+        _sortTssKeys(keys);
 
         // Only admin can set shards keys
         address notAdmin = address(0x0000000000000000000000000000000000000000);
@@ -90,7 +109,8 @@ contract GatewayTest is Test {
         gateway.setShards(keys, new TssKey[](0));
 
         // Check shards keys
-        TssKey[] memory shards = gateway.shards();
+        shards = gateway.shards();
+        _sortTssKeys(shards);
         for (uint256 i = 0; i < shards.length; i++) {
             assertEq(shards[i].xCoord, keys[i].xCoord);
             assertEq(shards[i].yParity, keys[i].yParity);
@@ -98,13 +118,21 @@ contract GatewayTest is Test {
 
         // // Replace one shard key
         signer = new Signer(12345);
-        keys[0].xCoord = signer.xCoord();
-        keys[0].yParity = signer.yParity();
+        TssKey memory newKey = TssKey({ xCoord: signer.xCoord(), yParity: signer.yParity(), numSessions: 1 });
+        TssKey[] memory register = new TssKey[](1);
+        register[0] = newKey;
+        TssKey[] memory revoke = new TssKey[](1);
+        revoke[0] = keys[0];
+
         TestUtils.prankAdmin();
-        gateway.setShards(keys, new TssKey[](0));
+        gateway.setShards(register, revoke);
+
+        keys[0] = newKey;
+        _sortTssKeys(keys);
 
         // Check shards keys
         shards = gateway.shards();
+        _sortTssKeys(shards);
         for (uint256 i = 0; i < shards.length; i++) {
             assertEq(shards[i].xCoord, keys[i].xCoord);
             assertEq(shards[i].yParity, keys[i].yParity);
