@@ -10,6 +10,7 @@ import {Signer} from "frost-evm/sol/Signer.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
+import {ShardStore} from "../src/storage/Shards.sol";
 import {IGateway} from "gmp/src/IGateway.sol";
 import {IGmpReceiver} from "gmp/src/IGmpReceiver.sol";
 import {
@@ -129,7 +130,7 @@ contract GatewayTest is Test {
         // set a shard which is already registered and verify that is does not emit a event.
         TestUtils.prankAdmin();
         vm.recordLogs();
-        gateway.setShards(keys);
+        gateway.setShards(keys, new TssKey[](0));
         Vm.Log[] memory entries = vm.getRecordedLogs();
         assertEq(entries.length, 0);
 
@@ -148,14 +149,14 @@ contract GatewayTest is Test {
         }
         vm.recordLogs();
         vm.expectEmit(false, false, false, true);
-        emit ShardStore.ShardUnregistered(firstHalf[0]);
+        emit ShardStore.ShardRevoked(firstHalf[0]);
         gateway.setShards(new TssKey[](0), firstHalf);
 
         // register first half keys and check if the other half is unregistered
         TestUtils.prankAdmin();
         vm.expectEmit(false, false, false, true);
         emit ShardStore.ShardRegistered(firstHalf[0]);
-        emit ShardStore.ShardUnregistered(secondHalf[0]);
+        emit ShardStore.ShardRevoked(secondHalf[0]);
         gateway.setShards(firstHalf, secondHalf);
     }
 
