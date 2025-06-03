@@ -177,17 +177,6 @@ library PrimitiveUtils {
     }
 
     /**
-     * @dev Hashes two 256-bit words without memory allocation, uses the memory between 0x00~0x40.
-     */
-    function hash(uint256 a, uint256 b) internal pure returns (bytes32 h) {
-        assembly ("memory-safe") {
-            mstore(0x00, a)
-            mstore(0x20, b)
-            h := keccak256(0x00, 0x40)
-        }
-    }
-
-    /**
      * @dev Hashes three 256-bit words without memory allocation, uses the memory between 0x00~0x60.
      *
      * The reserverd memory region `0x40~0x60` is restored to its previous state after execution.
@@ -295,12 +284,6 @@ library PrimitiveUtils {
             id := keccak256(offset1, 0xe0)
             mstore(offset1, backup1)
         }
-    }
-
-    function opHash(GmpMessage memory message) internal pure returns (bytes32) {
-        bytes32 msgId = PrimitiveUtils.messageId(message);
-        bytes32 dataHash = keccak256(message.data);
-        return keccak256(abi.encode(msgId, dataHash));
     }
 
     /**

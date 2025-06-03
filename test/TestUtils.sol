@@ -5,7 +5,7 @@ pragma solidity >=0.8.0;
 
 import {VmSafe, Vm} from "forge-std/Vm.sol";
 import {console} from "forge-std/console.sol";
-import {Signer} from "frost-evm/sol/Signer.sol";
+import {Signer} from "frost-evm/Signer.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
 import {GasSpender} from "./GasSpender.sol";
@@ -47,13 +47,15 @@ contract SigningHash {
                 assembly {
                     gmp := add(params.offset, 0x20)
                 }
-                operationHash = gmp.opHash();
+                bytes32 msgId = PrimitiveUtils.messageId(gmp);
+                bytes32 dataHash = keccak256(gmp.data);
+                operationHash = keccak256(abi.encode(msgId, dataHash));
             } else {
                 TssKey calldata tssKey;
                 assembly {
                     tssKey := params.offset
                 }
-                operationHash = PrimitiveUtils.hash(tssKey.yParity, tssKey.xCoord);
+                operationHash = PrimitiveUtils.hash(tssKey.yParity, tssKey.xCoord, tssKey.numSessions);
             }
             rootHash = PrimitiveUtils.hash(uint256(rootHash), uint256(op.command), uint256(operationHash));
         }
