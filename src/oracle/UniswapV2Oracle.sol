@@ -66,8 +66,8 @@ contract UniswapV2Oracle is IOracle {
         uint8 decimalsB = IERC20(tokenB).decimals();
         console.log("decimal b", decimalsB);
 
-        uint256 price = (amount * reserveB * (10 ** decimalsB)) / (reserveA * (10 ** decimalsA));
-        console.log("price calculated is", price);
+        // fix price computation
+        uint156 price = 0;
 
         return price;
     }
