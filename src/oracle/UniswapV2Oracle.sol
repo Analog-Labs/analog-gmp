@@ -33,6 +33,10 @@ contract UniswapV2Oracle is IOracle {
         return getTokenValueInUSDT(token, 10 ** IERC20(token).decimals());
     }
 
+    function getPairAddress(address tokenA, address tokenB) external view returns (address) {
+        return IUniswapV2Factory(factory).getPair(tokenA, tokenB);
+    }
+
     function getTokenValueInUSDT(address token, uint256 amount) public view returns (uint256, uint256) {
         address pairAddress = IUniswapV2Factory(factory).getPair(token, USDT);
         require(pairAddress != address(0), "Pair does not exist");
@@ -51,9 +55,6 @@ contract UniswapV2Oracle is IOracle {
         // and pool have 10 eth and 30000 usd then
         //                1e18  * 30000USD    * 10 ** 1e18             / 10eth         * 10 ** 1e6
         uint256 price = (amount * reserveUSDT * (10 ** tokenDecimals)) / (reserveToken * (10 ** usdtDecimals));
-        console.log("price: {}", price);
-        console.log("reserve0: {}", reserve0);
-        console.log("reserve1: {}", reserve1);
 
         uint256 scale = 10 ** tokenDecimals;
         uint256 integer_part = price / scale;
@@ -61,7 +62,24 @@ contract UniswapV2Oracle is IOracle {
         return (integer_part, fraction);
     }
 
-    function getPairAddress(address tokenA, address tokenB) external view returns (address) {
-        return IUniswapV2Factory(factory).getPair(tokenA, tokenB);
+    function getAmountIn(address tokenIn, address tokenOut, uint256 amountOut) external view returns (uint256) {
+        address pairAddress = IUniswapV2Factory(factory).getPair(tokenIn, tokenOut);
+        require(pairAddress != address(0), "Pair does not exist");
+
+        IUniswapV2Pair pair = IUniswapV2Pair(pairAddress);
+
+        (uint112 reserve0, uint112 reserve1,) = pair.getReserves();
+        require(reserve0 > 0 && reserve1 > 0, "Insufficient liquidity");
+
+        bool isToken0In = pair.token0() == tokenIn;
+        (uint256 reserveIn, uint256 reserveOut) =
+            isToken0In ? (uint256(reserve0), uint256(reserve1)) : (uint256(reserve1), uint256(reserve0));
+
+        uint256 numerator = reserveIn * amountOut * 1000;
+        // uniswap v2 fee is 0.3%
+        uint256 denominator = (reserveOut - amountOut) * 997;
+        uint256 amountIn = (numerator / denominator) + 1;
+
+        return amountIn;
     }
 }

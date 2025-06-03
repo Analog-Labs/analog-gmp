@@ -6,10 +6,12 @@ pragma solidity >=0.8.0;
 import {Test, console} from "forge-std/Test.sol";
 import {UniswapV2Oracle} from "src/oracle/UniswapV2Oracle.sol";
 
+interface IERC20 {
+    function decimals() external view returns (uint8);
+}
+
 contract UniswapV2OracleTest is Test {
     UniswapV2Oracle oracle;
-    // IUniswapV2Factory factory;
-    // IUniswapV2Pair pair;
 
     address constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address constant USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
@@ -21,7 +23,13 @@ contract UniswapV2OracleTest is Test {
     }
 
     function testGetNativePrice() public view {
-        (uint256 ints, uint256 fraction) = oracle.getPrice(WETH);
-        console.log("WETH/USDT Price:", ints, fraction);
+        (uint256 ints,) = oracle.getPrice(WETH);
+        // same query as above one
+        (uint256 usdtRequired) = oracle.getAmountIn(USDT, WETH, 1 ether);
+        uint256 usdtDecimals = IERC20(USDT).decimals();
+        uint256 usdtScale = 10 ** usdtDecimals;
+        uint256 usdtRequiredForOneEth = usdtRequired / usdtScale;
+        // adding 20 threshold due to algo of uniswap v2
+        require(usdtRequiredForOneEth - ints < 20);
     }
 }
