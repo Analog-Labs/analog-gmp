@@ -21,7 +21,7 @@ contract UniswapV2OracleTest is Test {
     }
 
     function testGetNativePrice() public view {
-        uint256 price = oracle.getNativePrice();
-        console.log("WETH/USDT Price:", price);
+        (uint256 ints, uint256 fraction) = oracle.getNativePrice();
+        console.log("WETH/USDT Price:", ints, fraction);
     }
 }

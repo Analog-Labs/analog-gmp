@@ -31,11 +31,11 @@ contract UniswapV2Oracle is IOracle {
         USDT = _usdt;
     }
 
-    function getNativePrice() external view override returns (uint256) {
+    function getNativePrice() external view override returns (uint256, uint256) {
         return getTokenPrice(WETH, USDT, 1 ether);
     }
 
-    function getTokenPrice(address tokenA, address tokenB, uint256 amount) public view returns (uint256) {
+    function getTokenPrice(address tokenA, address tokenB, uint256 amount) public view returns (uint256, uint256) {
         address pairAddress = IUniswapV2Factory(factory).getPair(tokenA, tokenB);
         console.log("pair address: ", pairAddress);
         require(pairAddress != address(0), "Pair does not exist");
@@ -66,10 +66,15 @@ contract UniswapV2Oracle is IOracle {
         uint8 decimalsB = IERC20(tokenB).decimals();
         console.log("decimal b", decimalsB);
 
-        // fix price computation
-        uint156 price = 0;
+        // e.g. lets say we wanna get price fo 1eth
+        // and pool have 10 eth and 30000 usd then
+        //                1e18  * 30000USD *  10 ** 1e18        / 10eth     *  10 ** 1e6
+        uint256 price = (amount * reserveB * (10 ** decimalsA)) / (reserveA * (10 ** decimalsB));
 
-        return price;
+        uint256 scale = 10 ** decimalsA;
+        uint256 integer_part = price / scale;
+        uint256 fraction = price % scale;
+        return (integer_part, fraction);
     }
 
     function getPairAddress(address tokenA, address tokenB) external view returns (address) {
