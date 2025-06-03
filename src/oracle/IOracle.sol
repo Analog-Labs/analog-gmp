@@ -4,5 +4,5 @@
 pragma solidity >=0.8.0;
 
 interface IOracle {
-    function getNativePrice() external view returns (uint256, uint256);
+    function getPrice(address token) external view returns (uint256, uint256);
 }

@@ -17,11 +17,11 @@ contract UniswapV2OracleTest is Test {
 
     function setUp() public {
         vm.createSelectFork({urlOrAlias: "https://eth.meowrpc.com"});
-        oracle = new UniswapV2Oracle(FACTORY, WETH, USDT);
+        oracle = new UniswapV2Oracle(FACTORY, USDT);
     }
 
     function testGetNativePrice() public view {
-        (uint256 ints, uint256 fraction) = oracle.getNativePrice();
+        (uint256 ints, uint256 fraction) = oracle.getPrice(WETH);
         console.log("WETH/USDT Price:", ints, fraction);
     }
 }
