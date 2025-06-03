@@ -326,7 +326,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         assembly {
             publicKey := params.offset
         }
-        operationHash = PrimitiveUtils.hash(publicKey.yParity, publicKey.xCoord);
+        operationHash = PrimitiveUtils.hash(publicKey.yParity, publicKey.xCoord, publicKey.numSessions);
 
         if (dry) {
             return operationHash;
@@ -344,7 +344,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         assembly {
             publicKey := params.offset
         }
-        operationHash = PrimitiveUtils.hash(publicKey.yParity, publicKey.xCoord);
+        operationHash = PrimitiveUtils.hash(publicKey.yParity, publicKey.xCoord, publicKey.numSessions);
 
         if (dry) {
             return operationHash;
