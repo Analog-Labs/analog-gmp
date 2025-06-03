@@ -3,7 +3,6 @@
 
 pragma solidity >=0.8.0;
 
-import {Signer} from "frost-evm/sol/Signer.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -11,7 +10,7 @@ import {Gas, TestUtils} from "./TestUtils.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
-import {IGmpReceiver} from "gmp/src/IGmpReceiver.sol";
+import {IGmpReceiver} from "gmp/IGmpReceiver.sol";
 import {
     Command,
     GatewayOp,

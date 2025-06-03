@@ -3,8 +3,8 @@
 
 pragma solidity >=0.8.0;
 
-import {IGmpReceiver} from "gmp/src/IGmpReceiver.sol";
-import {IGateway} from "gmp/src/IGateway.sol";
+import {IGmpReceiver} from "gmp/IGmpReceiver.sol";
+import {IGateway} from "gmp/IGateway.sol";
 import {console} from "forge-std/console.sol";
 
 contract GmpProxy is IGmpReceiver {

@@ -3,12 +3,12 @@
 
 pragma solidity >=0.8.0;
 
-import {Schnorr} from "frost-evm/sol/Schnorr.sol";
+import {Schnorr} from "frost-evm/Schnorr.sol";
 import {GasUtils} from "./GasUtils.sol";
 import {RouteStore} from "./storage/Routes.sol";
 import {ShardStore} from "./storage/Shards.sol";
-import {IGateway} from "gmp/src/IGateway.sol";
-import {IGmpReceiver} from "gmp/src/IGmpReceiver.sol";
+import {IGateway} from "gmp/IGateway.sol";
+import {IGmpReceiver} from "gmp/IGmpReceiver.sol";
 import {
     Command,
     Batch,
@@ -218,7 +218,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
 
             bytes32 messageId = message.messageId();
             emit GmpCreated(
-                messageId, source, destinationAddress, network, gasLimit, uint64(gas), nextNonce, message.data
+                messageId, source, destinationAddress, network, gasLimit, nextNonce, message.data
             );
             return messageId;
         }

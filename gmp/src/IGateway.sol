@@ -14,7 +14,6 @@ interface IGateway {
      * @param destinationAddress the target address on the destination chain.
      * @param destinationNetwork the target chain where the contract call will be made.
      * @param gasLimit the gas limit available for the contract call
-     * @param gasCost the gas limit available for the contract call
      * @param nonce Sequence number per sender, used to guarantee each message is unique.
      * @param data message data with no specified format
      */
@@ -24,7 +23,6 @@ interface IGateway {
         address indexed destinationAddress,
         uint16 destinationNetwork,
         uint64 gasLimit,
-        uint64 gasCost,
         uint64 nonce,
         bytes data
     );

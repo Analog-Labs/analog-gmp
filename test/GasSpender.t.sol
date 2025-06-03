@@ -5,7 +5,7 @@ pragma solidity >=0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {GasSpender} from "./GasSpender.sol";
-import {IGmpReceiver} from "gmp/src/IGmpReceiver.sol";
+import {IGmpReceiver} from "gmp/IGmpReceiver.sol";
 
 contract GasSpenderTest is Test {
     IGmpReceiver internal receiver;

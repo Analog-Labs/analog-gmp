@@ -5,14 +5,14 @@ pragma solidity >=0.8.0;
 
 import {Test, console, Vm} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
+import {Signer} from "frost-evm/Signer.sol";
 import {TestUtils} from "./TestUtils.sol";
-import {Signer} from "frost-evm/sol/Signer.sol";
 import {GasSpender} from "./GasSpender.sol";
 import {Gateway} from "../src/Gateway.sol";
 import {GasUtils} from "../src/GasUtils.sol";
 import {ShardStore} from "../src/storage/Shards.sol";
-import {IGateway} from "gmp/src/IGateway.sol";
-import {IGmpReceiver} from "gmp/src/IGmpReceiver.sol";
+import {IGateway} from "gmp/IGateway.sol";
+import {IGmpReceiver} from "gmp/IGmpReceiver.sol";
 import {
     Batch,
     GmpMessage,
@@ -285,7 +285,7 @@ contract GatewayTest is Test {
         // Submit message with sufficient funds
         vm.expectEmit(true, true, true, true);
         emit IGateway.GmpCreated(
-            id, gmp.source, gmp.dest, gmp.destNetwork, uint64(gmp.gasLimit), uint64(value), gmp.nonce, gmp.data
+            id, gmp.source, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.nonce, gmp.data
         );
         vm.startPrank(sender);
         bytes32 rid = gateway.submitMessage{value: value}(gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data);
@@ -299,7 +299,7 @@ contract GatewayTest is Test {
         // Expect event
         vm.expectEmit(true, true, true, true);
         emit IGateway.GmpCreated(
-            id, gmp.source, gmp.dest, gmp.destNetwork, uint64(gmp.gasLimit), uint64(value), gmp.nonce, gmp.data
+            id, gmp.source, gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.nonce, gmp.data
         );
         vm.startPrank(sender);
         rid = gateway.submitMessage{value: value}(gmp.dest, gmp.destNetwork, gmp.gasLimit, gmp.data);
