@@ -16,7 +16,7 @@ library RouteStore {
      * @dev Namespace of the routes storage `analog.one.gateway.routes`.
      * keccak256(abi.encode(uint256(keccak256("analog.one.gateway.routes")) - 1)) & ~bytes32(uint256(0xff));
      */
-    bytes32 internal constant _EIP7201_NAMESPACE = 0xb184f2aad520cf7f1f1270909517c75ae33cdf2bd7d32b997a96577f11a48800;
+    bytes32 private constant _EIP7201_NAMESPACE = 0xb184f2aad520cf7f1f1270909517c75ae33cdf2bd7d32b997a96577f11a48800;
 
     /**
      * @dev Network info stored in the Gateway Contract
@@ -31,8 +31,8 @@ library RouteStore {
         uint128 baseFee;
         uint256 relativeGasPriceNumerator;
         uint256 relativeGasPriceDenominator;
-        uint256 gasCoef0;
-        uint256 gasCoef1;
+        uint64 gasCoef0;
+        uint64 gasCoef1;
     }
 
     /**
@@ -51,8 +51,8 @@ library RouteStore {
         uint256 relativeGasPriceDenominator,
         uint128 baseFee,
         uint64 gasLimit,
-        uint256 gasCoef0,
-        uint256 gasCoef1
+        uint64 gasCoef0,
+        uint64 gasCoef1
     );
 
     /**
@@ -69,7 +69,6 @@ library RouteStore {
     }
 
     error RouteNotExists(uint16 id);
-    error IndexOutOfBounds(uint256 index);
     error ZeroGatewayForNewRoute();
     error InvalidRouteParameters();
 
@@ -77,67 +76,6 @@ library RouteStore {
         assembly {
             $.slot := _EIP7201_NAMESPACE
         }
-    }
-
-    /**
-     * @dev Returns true if the value is in the set. O(1).
-     */
-    function has(MainStorage storage store, uint16 networkId) internal view returns (bool) {
-        return store.routeIds.contains(uint256(networkId));
-    }
-
-    /**
-     * @dev Get or create a value. O(1).
-     *
-     * Returns true if the value was added to the set, that is if it was not
-     * already present.
-     */
-    function getOrAdd(MainStorage storage store, uint16 networkId) private returns (bool, NetworkInfo storage) {
-        bool exists = store.routeIds.contains(uint256(networkId));
-        if (!exists) {
-            store.routeIds.set(uint256(networkId), 1);
-        }
-        return (!exists, store.routes[networkId]);
-    }
-
-    /**
-     * @dev Removes a value from a set. O(1).
-     *
-     * Returns true if the value was removed from the set, that is if it was
-     * present.
-     */
-    function remove(MainStorage storage store, uint16 id) internal returns (bool) {
-        bool existed = store.routeIds.remove(uint256(id));
-        if (existed) {
-            delete store.routes[id];
-        }
-        return existed;
-    }
-
-    /**
-     * @dev Returns the number of values on the set. O(1).
-     */
-    function length(MainStorage storage store) internal view returns (uint256) {
-        return store.routeIds.length();
-    }
-
-    /**
-     * @dev Returns the value stored at position `index` in the set. O(1).
-     *
-     * Note that there are no guarantees on the ordering of values inside the
-     * array, and it may change when more values are added or removed.
-     *
-     * Requirements:
-     *
-     * - `index` must be strictly less than {length}.
-     */
-    function at(MainStorage storage store, uint256 index) internal view returns (uint16, NetworkInfo storage) {
-        if (index >= store.routeIds.length()) {
-            revert IndexOutOfBounds(index);
-        }
-        (uint256 key,) = store.routeIds.at(index);
-        uint16 networkId = uint16(key);
-        return (networkId, store.routes[networkId]);
     }
 
     /**
@@ -153,28 +91,21 @@ library RouteStore {
         return store.routes[id];
     }
 
-    function createOrUpdateRoute(MainStorage storage store, Route calldata route) internal {
-        (bool created, NetworkInfo storage stored) = getOrAdd(store, route.networkId);
-        if (created) {
-            if (route.gateway == bytes32(0)) revert ZeroGatewayForNewRoute();
-            stored.gateway = route.gateway;
+    function insert(MainStorage storage store, Route calldata route) internal {
+        uint256 networkId = uint256(route.networkId);
+        NetworkInfo storage stored = store.routes[route.networkId];
+
+        if (!store.routeIds.contains(networkId)) {
+            store.routeIds.set(networkId, 1);
         }
 
-        if (route.relativeGasPriceDenominator == 0 && route.relativeGasPriceNumerator > 0) {
-            revert InvalidRouteParameters();
-        }
-
-        // Update gas limit if it's not zero
-        if (route.gasLimit > 0) stored.gasLimit = route.gasLimit;
-
-        // Update relative gas price and base fee if denominator is greater than zero
-        if (route.relativeGasPriceDenominator > 0) {
-            stored.relativeGasPriceNumerator = route.relativeGasPriceNumerator;
-            stored.relativeGasPriceDenominator = route.relativeGasPriceDenominator;
-            stored.baseFee = route.baseFee;
-            stored.gasCoef0 = route.gasCoef0;
-            stored.gasCoef1 = route.gasCoef1;
-        }
+        stored.gateway = route.gateway;
+        stored.gasLimit = route.gasLimit;
+        stored.baseFee = route.baseFee;
+        stored.relativeGasPriceNumerator = route.relativeGasPriceNumerator;
+        stored.relativeGasPriceDenominator = route.relativeGasPriceDenominator;
+        stored.gasCoef0 = route.gasCoef0;
+        stored.gasCoef1 = route.gasCoef1;
 
         emit RouteUpdated(
             route.networkId,
@@ -195,7 +126,7 @@ library RouteStore {
      * this function has an unbounded cost, and using it as part of a state-changing function may render the function
      * uncallable if the set grows to a point where copying to memory consumes too much gas to fit in a block.
      */
-    function listRoutes(MainStorage storage store) internal view returns (Route[] memory) {
+    function list(MainStorage storage store) internal view returns (Route[] memory) {
         uint256 len = store.routeIds.length();
         Route[] memory routes = new Route[](len);
 

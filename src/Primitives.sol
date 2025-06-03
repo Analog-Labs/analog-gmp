@@ -3,7 +3,7 @@
 
 pragma solidity >=0.8.0;
 
-uint8 constant GMP_VERSION = 1;
+uint8 constant GMP_VERSION = 0;
 
 /**
  * @dev Maximum size of the GMP payload
@@ -16,8 +16,9 @@ uint256 constant MAX_PAYLOAD_SIZE = 0x6000;
  * @param xCoord affine x-coordinate
  */
 struct TssKey {
-    uint8 yParity;
     uint256 xCoord;
+    uint8 yParity;
+    uint16 numSessions;
 }
 
 /**
@@ -88,8 +89,6 @@ struct Batch {
     uint8 version;
     /// @dev The batch identifier
     uint64 batchId;
-    /// @dev The number of signing sessions
-    uint16 numSigningSessions;
     /// @dev The ops to execute
     GatewayOp[] ops;
 }
@@ -109,8 +108,8 @@ struct Route {
     bytes32 gateway;
     uint256 relativeGasPriceNumerator;
     uint256 relativeGasPriceDenominator;
-    uint256 gasCoef0;
-    uint256 gasCoef1;
+    uint64 gasCoef0;
+    uint64 gasCoef1;
 }
 
 /**
@@ -155,12 +154,6 @@ library PrimitiveUtils {
      * Reference: https://docs.soliditylang.org/en/v0.8.28/internals/layout_in_memory.html
      */
     uint256 internal constant ALLOCATED_MEMORY = 0x40;
-
-    /**
-     * @dev Solidity's reserved location for the scratch memory.
-     * Reference: https://docs.soliditylang.org/en/v0.8.28/internals/layout_in_memory.html
-     */
-    uint256 internal constant SCRATCH_MEMORY = 0x60;
 
     /**
      * @dev Read the current allocated size (a.k.a free memory pointer).
@@ -211,36 +204,6 @@ library PrimitiveUtils {
             mstore(ALLOCATED_MEMORY, c)
             h := keccak256(0x00, 0x60)
 
-            // Restore the free memory pointer
-            mstore(ALLOCATED_MEMORY, freeMemBackup)
-        }
-    }
-
-    /**
-     * @dev Hashes four 256-bit words without memory allocation, uses the memory between 0x00~0x80.
-     *
-     * The reserverd memory region `0x40~0x80` is restored to its previous state after execution.
-     * See https://docs.soliditylang.org/en/v0.8.28/internals/layout_in_memory.html for more details.
-     */
-    function hash(uint256 a, uint256 b, uint256 c, uint256 d) internal pure returns (bytes32 h) {
-        assembly ("memory-safe") {
-            mstore(0x00, a)
-            mstore(0x20, b)
-
-            // Backup the free memory pointer
-            let freeMemBackup := mload(ALLOCATED_MEMORY)
-            mstore(ALLOCATED_MEMORY, c)
-            {
-                // Backup the scratch space 0x60
-                let backup := mload(0x60)
-
-                // Compute the hash
-                mstore(SCRATCH_MEMORY, d)
-                h := keccak256(0x00, 0x80)
-
-                // Restore the scratch space 0x60
-                mstore(SCRATCH_MEMORY, backup)
-            }
             // Restore the free memory pointer
             mstore(ALLOCATED_MEMORY, freeMemBackup)
         }

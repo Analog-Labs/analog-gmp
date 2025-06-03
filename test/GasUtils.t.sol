@@ -43,21 +43,17 @@ contract GasUtilsTest is Test {
     using PrimitiveUtils for address;
     using PrimitiveUtils for uint256;
 
-    VmSafe.Wallet internal admin;
     Gateway internal gateway;
     IGmpReceiver internal receiver;
 
+    bytes32 private constant SENDER = bytes32(uint256(0xdead_beef));
     uint16 private constant SRC_NETWORK_ID = 1234;
-    uint16 internal constant DEST_NETWORK_ID = 1337;
+    uint16 private constant DEST_NETWORK_ID = 1337;
 
     string path = "gas.csv";
 
     constructor() {
-        admin = vm.createWallet(secret);
-        vm.deal(admin.addr, 100 ether);
-        gateway = TestUtils.setupGateway(admin, DEST_NETWORK_ID);
-        TestUtils.setMockShards(admin, address(gateway), admin);
-        vm.deal(admin.addr, 100 ether);
+        gateway = TestUtils.setupGateway(DEST_NETWORK_ID);
         receiver = IGmpReceiver(new GasSpender());
         vm.writeFile(path, "messageSize, executeGas, reimbursmentGas, baseGas\n");
     }
@@ -65,7 +61,7 @@ contract GasUtilsTest is Test {
     function test_calldata_size(uint16 messageSize) external {
         bytes memory data = new bytes(messageSize);
         GmpMessage memory gmp = GmpMessage({
-            source: admin.addr.toSender(),
+            source: SENDER,
             srcNetwork: SRC_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
@@ -74,7 +70,7 @@ contract GasUtilsTest is Test {
             data: data
         });
         Batch memory batch = TestUtils.makeBatch(1, gmp);
-        Signature memory sig = TestUtils.sign(admin, gateway, batch, nonce);
+        Signature memory sig = TestUtils.sign(TestUtils.shard1, gateway, batch);
         bytes memory call = abi.encodeCall(gateway.execute, (sig, batch));
         assertEq(call.length, GasUtils.calldataSize(messageSize));
     }
@@ -87,15 +83,16 @@ contract GasUtilsTest is Test {
         vm.assume(gasLimit >= 5000);
         vm.assume(messageSize <= (0x6000 - 32));
         messageSize += 32;
-        VmSafe.Wallet memory sender = vm.createWallet(0xdead_beef);
-        vm.deal(sender.addr, 10 ether);
+
+        VmSafe.Wallet memory submitter = vm.createWallet(uint256(keccak256("submitter")));
+        vm.deal(submitter.addr, 10 ether);
 
         bytes memory data = new bytes(messageSize);
         assembly {
             mstore(add(data, 32), gasLimit)
         }
         GmpMessage memory gmp = GmpMessage({
-            source: sender.addr.toSender(),
+            source: SENDER,
             srcNetwork: SRC_NETWORK_ID,
             dest: address(receiver),
             destNetwork: DEST_NETWORK_ID,
@@ -103,10 +100,8 @@ contract GasUtilsTest is Test {
             nonce: gasLimit,
             data: data
         });
-        GatewayOp[] memory ops = new GatewayOp[](1);
-        ops[0] = GatewayOp({command: Command.GMP, params: abi.encode(gmp)});
-        Batch memory batch = Batch({version: GMP_VERSION, batchId: 0, numSigningSessions: 2, ops: ops});
-        Signature memory sig = TestUtils.sign(admin, gateway, batch, nonce);
+        Batch memory batch = TestUtils.makeBatch(0, gmp);
+        Signature memory sig = TestUtils.sign(TestUtils.shard2, gateway, batch);
 
         console.log("messageSize", messageSize);
         console.log("gasLimit", gasLimit);
@@ -116,28 +111,28 @@ contract GasUtilsTest is Test {
         console.log("baseGas", baseGas);
 
         // execute
-        uint256 balanceBefore = admin.addr.balance;
-        vm.startPrank(admin.addr);
+        uint256 balanceBefore = submitter.addr.balance;
+        vm.prank(submitter.addr);
         gateway.execute(sig, batch);
         VmSafe.Gas memory gas = vm.lastCallGas();
-        vm.stopPrank();
-        uint256 balanceAfter = admin.addr.balance;
+        console.log('callGas', gas.gasTotalUsed - gasLimit);
+        uint256 balanceAfter = submitter.addr.balance;
 
         // check message executed
         assertEq(uint256(gateway.messages(gmp.messageId())), uint256(GmpStatus.SUCCESS));
         // check reimbursment
-        assertEq(balanceAfter - balanceBefore - baseGas - gas.gasTotalUsed, 0, "Balance should not change");
+        assertEq(balanceAfter - balanceBefore - baseGas - gasLimit, gas.gasTotalUsed - gasLimit, "Balance should not change");
 
         // execute second signing session
-        balanceBefore = admin.addr.balance;
-        vm.startPrank(admin.addr);
+        balanceBefore = submitter.addr.balance;
+        vm.prank(submitter.addr);
         gateway.execute(sig, batch);
         gas = vm.lastCallGas();
-        vm.stopPrank();
-        balanceAfter = admin.addr.balance;
+        console.log('callGas', gas.gasTotalUsed);
+        balanceAfter = submitter.addr.balance;
 
         // check reimbursment
-        assertEq(balanceAfter - balanceBefore - baseGas - gas.gasTotalUsed, 0, "Balance should not change");
+        assertEq(balanceAfter - balanceBefore - baseGas, gas.gasTotalUsed, "Balance should not change");
 
         // check replay reverts
         vm.expectRevert("batch already executed");

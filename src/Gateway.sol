@@ -56,18 +56,6 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         bytes32 indexed id, bytes32 indexed source, address indexed dest, GmpStatus status, bytes32 result
     );
 
-    /**
-     * @dev Emitted when shards are registered.
-     * @param keys registered shard's keys
-     */
-    event ShardsRegistered(TssKey[] keys);
-
-    /**
-     * @dev Emitted when shards are unregistered.
-     * @param keys unregistered shard's keys
-     */
-    event ShardsUnregistered(TssKey[] keys);
-
     // number of signing sessions per batch
     mapping(uint64 => uint16) internal _signingSessions;
 
@@ -112,6 +100,8 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         transferOwnership(newAdmin);
     }
 
+    function _include_gmp_message(GmpMessage memory) external {}
+
     /**
      * Withdraw funds from the gateway contract
      * @param amount The amount to withdraw
@@ -142,21 +132,19 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
      * @dev List all shards.
      */
     function shards() external view returns (TssKey[] memory) {
-        return ShardStore.getMainStorage().listShards();
+        return ShardStore.getMainStorage().list();
     }
 
     /**
      * @dev Register Shards in batch.
      */
-    function setShards(TssKey[] calldata publicKeys) external onlyOwner {
-        (TssKey[] memory created, TssKey[] memory revoked) = ShardStore.getMainStorage().replaceTssKeys(publicKeys);
-
-        if (created.length > 0) {
-            emit ShardsRegistered(created);
+    function setShards(TssKey[] calldata register, TssKey[] calldata revoke) external onlyOwner {
+        ShardStore.MainStorage storage store = ShardStore.getMainStorage();
+        for (uint256 i = 0; i < register.length; i++) {
+            store.register(register[i]);
         }
-
-        if (revoked.length > 0) {
-            emit ShardsUnregistered(revoked);
+        for (uint256 i = 0; i < revoke.length; i++) {
+            store.revoke(revoke[i]);
         }
     }
 
@@ -164,14 +152,14 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
      * @dev List all routes.
      */
     function routes() external view returns (Route[] memory) {
-        return RouteStore.getMainStorage().listRoutes();
+        return RouteStore.getMainStorage().list();
     }
 
     /**
      * @dev Create or update a single route
      */
     function setRoute(Route calldata info) external onlyOwner {
-        RouteStore.getMainStorage().createOrUpdateRoute(info);
+        RouteStore.getMainStorage().insert(info);
     }
 
     // IGateway implementation
@@ -344,12 +332,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
             return operationHash;
         }
 
-        bool isSuccess = ShardStore.getMainStorage().register(publicKey);
-        if (isSuccess) {
-            TssKey[] memory keys = new TssKey[](1);
-            keys[0] = publicKey;
-            emit ShardsRegistered(keys);
-        }
+        ShardStore.getMainStorage().register(publicKey);
     }
 
     /**
@@ -367,12 +350,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
             return operationHash;
         }
 
-        bool isSuccess = ShardStore.getMainStorage().revoke(publicKey);
-        if (isSuccess) {
-            TssKey[] memory keys = new TssKey[](1);
-            keys[0] = publicKey;
-            emit ShardsUnregistered(keys);
-        }
+        ShardStore.getMainStorage().revoke(publicKey);
     }
 
     /**
@@ -478,10 +456,14 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
     function execute(Signature calldata signature, Batch calldata batch) external {
         uint256 initialGas = gasleft();
 
+        // Load shard from storage
+        ShardStore.ShardInfo storage signer = ShardStore.getMainStorage().get(signature.xCoord);
+
         uint16 numSigningSessions = _signingSessions[batch.batchId];
         bool dry;
         if (numSigningSessions == 0) {
-            numSigningSessions = batch.numSigningSessions;
+            numSigningSessions = signer.numSessions;
+            emit BatchExecuted(batch.batchId);
         } else if (numSigningSessions == 1) {
             revert("batch already executed");
         } else if (numSigningSessions > 1) {
@@ -492,16 +474,12 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
 
         // Execute the commands and compute the operations root hash
         (, bytes32 rootHash) = _executeCommands(batch.ops, dry);
-        emit BatchExecuted(batch.batchId);
 
         // Compute the Batch signing hash
-        rootHash = PrimitiveUtils.hash(batch.version, batch.batchId, batch.numSigningSessions, uint256(rootHash));
+        rootHash = PrimitiveUtils.hash(batch.version, batch.batchId, uint256(rootHash));
         bytes32 signingHash = keccak256(
             abi.encodePacked("Analog GMP v2", networkId(), bytes32(uint256(uint160(address(this)))), rootHash)
         );
-
-        // Load shard from storage
-        ShardStore.ShardInfo storage signer = ShardStore.getMainStorage().get(signature);
 
         // Verify Signature
         require(
@@ -512,7 +490,7 @@ contract Gateway is IGateway, UUPSUpgradeable, OwnableUpgradeable {
         // Refund the chronicle gas
         unchecked {
             // Extra gas overhead used to execute the refund logic + selector overhead
-            uint256 gasUsed = 2890;
+            uint256 gasUsed = 2968;
 
             // Compute the gas used + base cost + proxy overhead
             gasUsed += GasUtils.txBaseGas();

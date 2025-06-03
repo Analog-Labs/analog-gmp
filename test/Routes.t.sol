@@ -15,15 +15,15 @@ contract RouteStoreTest is Test {
     uint128 constant TEST_BASE_FEE = 0.01 ether;
     uint256 constant TEST_NUMERATOR = 15;
     uint256 constant TEST_DENOMINATOR = 10;
-    uint256 constant TEST_GAS_COEFF0 = 10;
-    uint256 constant TEST_GAS_COEFF1 = 10;
+    uint64 constant TEST_GAS_COEFF0 = 10;
+    uint64 constant TEST_GAS_COEFF1 = 10;
 
     function getStore() internal pure returns (RouteStore.MainStorage storage) {
         return RouteStore.getMainStorage();
     }
 
-    function externalCreateRoute(Route calldata route) external {
-        getStore().createOrUpdateRoute(route);
+    function externalInsert(Route calldata route) external {
+        getStore().insert(route);
     }
 
     function externalEstimateCost(RouteStore.NetworkInfo memory route, bytes calldata data, uint256 gasLimit)
@@ -35,16 +35,12 @@ contract RouteStoreTest is Test {
         return RouteStore.estimateCost(route, gas);
     }
 
-    function externalAt(uint256 index) external view {
-        getStore().at(index);
-    }
-
     function externalGet(uint16 networkId) external view {
         getStore().get(networkId);
     }
 
     function insertRouteCall(Route memory route) internal {
-        bytes memory callData = abi.encodeWithSelector(this.externalCreateRoute.selector, route);
+        bytes memory callData = abi.encodeWithSelector(this.externalInsert.selector, route);
         (bool success,) = address(this).call(callData);
         require(success, "Call failed");
     }
@@ -69,7 +65,7 @@ contract RouteStoreTest is Test {
 
         RouteStore.NetworkInfo memory stored = getStore().get(TEST_NETWORK_ID);
         assertEq(stored.gateway, TEST_GATEWAY, "Gateway mismatch");
-        assertTrue(getStore().has(TEST_NETWORK_ID), "Route not added");
+        getStore().get(TEST_NETWORK_ID);
     }
 
     function testUpdateExistingRoute() public {
@@ -98,13 +94,6 @@ contract RouteStoreTest is Test {
         assertEq(stored.baseFee, updatedRoute.baseFee, "Base fee update failed");
     }
 
-    function testRemoveRoute() public {
-        testCreateNewRoute();
-        assertTrue(getStore().remove(TEST_NETWORK_ID), "Removal failed");
-        assertFalse(getStore().has(TEST_NETWORK_ID), "Route still exists");
-        assertEq(getStore().length(), 0, "Store length mismatch");
-    }
-
     function testListRoutes() public {
         uint8 numRoutes = 5;
         for (uint16 i = 1; i <= numRoutes; i++) {
@@ -121,7 +110,7 @@ contract RouteStoreTest is Test {
             insertRouteCall(r);
         }
 
-        Route[] memory routes = getStore().listRoutes();
+        Route[] memory routes = getStore().list();
         assertEq(routes.length, numRoutes, "Route count mismatch");
 
         for (uint16 i = 0; i < numRoutes; i++) {
@@ -131,76 +120,14 @@ contract RouteStoreTest is Test {
         }
     }
 
-    function testInvalidParameters() public {
-        Route memory invalidRoute = getRoute();
-        invalidRoute.gateway = bytes32(0);
-
-        vm.expectRevert(RouteStore.ZeroGatewayForNewRoute.selector);
-        insertRouteCall(invalidRoute);
-
-        testCreateNewRoute();
-        Route memory invalidUpdate = getRoute();
-        invalidUpdate.relativeGasPriceDenominator = 0;
-
-        vm.expectRevert(RouteStore.InvalidRouteParameters.selector);
-        insertRouteCall(invalidUpdate);
-    }
-
     function testEmptyStore() public view {
-        assertEq(getStore().length(), 0, "Should be empty");
-        Route[] memory routes = getStore().listRoutes();
+        Route[] memory routes = getStore().list();
         assertEq(routes.length, 0, "Should return empty array");
-    }
-
-    function testRemoveNonExistentRoute() public {
-        assertFalse(getStore().remove(0), "Should return false");
-    }
-
-    function testPartialRouteUpdate() public {
-        testCreateNewRoute();
-
-        Route memory partialUpdate = Route({
-            networkId: TEST_NETWORK_ID,
-            gateway: bytes32(0),
-            gasLimit: TEST_GAS_LIMIT * 3,
-            baseFee: 0,
-            relativeGasPriceNumerator: 0,
-            relativeGasPriceDenominator: 0,
-            gasCoef0: 10,
-            gasCoef1: 10
-        });
-
-        insertRouteCall(partialUpdate);
-
-        RouteStore.NetworkInfo memory stored = getStore().get(TEST_NETWORK_ID);
-        assertEq(stored.gateway, TEST_GATEWAY, "Gateway changed when updating route");
-        assertEq(stored.gasLimit, TEST_GAS_LIMIT * 3, "Gas limit not updated");
-        assertEq(stored.baseFee, TEST_BASE_FEE, "Base fee changed unexpectedly");
-    }
-
-    function testZeroDenominatorWithZeroNumerator() public {
-        testCreateNewRoute();
-
-        Route memory update = getRoute();
-        update.gasLimit = 0;
-        update.baseFee = 0;
-        update.relativeGasPriceNumerator = 0;
-        update.relativeGasPriceDenominator = 0;
-
-        insertRouteCall(update);
-
-        RouteStore.NetworkInfo memory stored = getStore().get(TEST_NETWORK_ID);
-        assertEq(stored.relativeGasPriceNumerator, TEST_NUMERATOR, "Numerator changed");
     }
 
     function testGetNonExistentRoute() public {
         vm.expectRevert(abi.encodeWithSelector(RouteStore.RouteNotExists.selector, TEST_NETWORK_ID));
         this.externalGet(TEST_NETWORK_ID);
-    }
-
-    function testAtOutOfBounds() public {
-        vm.expectRevert(abi.encodeWithSelector(RouteStore.IndexOutOfBounds.selector, 0));
-        this.externalAt(0);
     }
 
     function testEstimateCost() public {
