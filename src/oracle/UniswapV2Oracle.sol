@@ -3,7 +3,7 @@
 
 pragma solidity >=0.8.0;
 
-import "src/oracle/IOracle.sol";
+import {IPriceOracle} from "src/oracle/IOracle.sol";
 import {Test, console} from "forge-std/Test.sol";
 
 interface IUniswapV2Factory {
@@ -20,7 +20,7 @@ interface IERC20 {
     function decimals() external view returns (uint8);
 }
 
-contract UniswapV2Oracle is IOracle {
+contract UniswapV2Oracle is IPriceOracle {
     address public immutable factory;
     address public immutable USDT;
 
