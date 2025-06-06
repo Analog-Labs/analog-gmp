@@ -41,6 +41,8 @@ contract UniswapV2OracleTest is Test {
     }
 
     function testGeneratePricesRange() public {
+        // skipping the test due to nature of constant rpc queries
+        vm.skip(true);
         uint256 BLOCKS_TO_ITERATE = 50;
         uint256 BLOCK_STEP = 299;
         string memory path = "uni_prices.csv";
