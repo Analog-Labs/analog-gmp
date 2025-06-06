@@ -39,8 +39,8 @@ def fetch_prices(timestamp):
                 return last_item['time'], 0
 def main():
     csv_data = read_csv('uni_prices.csv')
-    
     uni_timestamps = []
+    
     uni_prices = []
     api_timestamps = []
     api_prices = []
@@ -63,7 +63,6 @@ def main():
 
     plt.figure(figsize=(14, 7))
 
-    # Plot each series with their actual timestamps
     plt.plot(uni_dates, uni_prices, label='UNI Price', marker='o', color='blue', markersize=5)
     plt.plot(api_dates, api_prices, label='API Price', marker='x', color='green', markersize=5)
 
@@ -72,7 +71,6 @@ def main():
     plt.ylabel('Price (USD)', fontsize=12)
     plt.legend(fontsize=12)
     
-    # Set unified time range for both series
     all_dates = uni_dates + api_dates
     x_min = min(all_dates)
     x_max = max(all_dates)
@@ -94,12 +92,10 @@ def main():
     max_diff = max(differences)
     max_diff_index = differences.index(max_diff)
 
-    # Get corresponding timestamps
     max_uni_ts = uni_timestamps[max_diff_index]
     max_api_ts = api_timestamps[max_diff_index]
     max_time_str = datetime.fromtimestamp(max_uni_ts).strftime('%Y-%m-%d %H:%M:%S')
 
-    # Add text annotation
     text_str = f"Max Difference: {max_diff:.4f}\nAt UNI timestamp: {max_time_str}"
     plt.text(0.02, 0.02, text_str, 
              transform=ax.transAxes, 
